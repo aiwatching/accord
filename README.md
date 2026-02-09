@@ -1,0 +1,134 @@
+# Accord
+
+**Git-based collaboration protocol for AI coding agents.**
+
+Accord enables multiple AI coding agents — across teams, sessions, and tools — to collaborate on large-scale software projects through a shared contract-based communication protocol.
+
+---
+
+## The Problem
+
+AI coding agents work great within a single session. But real projects have multiple teams, multiple services, and multiple developers. When Team A needs Team B to add an API, today's options are:
+
+- Slack message that gets lost
+- A Jira ticket that nobody checks
+- A meeting that could have been an async message
+
+Accord replaces all of that with a file-based protocol that lives in your Git repo. Your agents read it, your developers review it, and Git tracks everything.
+
+## How It Works
+
+```
+Device-Manager Agent                    NAC-Engine Agent
+        │                                      │
+        │  1. "I need a policy-by-type API"     │
+        │  → creates request file               │
+        │  → git push                           │
+        │                                       │
+        │                              2. git pull
+        │                              → sees request in inbox
+        │                              → developer approves
+        │                                       │
+        │                              3. implements API
+        │                              → updates contract
+        │                              → git push
+        │                                       │
+        │  4. git pull                          │
+        │  → sees updated contract              │
+        │  → codes against new API              │
+        ▼                                       ▼
+```
+
+No servers. No message queues. No infrastructure. Just Git.
+
+## Key Features
+
+- **Agent-agnostic**: Works with Claude Code, Cursor, GitHub Copilot, Codex, or any agent that can read files and run git
+- **Contract-first**: OpenAPI specs as the source of truth for all inter-service APIs
+- **Zero infrastructure**: Git is the message bus, file system is the database
+- **Human-in-the-loop**: Agents create requests, humans approve them
+- **Full traceability**: Every request, approval, and contract change is a git commit
+
+## Quick Start
+
+```bash
+# Clone Accord
+git clone https://github.com/yourname/accord.git
+
+# Initialize in your project
+cd your-project
+/path/to/accord/init.sh --adapter claude-code --teams "frontend,backend-api,backend-engine"
+
+# This creates:
+# - contracts/          (OpenAPI specs for each team)
+# - .agent-comms/       (inbox directories for each team)
+# - .accord/            (configuration)
+# - CLAUDE.md updates   (protocol rules injected)
+# - slash commands       (check-inbox, send-request, etc.)
+```
+
+Then start your agent. It will automatically check for incoming requests on session start.
+
+## Project Structure (after init)
+
+```
+your-project/
+├── contracts/
+│   ├── frontend.yaml
+│   ├── backend-api.yaml
+│   └── backend-engine.yaml
+├── .agent-comms/
+│   ├── inbox/
+│   │   ├── frontend/
+│   │   ├── backend-api/
+│   │   └── backend-engine/
+│   ├── archive/
+│   ├── PROTOCOL.md
+│   └── TEMPLATE.md
+├── .accord/
+│   └── config.yaml
+└── ... (your source code)
+```
+
+## Supported Agents
+
+| Agent         | Adapter    | Status       |
+|--------------|------------|--------------|
+| Claude Code  | Full       | ✅ Available  |
+| Generic      | Basic      | ✅ Available  |
+| Cursor       | Planned    | 🔜 Coming    |
+| GitHub Copilot | Planned  | 🔜 Coming    |
+| OpenAI Codex | Planned    | 🔜 Coming    |
+
+The **generic adapter** works with any agent that can read a markdown instruction file.
+
+## Documentation
+
+- [Protocol Specification](PROTOCOL.md) — The core protocol (state machine, formats, rules)
+- [Standard Interface](INTERFACE.md) — What agents need to support
+- [Design Document](docs/DESIGN.md) — Architecture rationale and design decisions
+
+## Architecture
+
+```
+┌───────────────────────────┐
+│      Adapter Layer        │  ← Agent-specific (CLAUDE.md, .cursorrules, etc.)
+├───────────────────────────┤
+│     Protocol Layer        │  ← Agent-agnostic (files + git)
+│  Contracts │ Messages │ Tasks │
+└───────────────────────────┘
+```
+
+The protocol layer is the core — fully agent-agnostic, based on files and Git. Adapters are thin translation layers that inject protocol rules into each agent's native config format.
+
+## Contributing
+
+Contributions welcome, especially:
+
+- **New adapters** for additional AI coding agents
+- **Protocol improvements** based on real-world usage
+- **Examples** showing Accord in different project types
+
+## License
+
+MIT

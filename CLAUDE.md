@@ -1,0 +1,94 @@
+# Accord - Agent-Agnostic Collaboration Framework
+
+## Project Overview
+Accord is a Git-based, agent-agnostic framework for coordinating multiple AI coding agents across teams, modules, and services in large-scale software projects.
+
+Core problem: AI coding agents (Claude Code, Cursor, Copilot, etc.) work well within a single session, but there's no standard way for multiple agent sessions to collaborate asynchronously — especially across teams, services, or time.
+
+Accord solves this with a file-based protocol layered on Git, so any agent that can read/write files and run git commands can participate.
+
+## Architecture: Two Layers
+
+### Protocol Layer (agent-agnostic)
+- Contract Registry: OpenAPI specs as the source of truth for inter-service APIs
+- Message Protocol: request files in `.agent-comms/inbox/` for cross-team communication
+- Task Lifecycle: state machine governing request status transitions
+- All based on Git + files. No external dependencies.
+
+### Adapter Layer (agent-specific)
+- Translates the protocol into agent-specific instruction formats
+- Claude Code adapter: CLAUDE.md + slash commands
+- Cursor adapter: .cursorrules
+- Codex adapter: AGENTS.md
+- Generic adapter: plain markdown any agent can read
+
+## Key Design Decisions
+- Git as the message bus: git pull = receive, git push = send. Zero infrastructure.
+- OpenAPI as the contract format: industry standard, can auto-generate mock servers and client SDKs
+- File-based protocol: no databases, no message queues, no servers to deploy
+- Agent-agnostic core: the protocol layer has zero dependency on any specific AI tool
+- Adapters are thin: just template files that inject protocol rules into agent-specific config formats
+
+## Tech Stack
+- Protocol: Markdown + YAML + OpenAPI 3.x
+- Init tooling: Shell script (bash) for project initialization
+- Adapters: Template files (no code dependencies)
+- Optional: Node.js/Python CLI for advanced operations (later phase)
+
+## Development Priorities
+1. PROTOCOL.md — complete the protocol specification (state machine, request format, contract rules)
+2. Templates — request.md.template, contract.yaml.template
+3. Init script — `accord init` to scaffold a project
+4. Claude Code adapter — first adapter implementation
+5. Generic adapter — fallback for any agent
+6. Example project — a realistic multi-service example
+7. Additional adapters — Cursor, Codex, etc.
+
+## Directory Structure
+```
+accord/
+├── CLAUDE.md                    # This file
+├── README.md                    # Public-facing project description
+├── PROTOCOL.md                  # Core protocol specification
+├── INTERFACE.md                 # Agent capability requirements
+├── docs/
+│   └── DESIGN.md                # Full design document (architecture rationale)
+├── protocol/
+│   ├── state-machine.md         # Request state transitions
+│   ├── request-format.md        # Request file specification
+│   ├── contract-rules.md        # Contract management rules
+│   └── templates/
+│       ├── request.md.template  # Template for cross-team requests
+│       └── contract.yaml.template # Template for OpenAPI contracts
+├── adapters/
+│   ├── claude-code/
+│   │   ├── CLAUDE.md.template
+│   │   ├── commands/
+│   │   │   ├── check-inbox.md
+│   │   │   ├── send-request.md
+│   │   │   └── complete-request.md
+│   │   └── install.sh
+│   ├── cursor/
+│   │   ├── .cursorrules.template
+│   │   └── install.sh
+│   ├── codex/
+│   │   ├── AGENTS.md.template
+│   │   └── install.sh
+│   └── generic/
+│       └── AGENT_INSTRUCTIONS.md
+├── init.sh                      # Project initialization script
+└── examples/
+    └── microservice-project/    # Complete usage example
+```
+
+## Code Conventions
+- All protocol documents use Markdown with YAML frontmatter where structured data is needed
+- OpenAPI specs follow OpenAPI 3.0+ standard
+- Shell scripts target bash 4+ and should work on macOS and Linux
+- Keep dependencies minimal — the core framework should require only Git and a text editor
+- Use clear, descriptive commit messages: `protocol: ...`, `adapter(claude-code): ...`, `docs: ...`
+
+## Reference Documents
+- See `docs/DESIGN.md` for the full architectural design and rationale
+- See `PROTOCOL.md` for the core protocol specification
+- See `INTERFACE.md` for agent capability requirements
