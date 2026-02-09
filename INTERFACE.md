@@ -111,7 +111,28 @@ Adapters must inject these behaviors into the agent's instruction set:
 6. Push
 7. Inform user: "Completed request {id}. Contract updated."
 
-### 2.5 ON_CONFLICT (Contract Conflict)
+### 2.5 ON_SCAN (Contract Generation)
+
+**Trigger**: User requests contract generation, or during `accord init` for an existing codebase.
+
+**Actions**:
+1. Read `protocol/scan/SCAN_INSTRUCTIONS.md` for scanning rules
+2. Determine scan scope from user request or `.accord/config.yaml`:
+   - `--type external`: scan for REST/RPC endpoints
+   - `--type internal`: scan for cross-module interfaces
+   - `--type all`: both
+3. Analyze source code following the detection rules for the relevant language/framework
+4. Generate contract files in the correct format:
+   - External: `contracts/{service}.yaml` (OpenAPI 3.0+)
+   - Internal: `{service}/.accord/internal-contracts/{module}.md`
+5. Mark all generated contracts with `status: draft`
+6. Run validators: `protocol/scan/validators/validate-openapi.sh` and `validate-internal.sh`
+7. Report results to user: "Generated {N} contracts with status: draft. Please review."
+8. Do NOT auto-commit — let the user review first
+
+**Important**: Generated contracts are `draft` and must be reviewed by a human before becoming `stable`. Other teams/modules should not depend on `draft` contracts.
+
+### 2.6 ON_CONFLICT (Contract Conflict)
 
 **Trigger**: `git pull` results in a merge conflict on a contract file or request file.
 

@@ -82,6 +82,15 @@ Both levels use the same state machine, message protocol, and Git operations. Th
 - Git operations are the transport: commit + push = send, pull = receive
 - Archive completed requests to `.agent-comms/archive/`
 
+#### Contract Scanner
+- Location: `protocol/scan/`
+- Agent-agnostic scanning instructions that any AI agent can follow
+- Analyzes source code to auto-generate contract files (both external and internal)
+- Works as a **prompt generator + output validator**: determines what to scan, generates structured instructions for the agent, then validates the output format
+- Generated contracts start with `status: draft` — human review required before `stable`
+- Supports multiple languages/frameworks (Java/Spring, Python/FastAPI, TypeScript/Express, Go)
+- Each adapter wraps the scanner in its own way: Claude Code uses a Skill + slash command, Cursor embeds in .cursorrules, Generic adapter references SCAN_INSTRUCTIONS.md directly
+
 #### Task Lifecycle
 - State machine governing request status transitions
 - States: pending → approved → in-progress → completed (or rejected)
@@ -380,6 +389,6 @@ This means:
 - **Conflict detection**: Automatic detection of breaking contract changes
 - **Metrics**: Track request turnaround time, team responsiveness
 - **Skill packs**: Pre-built skills for common patterns (REST CRUD, event-driven, etc.)
-- **Mock generation**: Auto-generate mock servers from OpenAPI contracts
+- **Mock generation**: Auto-generate mock servers from OpenAPI contracts (can chain with `accord scan` — scan generates the contract, mock generator creates a server from it)
 - **Contract diff**: Visual diff tool for contract changes across versions
 - **Multi-repo support**: Coordinate across multiple Git repositories

@@ -47,6 +47,7 @@ No servers. No message queues. No infrastructure. Just Git.
 - **Two-level contracts**: External contracts (OpenAPI) for service-level APIs + internal contracts (Java interface, Python Protocol, etc.) for module-level boundaries
 - **Fractal protocol**: Same state machine and workflow at every granularity — from cross-team REST APIs to intra-service Java interfaces
 - **Zero infrastructure**: Git is the message bus, file system is the database
+- **Auto-scan contracts**: `accord scan` analyzes your code and generates contract files automatically — works with any AI agent
 - **Human-in-the-loop**: Agents create requests, humans approve them
 - **Full traceability**: Every request, approval, and contract change is a git commit
 

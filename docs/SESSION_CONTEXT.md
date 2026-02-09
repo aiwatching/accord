@@ -86,16 +86,18 @@ Accord operates at Levels 1, 1.5, and 2. It does NOT manage Level 3 (that's agen
 | Git | Core protocol — transport and versioning layer | Core |
 | ADR | Recommended practice — document architecture decisions | Recommended, not enforced |
 | Bounded Context (DDD) | Design principle — each team/module has clear boundaries | Informs contract design |
+| Contract Scanner | Protocol-layer tool — agent-agnostic scan instructions + validators. Adapters wrap it (Claude Code: Skill + slash command, Cursor: .cursorrules, Generic: markdown) | Core (protocol layer) |
 
 ## What the MVP Should Include
 
 Priority order:
 1. **PROTOCOL.md** — Finalize the protocol specification
 2. **Templates** — request.md.template, contract.yaml.template, internal-contract.md.template
-3. **init.sh** — Interactive script: `accord init --adapter claude-code --teams "..."`
-4. **Claude Code adapter** — CLAUDE.md.template + slash commands
-5. **Generic adapter** — Plain markdown instructions for any agent
-6. **Example project** — Realistic multi-service setup showing external + internal contracts
+3. **Contract Scanner** — `protocol/scan/SCAN_INSTRUCTIONS.md` + `scan.sh` + validators (agent-agnostic scanning)
+4. **init.sh** — Interactive script: `accord init --adapter claude-code --teams "..."`
+5. **Claude Code adapter** — CLAUDE.md.template + slash commands + contract-scanner skill
+6. **Generic adapter** — Plain markdown instructions for any agent
+7. **Example project** — Realistic multi-service setup showing external + internal contracts
 
 ## What the MVP Should NOT Include
 

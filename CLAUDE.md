@@ -39,11 +39,12 @@ Accord solves this with a file-based protocol layered on Git, so any agent that 
 ## Development Priorities
 1. PROTOCOL.md — complete the protocol specification (state machine, request format, contract rules, two-level contracts)
 2. Templates — request.md.template, contract.yaml.template, internal-contract.md.template
-3. Init script — `accord init` to scaffold a project (including internal contract directories for services with modules)
-4. Claude Code adapter — first adapter implementation
-5. Generic adapter — fallback for any agent
-6. Example project — a realistic multi-service example showing both external and internal contracts
-7. Additional adapters — Cursor, Codex, etc.
+3. Contract Scanner — `protocol/scan/` with SCAN_INSTRUCTIONS.md, scan.sh, validators
+4. Init script — `accord init` to scaffold a project (including internal contract directories for services with modules)
+5. Claude Code adapter — first adapter implementation (includes contract-scanner skill)
+6. Generic adapter — fallback for any agent
+7. Example project — a realistic multi-service example showing both external and internal contracts
+8. Additional adapters — Cursor, Codex, etc.
 
 ## Directory Structure
 ```
@@ -59,17 +60,27 @@ accord/
 │   ├── state-machine.md         # Request state transitions
 │   ├── request-format.md        # Request file specification
 │   ├── contract-rules.md        # Contract management rules
-│   └── templates/
-│       ├── request.md.template           # Template for cross-boundary requests
-│       ├── contract.yaml.template        # Template for external OpenAPI contracts
-│       └── internal-contract.md.template # Template for internal code-level contracts
+│   ├── templates/
+│   │   ├── request.md.template           # Template for cross-boundary requests
+│   │   ├── contract.yaml.template        # Template for external OpenAPI contracts
+│   │   └── internal-contract.md.template # Template for internal code-level contracts
+│   └── scan/                    # Contract Scanner (agent-agnostic)
+│       ├── SCAN_INSTRUCTIONS.md # Scanning rules and output format
+│       ├── scan.sh              # Entry point script (prompt generator + validator)
+│       └── validators/          # Output format validators
+│           ├── validate-openapi.sh
+│           └── validate-internal.sh
 ├── adapters/
 │   ├── claude-code/
 │   │   ├── CLAUDE.md.template
 │   │   ├── commands/
 │   │   │   ├── check-inbox.md
 │   │   │   ├── send-request.md
-│   │   │   └── complete-request.md
+│   │   │   ├── complete-request.md
+│   │   │   └── accord-scan.md  # /accord-scan slash command
+│   │   ├── skills/
+│   │   │   └── contract-scanner/
+│   │   │       └── SKILL.md    # Contract scanner skill for Claude Code
 │   │   └── install.sh
 │   ├── cursor/
 │   │   ├── .cursorrules.template
