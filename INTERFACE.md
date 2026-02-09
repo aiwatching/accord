@@ -37,15 +37,17 @@ Adapters must inject these behaviors into the agent's instruction set:
 **Trigger**: Agent session begins or conversation starts.
 
 **Actions**:
-1. Run `git pull` to sync latest changes
-2. List files in `.agent-comms/inbox/{own-team}/` (team-level inbox)
-3. If the team has sub-modules, also list files in `.agent-comms/inbox/{module-name}/` for each module
-4. For each request file, read the YAML frontmatter
-5. Report to user:
+1. Run `git pull` to sync latest changes in the service repo
+2. If multi-repo: run `accord sync pull` to pull from the hub repo
+3. Check external inbox:
+   - Monorepo: `.agent-comms/inbox/{own-team}/`
+   - Multi-repo: `.accord/hub/.agent-comms/inbox/{own-team}/`
+4. Check internal inbox (if team has sub-modules): `.agent-comms/inbox/{module-name}/`
+5. For each request file, read the YAML frontmatter
+6. Report to user:
    - Number of pending/approved requests (grouped by scope: external vs internal)
    - Summary of each (id, from, to, scope, type, priority)
-6. Check `git log --oneline -5 -- contracts/` for recent external contract changes
-7. Check `git log --oneline -5 -- */.accord/internal-contracts/` for recent internal contract changes
+7. Check recent contract changes (external and internal)
 
 **Output to user**: Brief summary of incoming requests and contract updates (both external and internal).
 
@@ -132,7 +134,27 @@ Adapters must inject these behaviors into the agent's instruction set:
 
 **Important**: Generated contracts are `draft` and must be reviewed by a human before becoming `stable`. Other teams/modules should not depend on `draft` contracts.
 
-### 2.6 ON_CONFLICT (Contract Conflict)
+### 2.6 ON_SYNC (Multi-Repo Synchronization)
+
+**Trigger**: User requests sync, or automatically on session start in multi-repo mode.
+
+**`accord sync pull` actions**:
+1. `cd .accord/hub && git pull`
+2. Check hub's `.agent-comms/inbox/{own-team}/` for new external requests
+3. Report findings to user
+
+**`accord sync push` actions**:
+1. Collect module contracts: copy each `{module}/.accord/contract.md` → `.accord/internal-contracts/{module}.md`
+2. Sync to hub:
+   - Copy `.accord/internal-contracts/*` → `hub/internal-contracts/{service}/`
+   - Copy updated external contract → `hub/contracts/`
+   - Copy outgoing request files → `hub/.agent-comms/inbox/{target}/`
+3. `cd .accord/hub && git add -A && git commit && git push`
+4. Inform user: "Synced to hub. {N} contracts collected, {M} requests sent."
+
+**Note**: In monorepo mode, ON_SYNC is not needed — normal `git pull/push` handles everything.
+
+### 2.7 ON_CONFLICT (Contract Conflict)
 
 **Trigger**: `git pull` results in a merge conflict on a contract file or request file.
 

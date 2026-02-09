@@ -42,6 +42,13 @@ session was insufficient for complex multi-service development because:
 ### Decision 6: Fractal protocol (same rules at every level)
 **Key insight**: The state machine (pending → approved → in-progress → completed) works identically whether you're coordinating between teams (REST API changes) or between modules (Java interface changes). This keeps the framework simple and the learning curve flat.
 
+### Decision 7: Multi-repo via Hub-and-Spoke model
+**Rejected alternatives**: Git submodules (painful UX), cross-repo remotes (complex, no central view), monorepo-only (doesn't fit large orgs)
+**Rationale**: A dedicated Accord Hub repo centralizes contracts and cross-service communication while each team keeps its own service repo. Still zero infrastructure — just an extra Git repo. `accord sync` wraps hub pull/push. Internal contracts are collected from module-level `.accord/contract.md` → service root → hub for backup. Module-level communication stays within the service repo via normal git operations.
+
+### Decision 8: Distributed contract ownership with centralized collection
+**Key insight**: Each module owns its contract at `{module}/.accord/contract.md` (source of truth), but contracts are auto-collected to the service root and hub. This gives clear ownership (edit at the source) while preventing data loss (backup at hub). The flow is always one-directional: module → service root → hub.
+
 ## Architecture Hierarchy (from the developer's actual project)
 
 ```

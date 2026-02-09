@@ -67,9 +67,11 @@ Accord supports contracts at two granularities, unified under the same protocol:
 - Can auto-generate mock servers and client SDKs
 
 **Internal Contracts (Module-Level)**:
-- Location: `{service-dir}/.accord/internal-contracts/`
+- Source of truth: `{module-dir}/.accord/contract.md` (each module owns its contract)
+- Collected to: `{service-dir}/.accord/internal-contracts/` (auto-collected by `accord sync`)
+- Backed up to: `accord-hub/internal-contracts/{service}/` (multi-repo only)
 - Format: Markdown with embedded code-level interface signatures (Java interface, Python Protocol, TypeScript interface, etc.)
-- One file per module within a service
+- One contract per module within a service
 - Defines the class/method boundary between sub-modules
 - Includes behavioral contracts (thread-safety, idempotency, ordering guarantees)
 
@@ -132,58 +134,64 @@ Required behaviors (injected by adapter):
 | ON_COMPLETE | Finished cross-team task → archive + update contract |
 | ON_CONFLICT | Contract conflict detected → notify user           |
 
-## 4. Project Directory Structure (when Accord is applied to a user's project)
+## 4. Repository Models
+
+Accord supports two Git topologies:
+
+### 4.1 Monorepo
+
+All services in one repo. Simplest setup. All `.agent-comms/` and `contracts/` are in the same repo.
+
+### 4.2 Multi-Repo (Hub-and-Spoke)
+
+Each service has its own repo. A shared **Accord Hub** repo centralizes contracts and cross-service communication.
 
 ```
-user-project/
-├── contracts/                          # External Contract Registry
-│   ├── device-manager.yaml             # OpenAPI spec
-│   ├── nac-engine.yaml
-│   ├── nac-admin.yaml
-│   └── frontend-api.yaml
-│
-├── .agent-comms/                       # Communication Layer
-│   ├── inbox/
-│   │   ├── device-manager/             # Team-level inbox
-│   │   ├── nac-engine/
-│   │   ├── nac-admin/
-│   │   ├── frontend/
-│   │   ├── plugin/                     # Module-level inbox (within device-manager)
-│   │   ├── discovery/
-│   │   └── lifecycle/
-│   ├── archive/
-│   ├── PROTOCOL.md
-│   └── TEMPLATE.md
-│
-├── .accord/
-│   └── config.yaml
-│
-├── device-manager/                     # Service source code
-│   ├── .accord/
-│   │   └── internal-contracts/         # Internal Contract Registry
-│   │       ├── plugin-registry.md      # Java interface contract
-│   │       ├── discovery-service.md
-│   │       └── device-lifecycle.md
-│   ├── plugin/                         # Sub-module source
-│   ├── discovery/
-│   └── lifecycle/
-│
-├── nac-engine/
-├── nac-admin/
-├── frontend/
-│
-├── CLAUDE.md (or .cursorrules)         # Agent instructions (from adapter)
-└── ...
+┌─────────────────────────────────────────────────┐
+│                  Accord Hub                      │
+│  (shared repo: contracts + cross-service comms)  │
+│                                                  │
+│  contracts/    .agent-comms/    internal-contracts/
+│                                (backup copies)    │
+└───────┬──────────────┬────────────────┬──────────┘
+        │              │                │
+   accord sync    accord sync      accord sync
+        │              │                │
+┌───────▼──────┐ ┌─────▼──────┐ ┌──────▼───────┐
+│device-manager│ │ nac-engine │ │  nac-admin   │
+│   (own repo) │ │ (own repo) │ │  (own repo)  │
+│              │ │            │ │              │
+│ plugin/      │ │            │ │              │
+│  └.accord/   │ │            │ │              │
+│   └contract  │ │            │ │              │
+│ discovery/   │ │            │ │              │
+│  └.accord/   │ │            │ │              │
+│   └contract  │ │            │ │              │
+└──────────────┘ └────────────┘ └──────────────┘
 ```
 
-### Scope Hierarchy
+### 4.3 Contract Collection (Multi-Repo)
+
+Internal contracts are owned by modules but collected upward for backup:
+
+```
+plugin/.accord/contract.md          → source of truth (module edits here)
+        ↓ accord sync collect
+.accord/internal-contracts/plugin.md → service-root collected copy
+        ↓ accord sync push
+accord-hub/internal-contracts/device-manager/plugin.md → hub backup
+```
+
+### 4.4 Scope Hierarchy
 
 ```
 Project (Accord manages cross-team + cross-module coordination)
 │
 ├── Team A ←──── External Contract (OpenAPI) ────→ Team B
+│   │            (via hub in multi-repo)
 │   │
 │   ├── Module X ←── Internal Contract (Java interface) ──→ Module Y
+│   │                 (within same service repo)
 │   │
 │   └── Module Z
 │
@@ -391,4 +399,3 @@ This means:
 - **Skill packs**: Pre-built skills for common patterns (REST CRUD, event-driven, etc.)
 - **Mock generation**: Auto-generate mock servers from OpenAPI contracts (can chain with `accord scan` — scan generates the contract, mock generator creates a server from it)
 - **Contract diff**: Visual diff tool for contract changes across versions
-- **Multi-repo support**: Coordinate across multiple Git repositories
