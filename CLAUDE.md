@@ -90,5 +90,6 @@ accord/
 
 ## Reference Documents
 - See `docs/DESIGN.md` for the full architectural design and rationale
+- See `docs/SESSION_CONTEXT.md` for the complete design session context — WHY each decision was made, what alternatives were considered, and the developer's original use case
 - See `PROTOCOL.md` for the core protocol specification
 - See `INTERFACE.md` for agent capability requirements

@@ -12,43 +12,57 @@ When Accord is initialized in a project, the following directory structure is cr
 
 ```
 {project-root}/
-├── contracts/                         # Contract Registry
+├── contracts/                         # External Contract Registry (service-level)
 │   └── {team-name}.yaml              # One OpenAPI spec per team/service
 │
 ├── .agent-comms/                      # Communication directory
 │   ├── inbox/
-│   │   └── {team-name}/              # One inbox per team
+│   │   └── {team-name-or-module}/    # One inbox per team or sub-module
 │   │       └── {request-id}.md       # Request files
 │   ├── archive/                       # Completed/rejected requests
 │   │   └── {request-id}.md
 │   ├── PROTOCOL.md                    # Copy of this protocol (for agent reference)
 │   └── TEMPLATE.md                    # Request file template
 │
-└── .accord/                           # Accord configuration
-    ├── config.yaml                    # Team definitions and settings
-    └── adapter/                       # Active adapter files
+├── .accord/                           # Accord configuration
+│   ├── config.yaml                    # Team definitions and settings
+│   └── adapter/                       # Active adapter files
+│
+└── {service-dir}/                     # Within a service/module
+    └── .accord/
+        └── internal-contracts/        # Internal Contract Registry (module-level)
+            └── {module-name}.md       # Code-level interface contracts
 ```
 
 ### Naming Conventions
 - Team names: lowercase, hyphenated (e.g., `device-manager`, `nac-engine`)
+- Module names: lowercase, hyphenated (e.g., `plugin`, `discovery`, `lifecycle`)
 - Request IDs: `req-{NNN}-{short-description}` (e.g., `req-001-add-policy-api`)
-- Contract files: `{team-name}.yaml`
+- External contract files: `{team-name}.yaml`
+- Internal contract files: `{module-name}.md`
 
 ---
 
 ## 2. Contract Registry
 
-### 2.1 Format
-All contracts use OpenAPI 3.0+ YAML format.
+Accord supports two levels of contracts, unified under the same protocol.
 
-### 2.2 Rules
-1. Each team/service owns exactly one contract file in `contracts/`
+### 2.1 External Contracts (Service-Level)
+
+External contracts define the API boundary between services or teams. Other teams interact with your service exclusively through this contract.
+
+**Format**: OpenAPI 3.0+ YAML, gRPC Proto, or GraphQL Schema.
+
+**Location**: `contracts/{team-name}.yaml`
+
+**Rules**:
+1. Each team/service owns exactly one external contract file in `contracts/`
 2. A team may ONLY modify its own contract file
 3. To propose changes to another team's contract, use the Message Protocol (Section 3)
-4. Proposed changes are annotated with `x-accord-status: proposed` in the OpenAPI spec
+4. Proposed changes are annotated with `x-accord-status: proposed` in the spec
 5. Once a request is completed, the `x-accord-status` annotation is removed
 
-### 2.3 Contract Annotation Example
+**Annotation Example**:
 ```yaml
 paths:
   /api/policies/by-device-type/{type}:
@@ -58,6 +72,66 @@ paths:
       summary: Get policies by device type
       # ...
 ```
+
+### 2.2 Internal Contracts (Module-Level)
+
+Internal contracts define the code-level interface boundary between sub-modules within a service. Other modules interact with your module exclusively through this contract.
+
+**Format**: Markdown with embedded interface signatures (Java interface, Python Protocol/ABC, TypeScript interface, etc.)
+
+**Location**: `{service-dir}/.accord/internal-contracts/{module-name}.md`
+
+**Rules**:
+1. Each module owns its internal contract file
+2. A module may ONLY modify its own contract
+3. To propose changes to another module's contract, use the same Message Protocol (Section 3)
+4. Proposed changes are annotated with `x-accord-status: proposed` in the frontmatter
+
+**Internal Contract File Format**:
+
+```markdown
+---
+id: plugin-registry
+module: plugin
+language: java
+type: interface
+status: stable                        # stable | proposed | deprecated
+---
+
+## Interface
+
+​```java
+public interface PluginRegistry {
+
+    void register(DevicePlugin plugin);
+
+    Optional<DevicePlugin> findByDeviceType(String deviceType);
+
+    List<DevicePlugin> listAll();
+}
+​```
+
+## Behavioral Contract
+- register() is idempotent for same plugin ID + same version
+- findByDeviceType() checks plugins in priority order
+- Thread-safe: all methods can be called concurrently
+
+## Used By
+- discovery module: calls findByDeviceType() after device scan
+- lifecycle module: calls listAll() for health checks
+```
+
+### 2.3 Supported Contract Types
+
+| Contract Type          | Format              | Scope                  |
+|-----------------------|---------------------|------------------------|
+| openapi               | OpenAPI 3.0+ YAML   | Service-level REST API |
+| grpc                  | Proto file           | Service-level RPC      |
+| graphql               | GraphQL schema       | Service-level GraphQL  |
+| java-interface        | Java interface/class | Module-level (Java)    |
+| python-protocol       | Python Protocol/ABC  | Module-level (Python)  |
+| typescript-interface  | TypeScript interface | Module-level (TS)      |
+| golang-interface      | Go interface         | Module-level (Go)      |
 
 ### 2.4 Versioning
 Contracts are versioned through Git. There is no separate version number — the Git commit hash serves as the version identifier. Breaking changes should be documented in the request file's Impact section.
@@ -101,9 +175,10 @@ related_contract: contracts/nac-engine.yaml
 | Field              | Required | Description                                    |
 |-------------------|----------|------------------------------------------------|
 | id                | Yes      | Unique identifier: `req-{NNN}-{description}`   |
-| from              | Yes      | Requesting team name                            |
-| to                | Yes      | Target team name                                |
-| type              | Yes      | One of: api-addition, api-change, api-deprecation, bug-report, question, other |
+| from              | Yes      | Requesting team or module name                  |
+| to                | Yes      | Target team or module name                      |
+| scope             | Yes      | One of: external, internal                      |
+| type              | Yes      | See Section 3.3 for valid types                 |
 | priority          | Yes      | One of: low, medium, high, critical             |
 | status            | Yes      | One of: pending, approved, rejected, in-progress, completed |
 | created           | Yes      | ISO 8601 timestamp                              |
@@ -112,13 +187,28 @@ related_contract: contracts/nac-engine.yaml
 
 ### 3.3 Request Types
 
+**External (service-level):**
+
 | Type             | Description                                         |
 |-----------------|-----------------------------------------------------|
 | api-addition    | Request to add a new endpoint or capability          |
 | api-change      | Request to modify an existing endpoint               |
 | api-deprecation | Notification that a consuming team will stop using an endpoint |
-| bug-report      | Report an issue with an existing contract/API         |
-| question        | Ask for clarification about a contract                |
+
+**Internal (module-level):**
+
+| Type                  | Description                                    |
+|----------------------|------------------------------------------------|
+| interface-addition   | Request to add a new method or class to a module interface |
+| interface-change     | Request to modify an existing module interface  |
+| interface-deprecation| Notification that a consuming module will stop using an interface method |
+
+**Shared (both scopes):**
+
+| Type             | Description                                         |
+|-----------------|-----------------------------------------------------|
+| bug-report      | Report an issue with an existing contract/API/interface |
+| question        | Ask for clarification about a contract               |
 | other           | Anything that doesn't fit above                       |
 
 ---
@@ -215,19 +305,33 @@ project:
 teams:
   - name: frontend
     description: "Web management UI"
-    contract: contracts/frontend-api.yaml
+    contracts:
+      external: contracts/frontend-api.yaml
 
   - name: nac-engine
     description: "Policy evaluation and enforcement engine"
-    contract: contracts/nac-engine.yaml
+    contracts:
+      external: contracts/nac-engine.yaml
 
   - name: device-manager
     description: "Device discovery, lifecycle, and plugin management"
-    contract: contracts/device-manager.yaml
+    contracts:
+      external: contracts/device-manager.yaml
+      internal:
+        - path: device-manager/.accord/internal-contracts/plugin-registry.md
+          module: plugin
+          type: java-interface
+        - path: device-manager/.accord/internal-contracts/discovery-service.md
+          module: discovery
+          type: java-interface
+        - path: device-manager/.accord/internal-contracts/device-lifecycle.md
+          module: lifecycle
+          type: java-interface
 
   - name: nac-admin
     description: "Administration, RBAC, and audit logging"
-    contract: contracts/nac-admin.yaml
+    contracts:
+      external: contracts/nac-admin.yaml
 
 settings:
   auto_pull_on_start: true

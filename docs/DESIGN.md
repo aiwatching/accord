@@ -55,13 +55,25 @@ There is no standard protocol for AI coding agents to collaborate asynchronously
 
 ### 3.2 Protocol Layer Components
 
-#### Contract Registry
+#### Contract Registry (Two Levels)
+
+Accord supports contracts at two granularities, unified under the same protocol:
+
+**External Contracts (Service-Level)**:
 - Location: `contracts/` directory in project root
-- Format: OpenAPI 3.0+ YAML files
+- Format: OpenAPI 3.0+ YAML (also supports gRPC Proto, GraphQL Schema)
 - One file per service/team
-- Versioned through Git commits
-- Supports PROPOSED annotations for pending changes
+- Defines the HTTP/RPC API boundary between services
 - Can auto-generate mock servers and client SDKs
+
+**Internal Contracts (Module-Level)**:
+- Location: `{service-dir}/.accord/internal-contracts/`
+- Format: Markdown with embedded code-level interface signatures (Java interface, Python Protocol, TypeScript interface, etc.)
+- One file per module within a service
+- Defines the class/method boundary between sub-modules
+- Includes behavioral contracts (thread-safety, idempotency, ordering guarantees)
+
+Both levels use the same state machine, message protocol, and Git operations. The only differences are the contract format and the granularity of the inbox directories.
 
 #### Message Protocol
 - Location: `.agent-comms/inbox/{team-name}/` directories
@@ -115,51 +127,128 @@ Required behaviors (injected by adapter):
 
 ```
 user-project/
-├── contracts/                     # Contract Registry
-│   ├── service-a.yaml             # OpenAPI spec for Service A
-│   ├── service-b.yaml             # OpenAPI spec for Service B
-│   └── frontend-api.yaml          # Frontend BFF API spec
+├── contracts/                          # External Contract Registry
+│   ├── device-manager.yaml             # OpenAPI spec
+│   ├── nac-engine.yaml
+│   ├── nac-admin.yaml
+│   └── frontend-api.yaml
 │
-├── .agent-comms/                  # Communication Layer
+├── .agent-comms/                       # Communication Layer
 │   ├── inbox/
-│   │   ├── service-a/             # Inbox for Service A team
-│   │   ├── service-b/             # Inbox for Service B team
-│   │   └── frontend/              # Inbox for Frontend team
-│   ├── archive/                   # Completed/rejected requests
-│   ├── PROTOCOL.md                # Protocol reference (copied from Accord)
-│   └── TEMPLATE.md                # Request file template
+│   │   ├── device-manager/             # Team-level inbox
+│   │   ├── nac-engine/
+│   │   ├── nac-admin/
+│   │   ├── frontend/
+│   │   ├── plugin/                     # Module-level inbox (within device-manager)
+│   │   ├── discovery/
+│   │   └── lifecycle/
+│   ├── archive/
+│   ├── PROTOCOL.md
+│   └── TEMPLATE.md
 │
-├── CLAUDE.md (or .cursorrules)    # Agent instructions (from adapter)
-└── ... (project source code)
+├── .accord/
+│   └── config.yaml
+│
+├── device-manager/                     # Service source code
+│   ├── .accord/
+│   │   └── internal-contracts/         # Internal Contract Registry
+│   │       ├── plugin-registry.md      # Java interface contract
+│   │       ├── discovery-service.md
+│   │       └── device-lifecycle.md
+│   ├── plugin/                         # Sub-module source
+│   ├── discovery/
+│   └── lifecycle/
+│
+├── nac-engine/
+├── nac-admin/
+├── frontend/
+│
+├── CLAUDE.md (or .cursorrules)         # Agent instructions (from adapter)
+└── ...
 ```
+
+### Scope Hierarchy
+
+```
+Project (Accord manages cross-team + cross-module coordination)
+│
+├── Team A ←──── External Contract (OpenAPI) ────→ Team B
+│   │
+│   ├── Module X ←── Internal Contract (Java interface) ──→ Module Y
+│   │
+│   └── Module Z
+│
+└── Team C
+```
+
+The same protocol (request → approve → implement → complete) applies at both levels. An agent working on Module X that needs a new method from Module Y follows the exact same workflow as Team A requesting a new API from Team B.
 
 ## 5. Request File Format
 
+### External Request (Service-Level)
+
 ```yaml
 ---
-id: req-001
+id: req-001-add-policy-api
 from: device-manager
 to: nac-engine
-type: api-addition | api-change | api-deprecation | bug-report | question
-priority: low | medium | high | critical
-status: pending | approved | rejected | in-progress | completed
+scope: external
+type: api-addition
+priority: medium
+status: pending
 created: 2026-02-09T10:30:00Z
 updated: 2026-02-09T10:30:00Z
 related_contract: contracts/nac-engine.yaml
 ---
 
 ## What
-Brief description of what is needed.
+Need endpoint to query policies by device type.
 
 ## Proposed Change
-Concrete API change in OpenAPI format or pseudocode.
+GET /api/policies/by-device-type/{type}
+Response: { policies: Policy[], default_action: "allow" | "deny" }
 
 ## Why
-Business/technical justification.
+After device discovery, need to immediately look up default policy for that device type.
 
 ## Impact
-What the receiving team needs to implement.
-Estimated scope and affected components.
+- PolicyController: new endpoint
+- PolicyService: new findByDeviceType method
+- PolicyRepository: new query
+```
+
+### Internal Request (Module-Level)
+
+```yaml
+---
+id: req-012-plugin-priority-sort
+from: discovery
+to: plugin
+scope: internal
+type: interface-change
+priority: medium
+status: pending
+created: 2026-02-09T14:00:00Z
+updated: 2026-02-09T14:00:00Z
+related_contract: device-manager/.accord/internal-contracts/plugin-registry.md
+---
+
+## What
+Discovery module needs PluginRegistry to support priority-sorted queries.
+
+## Proposed Change
+```java
+// Add to PluginRegistry interface
+List<DevicePlugin> findByDeviceTypeSorted(String deviceType, SortOrder order);
+```
+
+## Why
+When multiple plugins handle the same device type, need to select by priority.
+
+## Impact
+- PluginRegistry interface: add one method
+- PluginRegistryImpl: implement with Comparator-based sorting
+- No breaking change to existing methods
 ```
 
 ## 6. State Machine
@@ -265,7 +354,25 @@ Examples:
 - **OpenAPI tooling**: Accord uses standard OpenAPI specs, so all existing tools (Swagger UI, mock generators, SDK generators) work out of the box.
 - **Git workflows**: Accord piggybacks on your existing Git workflow. It doesn't impose a branching strategy.
 
-## 10. Future Extensions (Not in MVP)
+## 10. Key Design Insight: Fractal Protocol
+
+The most important architectural decision in Accord is that **the same protocol applies at every granularity level**:
+
+```
+Organization level:  Team A ←→ Team B        (External contracts, OpenAPI)
+Service level:       Module X ←→ Module Y    (Internal contracts, Java interface)
+```
+
+The state machine is identical. The request format is identical (with a `scope` field). The Git operations are identical. The only things that change are:
+- The contract format (OpenAPI vs code-level interface)
+- The inbox granularity (team-level vs module-level)
+
+This means:
+1. Developers learn one protocol, apply it everywhere
+2. The framework codebase stays simple — no special cases for different scopes
+3. New granularity levels can be added without protocol changes
+
+## 11. Future Extensions (Not in MVP)
 
 - **MCP Server adapter**: For teams that want richer integration than file-based
 - **Dashboard**: Web UI to visualize cross-team request status
@@ -273,3 +380,6 @@ Examples:
 - **Conflict detection**: Automatic detection of breaking contract changes
 - **Metrics**: Track request turnaround time, team responsiveness
 - **Skill packs**: Pre-built skills for common patterns (REST CRUD, event-driven, etc.)
+- **Mock generation**: Auto-generate mock servers from OpenAPI contracts
+- **Contract diff**: Visual diff tool for contract changes across versions
+- **Multi-repo support**: Coordinate across multiple Git repositories
