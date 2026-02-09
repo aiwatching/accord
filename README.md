@@ -44,7 +44,8 @@ No servers. No message queues. No infrastructure. Just Git.
 ## Key Features
 
 - **Agent-agnostic**: Works with Claude Code, Cursor, GitHub Copilot, Codex, or any agent that can read files and run git
-- **Contract-first**: OpenAPI specs as the source of truth for all inter-service APIs
+- **Two-level contracts**: External contracts (OpenAPI) for service-level APIs + internal contracts (Java interface, Python Protocol, etc.) for module-level boundaries
+- **Fractal protocol**: Same state machine and workflow at every granularity — from cross-team REST APIs to intra-service Java interfaces
 - **Zero infrastructure**: Git is the message bus, file system is the database
 - **Human-in-the-loop**: Agents create requests, humans approve them
 - **Full traceability**: Every request, approval, and contract change is a git commit
@@ -60,11 +61,12 @@ cd your-project
 /path/to/accord/init.sh --adapter claude-code --teams "frontend,backend-api,backend-engine"
 
 # This creates:
-# - contracts/          (OpenAPI specs for each team)
-# - .agent-comms/       (inbox directories for each team)
+# - contracts/          (external OpenAPI specs for each team)
+# - .agent-comms/       (inbox directories for each team and module)
 # - .accord/            (configuration)
 # - CLAUDE.md updates   (protocol rules injected)
 # - slash commands       (check-inbox, send-request, etc.)
+# - {service}/.accord/internal-contracts/  (for services with sub-modules)
 ```
 
 Then start your agent. It will automatically check for incoming requests on session start.
@@ -73,20 +75,29 @@ Then start your agent. It will automatically check for incoming requests on sess
 
 ```
 your-project/
-├── contracts/
-│   ├── frontend.yaml
+├── contracts/                          # External Contract Registry
+│   ├── frontend.yaml                   # OpenAPI spec
 │   ├── backend-api.yaml
 │   └── backend-engine.yaml
-├── .agent-comms/
+├── .agent-comms/                       # Communication Layer
 │   ├── inbox/
-│   │   ├── frontend/
+│   │   ├── frontend/                   # Team-level inboxes
 │   │   ├── backend-api/
-│   │   └── backend-engine/
+│   │   ├── backend-engine/
+│   │   ├── plugin/                     # Module-level inboxes (if applicable)
+│   │   └── discovery/
 │   ├── archive/
 │   ├── PROTOCOL.md
 │   └── TEMPLATE.md
 ├── .accord/
 │   └── config.yaml
+├── backend-engine/                     # Service with sub-modules
+│   ├── .accord/
+│   │   └── internal-contracts/         # Internal Contract Registry
+│   │       ├── plugin-registry.md      # Code-level interface contract
+│   │       └── discovery-service.md
+│   ├── plugin/
+│   └── discovery/
 └── ... (your source code)
 ```
 
@@ -111,15 +122,16 @@ The **generic adapter** works with any agent that can read a markdown instructio
 ## Architecture
 
 ```
-┌───────────────────────────┐
-│      Adapter Layer        │  ← Agent-specific (CLAUDE.md, .cursorrules, etc.)
-├───────────────────────────┤
-│     Protocol Layer        │  ← Agent-agnostic (files + git)
-│  Contracts │ Messages │ Tasks │
-└───────────────────────────┘
+┌─────────────────────────────────┐
+│         Adapter Layer           │  ← Agent-specific (CLAUDE.md, .cursorrules, etc.)
+├─────────────────────────────────┤
+│        Protocol Layer           │  ← Agent-agnostic (files + git)
+│  Contracts │ Messages │ Tasks   │
+│  (external + internal)          │
+└─────────────────────────────────┘
 ```
 
-The protocol layer is the core — fully agent-agnostic, based on files and Git. Adapters are thin translation layers that inject protocol rules into each agent's native config format.
+The protocol layer is the core — fully agent-agnostic, based on files and Git. The same state machine and message format apply at every level: from cross-team REST APIs to intra-service code interfaces. Adapters are thin translation layers that inject protocol rules into each agent's native config format.
 
 ## Contributing
 

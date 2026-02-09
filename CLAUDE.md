@@ -10,9 +10,9 @@ Accord solves this with a file-based protocol layered on Git, so any agent that 
 ## Architecture: Two Layers
 
 ### Protocol Layer (agent-agnostic)
-- Contract Registry: OpenAPI specs as the source of truth for inter-service APIs
-- Message Protocol: request files in `.agent-comms/inbox/` for cross-team communication
-- Task Lifecycle: state machine governing request status transitions
+- Contract Registry: Two levels — external contracts (OpenAPI) for inter-service APIs, internal contracts (code-level interfaces) for intra-service modules
+- Message Protocol: request files in `.agent-comms/inbox/` for cross-team and cross-module communication
+- Task Lifecycle: state machine governing request status transitions (same at both levels — fractal protocol)
 - All based on Git + files. No external dependencies.
 
 ### Adapter Layer (agent-specific)
@@ -24,7 +24,8 @@ Accord solves this with a file-based protocol layered on Git, so any agent that 
 
 ## Key Design Decisions
 - Git as the message bus: git pull = receive, git push = send. Zero infrastructure.
-- OpenAPI as the contract format: industry standard, can auto-generate mock servers and client SDKs
+- Two-level contracts: OpenAPI for service-level APIs, code-level interfaces (Java/Python/TS) for module-level boundaries
+- Fractal protocol: same state machine and message format at every granularity level
 - File-based protocol: no databases, no message queues, no servers to deploy
 - Agent-agnostic core: the protocol layer has zero dependency on any specific AI tool
 - Adapters are thin: just template files that inject protocol rules into agent-specific config formats
@@ -36,12 +37,12 @@ Accord solves this with a file-based protocol layered on Git, so any agent that 
 - Optional: Node.js/Python CLI for advanced operations (later phase)
 
 ## Development Priorities
-1. PROTOCOL.md — complete the protocol specification (state machine, request format, contract rules)
-2. Templates — request.md.template, contract.yaml.template
-3. Init script — `accord init` to scaffold a project
+1. PROTOCOL.md — complete the protocol specification (state machine, request format, contract rules, two-level contracts)
+2. Templates — request.md.template, contract.yaml.template, internal-contract.md.template
+3. Init script — `accord init` to scaffold a project (including internal contract directories for services with modules)
 4. Claude Code adapter — first adapter implementation
 5. Generic adapter — fallback for any agent
-6. Example project — a realistic multi-service example
+6. Example project — a realistic multi-service example showing both external and internal contracts
 7. Additional adapters — Cursor, Codex, etc.
 
 ## Directory Structure
@@ -52,14 +53,16 @@ accord/
 ├── PROTOCOL.md                  # Core protocol specification
 ├── INTERFACE.md                 # Agent capability requirements
 ├── docs/
-│   └── DESIGN.md                # Full design document (architecture rationale)
+│   ├── DESIGN.md                # Full design document (architecture rationale)
+│   └── SESSION_CONTEXT.md       # Design session context (WHY behind decisions)
 ├── protocol/
 │   ├── state-machine.md         # Request state transitions
 │   ├── request-format.md        # Request file specification
 │   ├── contract-rules.md        # Contract management rules
 │   └── templates/
-│       ├── request.md.template  # Template for cross-team requests
-│       └── contract.yaml.template # Template for OpenAPI contracts
+│       ├── request.md.template           # Template for cross-boundary requests
+│       ├── contract.yaml.template        # Template for external OpenAPI contracts
+│       └── internal-contract.md.template # Template for internal code-level contracts
 ├── adapters/
 │   ├── claude-code/
 │   │   ├── CLAUDE.md.template
@@ -78,7 +81,7 @@ accord/
 │       └── AGENT_INSTRUCTIONS.md
 ├── init.sh                      # Project initialization script
 └── examples/
-    └── microservice-project/    # Complete usage example
+    └── microservice-project/    # Complete usage example (external + internal contracts)
 ```
 
 ## Code Conventions
