@@ -68,6 +68,7 @@ BACKUP_DIRS=()
 if [[ "$KEEP_CONTRACTS" == true && -d "$TARGET_DIR/.accord/contracts" ]]; then
     # Remove everything in .accord/ EXCEPT contracts/
     [[ -d "$TARGET_DIR/.accord/comms" ]] && REMOVE_DIRS+=(".accord/comms/")
+    [[ -d "$TARGET_DIR/.accord/hub" ]] && REMOVE_DIRS+=(".accord/hub/")
     [[ -f "$TARGET_DIR/.accord/config.yaml" ]] && REMOVE_FILES+=(".accord/config.yaml")
     [[ -f "$TARGET_DIR/.accord/accord-watch.sh" ]] && REMOVE_FILES+=(".accord/accord-watch.sh")
     [[ -d "$TARGET_DIR/.accord/adapter" ]] && REMOVE_DIRS+=(".accord/adapter/")
@@ -81,6 +82,7 @@ ACCORD_COMMANDS=(
     "accord-dispatch.md" "accord-init.md" "accord-scan.md"
     "accord-status.md" "accord-validate.md" "accord-log.md"
     "accord-check-inbox.md" "accord-send-request.md" "accord-complete-request.md"
+    "accord-sync.md"
     "check-inbox.md" "send-request.md" "complete-request.md"
 )
 for cmd in "${ACCORD_COMMANDS[@]}"; do

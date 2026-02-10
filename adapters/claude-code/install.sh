@@ -197,4 +197,4 @@ install_commands
 install_scanner_skill
 
 log "Claude Code adapter installation complete"
-log "Slash commands available: /accord-check-inbox, /accord-send-request, /accord-complete-request, /accord-scan"
+log "Slash commands available: /accord-check-inbox, /accord-send-request, /accord-complete-request, /accord-scan, /accord-sync"

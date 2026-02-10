@@ -462,9 +462,9 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TEST 9: Multi-repo config
+# TEST 9: Multi-repo config + sync lifecycle
 # ══════════════════════════════════════════════════════════════════════════════
-echo -e "\n${BOLD}[Test 9] Multi-repo config${NC}"
+echo -e "\n${BOLD}[Test 9] Multi-repo config + sync lifecycle${NC}"
 
 TEST9_DIR="$TMPDIR/test9"
 mkdir -p "$TEST9_DIR"
@@ -480,6 +480,99 @@ bash "$ACCORD_DIR/init.sh" \
 
 assert_contains "$TEST9_DIR/.accord/config.yaml" "multi-repo" "Config has multi-repo model"
 assert_contains "$TEST9_DIR/.accord/config.yaml" "git@github.com:org/accord-hub.git" "Config has hub URL"
+
+# Multi-repo sync lifecycle (local bare repo)
+TEST9_HUB="$TMPDIR/test9-hub.git"
+git init --bare "$TEST9_HUB" > /dev/null 2>&1
+
+# Initialize hub structure via temp clone
+TEST9_HUBINIT="$TMPDIR/test9-hubinit"
+git clone "$TEST9_HUB" "$TEST9_HUBINIT" > /dev/null 2>&1
+(
+    cd "$TEST9_HUBINIT"
+    git config user.email "test@accord.dev"
+    git config user.name "Accord Test"
+    mkdir -p .accord/contracts .accord/comms/inbox/svc-a .accord/comms/inbox/svc-b .accord/comms/archive
+    touch .accord/comms/inbox/svc-a/.gitkeep .accord/comms/inbox/svc-b/.gitkeep
+    git add -A && git commit -m "init hub" > /dev/null 2>&1
+    git push > /dev/null 2>&1
+)
+rm -rf "$TEST9_HUBINIT"
+
+# Create svc-a repo with local hub URL
+TEST9_SVCA="$TMPDIR/test9-svc-a"
+mkdir -p "$TEST9_SVCA"
+(cd "$TEST9_SVCA" && git init > /dev/null 2>&1 && git config user.email "test@accord.dev" && git config user.name "Accord Test")
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-multirepo" \
+    --repo-model multi-repo \
+    --services "svc-a,svc-b" \
+    --hub "$TEST9_HUB" \
+    --adapter none \
+    --target-dir "$TEST9_SVCA" \
+    --no-interactive > /dev/null 2>&1
+(cd "$TEST9_SVCA" && git add -A && git commit -m "init" > /dev/null 2>&1)
+
+# Init hub clone
+bash "$ACCORD_DIR/accord-sync.sh" init --target-dir "$TEST9_SVCA" --service-name svc-a > /dev/null 2>&1
+assert_dir "$TEST9_SVCA/.accord/hub/.git" "Sync init clones hub"
+
+# Create svc-b repo
+TEST9_SVCB="$TMPDIR/test9-svc-b"
+mkdir -p "$TEST9_SVCB"
+(cd "$TEST9_SVCB" && git init > /dev/null 2>&1 && git config user.email "test@accord.dev" && git config user.name "Accord Test")
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-multirepo" \
+    --repo-model multi-repo \
+    --services "svc-b,svc-a" \
+    --hub "$TEST9_HUB" \
+    --adapter none \
+    --target-dir "$TEST9_SVCB" \
+    --no-interactive > /dev/null 2>&1
+(cd "$TEST9_SVCB" && git add -A && git commit -m "init" > /dev/null 2>&1)
+bash "$ACCORD_DIR/accord-sync.sh" init --target-dir "$TEST9_SVCB" --service-name svc-b > /dev/null 2>&1
+
+# svc-a creates a request for svc-b and pushes
+mkdir -p "$TEST9_SVCA/.accord/comms/inbox/svc-b"
+cat > "$TEST9_SVCA/.accord/comms/inbox/svc-b/req-001-test-sync.md" <<'EOF'
+---
+id: req-001-test-sync
+from: svc-a
+to: svc-b
+scope: external
+type: api-addition
+priority: medium
+status: pending
+created: 2026-02-10T10:00:00Z
+updated: 2026-02-10T10:00:00Z
+related_contract: .accord/contracts/svc-b.yaml
+---
+
+## What
+
+Test sync request.
+
+## Proposed Change
+
+```yaml
+GET /api/test
+```
+
+## Why
+
+Testing multi-repo sync.
+
+## Impact
+
+None.
+EOF
+
+bash "$ACCORD_DIR/accord-sync.sh" push --target-dir "$TEST9_SVCA" --service-name svc-a > /dev/null 2>&1
+
+# svc-b pulls and receives the request
+bash "$ACCORD_DIR/accord-sync.sh" pull --target-dir "$TEST9_SVCB" --service-name svc-b > /dev/null 2>&1
+assert_file "$TEST9_SVCB/.accord/comms/inbox/svc-b/req-001-test-sync.md" "Sync: request delivered via hub"
+assert_contains "$TEST9_SVCB/.accord/comms/inbox/svc-b/req-001-test-sync.md" "status: pending" "Sync: request has correct status"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TEST 10: Sync mode — auto-poll creates watch script

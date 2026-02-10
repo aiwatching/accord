@@ -739,6 +739,12 @@ print_summary() {
     echo "    2. git add .accord && git commit -m 'accord: init project'"
     echo "    3. Start your agent — it will check the inbox on start"
     [[ "$SYNC_MODE" == "auto-poll" ]] && echo "    4. Run: .accord/accord-watch.sh &"
+    if [[ "$REPO_MODEL" == "multi-repo" ]]; then
+        echo ""
+        echo "  Multi-repo setup detected. To connect to the hub:"
+        echo "    accord-sync.sh init --target-dir ."
+        echo "  Then use 'accord-sync.sh pull' and 'accord-sync.sh push' to sync."
+    fi
     echo ""
 }
 
