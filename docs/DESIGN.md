@@ -92,6 +92,13 @@ Both levels use the same state machine, message protocol, and Git operations. Th
 - Supports multiple languages/frameworks (Java/Spring, Python/FastAPI, TypeScript/Express, Go)
 - Each adapter wraps the scanner in its own way: Claude Code uses a Skill + slash command, Cursor embeds in .cursorrules, Generic adapter references SCAN_INSTRUCTIONS.md directly
 
+#### Module Registry
+- Location: `.accord/registry/{name}.md`
+- One registry file per service or module, generated at init
+- Declares: responsibility, data ownership, capabilities, dependencies
+- Agents use the registry for **task routing**: determining which module owns the data involved in a task, and whether to implement directly or create a cross-boundary request
+- Format: Markdown with YAML frontmatter (see `protocol/registry-format.md`)
+
 #### Task Lifecycle
 - State machine governing request status transitions
 - States: pending → approved → in-progress → completed (or rejected)
@@ -128,10 +135,14 @@ Required behaviors (injected by adapter):
 
 | Behavior     | Trigger                                           |
 |-------------|---------------------------------------------------|
-| ON_START    | Session start → git pull + check inbox             |
+| ON_START    | Session start → read config + registry, sync, check inbox |
+| ON_ROUTE    | Task involves other modules → read registry, check contracts, decide strategy |
 | ON_NEED_API | Need another module's API → create request file     |
-| ON_COMPLETE | Finished cross-boundary task → archive + update contract |
+| ON_COMPLETE | Finished cross-boundary task → archive + update contract + sync to hub |
+| ON_DISPATCH | Multi-module feature → break into per-module tasks, spawn subagents |
+| ON_SCAN     | Contract generation → analyze source, generate draft contracts |
 | ON_CONFLICT | Contract conflict detected → notify user           |
+| ON_LOG      | Every protocol action (if debug enabled) → write JSONL entry |
 
 ## 4. Repository Models
 
@@ -168,7 +179,17 @@ Each service has its own repo. A shared **Accord Hub** repo centralizes contract
 └──────────────┘   └─────────────┘  └──────────────┘
 ```
 
-### 4.3 Contract Sync (Multi-Repo)
+### 4.3 Hub Write Rules (Multi-Repo)
+
+In multi-repo mode, the local `.accord/` directory is the authoritative write target:
+- Agents edit files in `.accord/contracts/` and `.accord/comms/`
+- `accord-sync.sh push` copies local → hub
+- `accord-sync.sh pull` copies hub → local
+- `.accord/hub/` is a local clone used for exchange — agents never edit it directly
+
+Push auto-retries with rebase on conflict (up to 3 attempts). Template contracts (from init) are not pushed to hub, and real contracts from hub are not overwritten by templates.
+
+### 4.4 Contract Sync (Multi-Repo)
 
 In multi-repo mode, `accord sync` pushes contracts from service repos to the hub:
 
@@ -182,7 +203,7 @@ accord-hub/contracts/device-manager.yaml  → hub copy
 accord-hub/contracts/internal/device-manager/plugin.md → hub backup
 ```
 
-### 4.4 Scope Hierarchy
+### 4.5 Scope Hierarchy
 
 ```
 Project (Accord manages cross-service + cross-module coordination)
@@ -390,7 +411,35 @@ This means:
 2. The framework codebase stays simple — no special cases for different scopes
 3. New granularity levels can be added without protocol changes
 
-## 11. Future Extensions (Not in MVP)
+## 11. Sync Modes
+
+Accord supports three modes for checking incoming requests, configured via `--sync-mode` at init:
+
+| Mode | How it works | Best for |
+|------|-------------|----------|
+| `on-action` | Agent auto-checks inbox before/after operations (ON_ACTION behavior) | Most projects (default) |
+| `auto-poll` | Background `accord-watch.sh` polls every 5 minutes | Long-running sessions |
+| `manual` | User explicitly runs `/accord-check-inbox` | Full control |
+
+`auto-poll` generates `.accord/accord-watch.sh` at init time. The script runs `git pull` + hub sync on a timer, copies new requests to local inbox, and reports counts. It handles **pull only** — push is always triggered by the agent after completing an action.
+
+## 12. Debug Logging
+
+When `settings.debug: true` in `.accord/config.yaml`, agents write structured JSONL logs to `.accord/log/`. Each session creates one file (`{timestamp}_{module}.jsonl`). Log files are gitignored.
+
+Logged actions: `session_start`, `inbox_check`, `request_create`, `contract_update`, `git_pull`, `git_push`, and all state transitions. Each entry includes `ts`, `session`, `module`, `action`, `category`, `detail`, and optional fields like `request_id`, `status_from`, `status_to`.
+
+Logs can be viewed via `/accord-log` command, the CLI tool `accord-log.sh`, or by dragging `.jsonl` files onto the web-based timeline viewer (`protocol/debug/viewer.html`).
+
+## 13. Idempotency and Safety
+
+**Init idempotency**: Running `init.sh` twice safely exits with "Already initialized" on the second run. Use `--force` to re-initialize — existing contracts and registry files are preserved (file-exists checks prevent overwriting).
+
+**Template protection**: Contract files generated from templates (detected by the `# Accord External Contract Template` header) are not pushed to hub. Real contracts from hub are not overwritten by templates during pull.
+
+**Push retry**: `accord-sync.sh push` auto-retries with rebase on conflict (up to 3 attempts), handling the common case of concurrent pushes from different services.
+
+## 14. Future Extensions (Not in MVP)
 
 - **MCP Server adapter**: For services that want richer integration than file-based
 - **Dashboard**: Web UI to visualize cross-service request status
