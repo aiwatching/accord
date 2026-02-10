@@ -12,6 +12,7 @@ You are an AI coding agent participating in the **{{PROJECT_NAME}}** project via
 - **External contracts**: `{{CONTRACTS_DIR}}`
 - **Internal contracts**: `{{INTERNAL_CONTRACTS_DIR}}`
 - **Communications**: `{{COMMS_DIR}}`
+- **Sync mode**: `{{SYNC_MODE}}`
 
 ## ON START (Every Session)
 
@@ -25,6 +26,18 @@ When a conversation starts:
    - Number of pending/approved requests (grouped by scope)
    - Summary of each (id, from, type, priority, status)
 6. Check `git log --oneline -10` for recent contract changes
+
+## ON_ACTION (Sync Before Operations)
+
+**If sync mode is `on-action`:** Before starting any implementation task (coding, contract update, request handling), run a quick sync:
+
+1. `git pull` to get latest changes
+2. Check inbox for any new requests that might affect the current task
+3. If new relevant requests exist, inform the user before proceeding
+
+This ensures you always work against the latest contracts and don't miss incoming requests between session start and implementation.
+
+**If sync mode is `manual` or `auto-poll`:** Skip this — the user handles sync themselves.
 
 ## Contract Rules
 

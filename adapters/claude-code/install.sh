@@ -23,6 +23,7 @@ MODULE_LIST=""
 CONTRACTS_DIR="contracts/"
 INTERNAL_CONTRACTS_DIR=""
 COMMS_DIR=".agent-comms/"
+SYNC_MODE="on-action"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -60,6 +61,7 @@ while [[ $# -gt 0 ]]; do
         --contracts-dir)          CONTRACTS_DIR="$2"; shift 2 ;;
         --internal-contracts-dir) INTERNAL_CONTRACTS_DIR="$2"; shift 2 ;;
         --comms-dir)              COMMS_DIR="$2"; shift 2 ;;
+        --sync-mode)              SYNC_MODE="$2"; shift 2 ;;
         *)                        err "Unknown option: $1" ;;
     esac
 done
@@ -95,7 +97,8 @@ inject_claude_md() {
         "MODULE_LIST" "${MODULE_LIST:-none}" \
         "CONTRACTS_DIR" "$CONTRACTS_DIR" \
         "INTERNAL_CONTRACTS_DIR" "${INTERNAL_CONTRACTS_DIR:-N/A}" \
-        "COMMS_DIR" "$COMMS_DIR"
+        "COMMS_DIR" "$COMMS_DIR" \
+        "SYNC_MODE" "$SYNC_MODE"
     accord_block="$(cat "$tmp_block")"
     rm -f "$tmp_block"
 

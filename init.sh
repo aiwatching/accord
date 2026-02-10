@@ -3,8 +3,8 @@
 # Scaffolds directory structure, config files, and adapter installation.
 #
 # Usage:
-#   ./init.sh                                           # Interactive mode
-#   ./init.sh --project-name my-project --teams "a,b"   # Flags mode
+#   cd your-project && ~/.accord/init.sh        # Interactive (auto-detects everything)
+#   ~/.accord/init.sh --no-interactive           # Use auto-detected defaults without prompts
 #
 # See --help for all options.
 
@@ -15,9 +15,9 @@ ACCORD_DIR="$(cd "$(dirname "$0")" && pwd)"
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
 PROJECT_NAME=""
-REPO_MODEL=""
+REPO_MODEL="monorepo"
 TEAMS=""
-ADAPTER="none"
+ADAPTER=""
 SERVICE=""
 MODULES=""
 HUB=""
@@ -25,6 +25,7 @@ LANGUAGE="java"
 TARGET_DIR="."
 INTERACTIVE=true
 SCAN=false
+SYNC_MODE=""
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -32,45 +33,44 @@ usage() {
     cat <<'HELP'
 Usage: init.sh [options]
 
+Run in your project directory. Auto-detects project name, client, teams, and modules.
+
 Options:
-  --project-name <name>       Project name (required)
+  --project-name <name>       Override auto-detected project name
+  --teams <csv>               Override auto-detected team names
+  --adapter <name>            Override auto-detected client (claude-code|cursor|codex|generic|none)
+  --sync-mode <mode>          on-action | auto-poll | manual (default: on-action)
+  --service <name>            Team directory that has sub-modules (auto-detects modules)
+  --modules <csv>             Explicit module names (overrides auto-detection)
   --repo-model <model>        monorepo | multi-repo (default: monorepo)
-  --teams <csv>               Comma-separated team names (required)
-  --adapter <name>            claude-code | cursor | codex | generic | none (default: none)
-  --scan                      After scaffolding, output scan prompts for contract generation
-  --service <name>            Service name (for service-level config with modules)
-  --modules <csv>             Comma-separated module names within the service
   --hub <git-url>             Hub repo URL (multi-repo only)
   --language <lang>           java | python | typescript | go (default: java)
+  --scan                      After scaffolding, run contract scan
   --target-dir <path>         Target directory (default: current directory)
-  --no-interactive            Skip interactive prompts, use flags only
+  --no-interactive            Use auto-detected defaults without prompts
   --help                      Show this help message
 
 Examples:
-  # Interactive mode
-  ./init.sh
+  # Auto-detect everything (recommended)
+  cd your-project && ~/.accord/init.sh
 
-  # Monorepo with Claude Code adapter
-  ./init.sh --project-name next-nac \
-            --repo-model monorepo \
-            --teams "frontend,nac-engine,device-manager,nac-admin" \
-            --adapter claude-code \
-            --no-interactive
+  # Non-interactive with all auto-detection
+  ~/.accord/init.sh --no-interactive
 
-  # Service with sub-modules
-  ./init.sh --project-name next-nac \
-            --repo-model monorepo \
-            --teams "frontend,nac-engine,device-manager" \
-            --service device-manager \
-            --modules "plugin,discovery,lifecycle" \
-            --language java \
-            --no-interactive
+  # Override specific values
+  ~/.accord/init.sh --teams "frontend,backend,engine" --sync-mode auto-poll
 HELP
 }
 
 log() { echo "[accord] $*"; }
 warn() { echo "[accord] WARNING: $*" >&2; }
 err() { echo "[accord] ERROR: $*" >&2; exit 1; }
+
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+DIM='\033[2m'
+BOLD='\033[1m'
+NC='\033[0m'
 
 # Portable sed in-place: avoids macOS vs Linux -i differences
 sed_inplace() {
@@ -92,6 +92,125 @@ replace_vars() {
     done
 }
 
+# ── Auto-Detection ──────────────────────────────────────────────────────────
+
+# List subdirectories, excluding hidden/build/tool dirs
+list_subdirs() {
+    local dir="$1"
+    local results=""
+    for d in "$dir"/*/; do
+        [[ ! -d "$d" ]] && continue
+        local name
+        name="$(basename "$d")"
+        case "$name" in
+            .*|node_modules|build|dist|target|out|__pycache__|\
+.accord|.agent-comms|.git|.idea|.vscode|.cursor|.claude|\
+contracts|docs|examples|protocol|adapters|vendor|venv|env) continue ;;
+        esac
+        if [[ -n "$results" ]]; then
+            results="$results,$name"
+        else
+            results="$name"
+        fi
+    done
+    echo "$results"
+}
+
+# Detect project name from IDE/build files or directory name
+detect_project_name() {
+    local dir="$1"
+
+    # package.json
+    if [[ -f "$dir/package.json" ]]; then
+        local name
+        name="$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$dir/package.json" | head -1)"
+        if [[ -n "$name" && "$name" != "."* ]]; then
+            echo "$name"; return
+        fi
+    fi
+
+    # settings.gradle / settings.gradle.kts
+    for gf in "$dir/settings.gradle" "$dir/settings.gradle.kts"; do
+        if [[ -f "$gf" ]]; then
+            local name
+            name="$(sed -n "s/.*rootProject\.name[[:space:]]*=[[:space:]]*['\"\`]\([^'\"\`]*\)['\"\`].*/\1/p" "$gf" | head -1)"
+            if [[ -n "$name" ]]; then
+                echo "$name"; return
+            fi
+        fi
+    done
+
+    # pom.xml (top-level artifactId)
+    if [[ -f "$dir/pom.xml" ]]; then
+        local name
+        name="$(sed -n '/<parent>/,/<\/parent>/d; s/.*<artifactId>\([^<]*\)<\/artifactId>.*/\1/p' "$dir/pom.xml" | head -1)"
+        if [[ -n "$name" ]]; then
+            echo "$name"; return
+        fi
+    fi
+
+    # pyproject.toml
+    if [[ -f "$dir/pyproject.toml" ]]; then
+        local name
+        name="$(sed -n 's/^name[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$dir/pyproject.toml" | head -1)"
+        if [[ -n "$name" ]]; then
+            echo "$name"; return
+        fi
+    fi
+
+    # .idea/.name (IntelliJ)
+    if [[ -f "$dir/.idea/.name" ]]; then
+        local name
+        name="$(head -1 "$dir/.idea/.name" | tr -d '[:space:]')"
+        if [[ -n "$name" ]]; then
+            echo "$name"; return
+        fi
+    fi
+
+    # Fallback: directory name
+    basename "$(cd "$dir" && pwd)"
+}
+
+# Detect AI client from project config directories
+detect_adapter() {
+    local dir="$1"
+
+    if [[ -d "$dir/.claude" || -f "$dir/CLAUDE.md" ]]; then
+        echo "claude-code"; return
+    fi
+    if [[ -d "$dir/.cursor" || -f "$dir/.cursorrules" ]]; then
+        echo "cursor"; return
+    fi
+    if [[ -f "$dir/AGENTS.md" ]]; then
+        echo "codex"; return
+    fi
+
+    echo "none"
+}
+
+# Detect language from project files
+detect_language() {
+    local dir="$1"
+
+    if [[ -f "$dir/pom.xml" || -f "$dir/build.gradle" || -f "$dir/build.gradle.kts" ]]; then
+        echo "java"; return
+    fi
+    if [[ -f "$dir/pyproject.toml" || -f "$dir/setup.py" || -f "$dir/requirements.txt" ]]; then
+        echo "python"; return
+    fi
+    if [[ -f "$dir/tsconfig.json" ]]; then
+        echo "typescript"; return
+    fi
+    if [[ -f "$dir/go.mod" ]]; then
+        echo "go"; return
+    fi
+    if [[ -f "$dir/package.json" ]]; then
+        echo "typescript"; return
+    fi
+
+    echo "java"
+}
+
 # ── Argument Parsing ─────────────────────────────────────────────────────────
 
 parse_args() {
@@ -101,6 +220,7 @@ parse_args() {
             --repo-model)     REPO_MODEL="$2"; shift 2 ;;
             --teams)          TEAMS="$2"; shift 2 ;;
             --adapter)        ADAPTER="$2"; shift 2 ;;
+            --sync-mode)      SYNC_MODE="$2"; shift 2 ;;
             --service)        SERVICE="$2"; shift 2 ;;
             --modules)        MODULES="$2"; shift 2 ;;
             --hub)            HUB="$2"; shift 2 ;;
@@ -117,47 +237,139 @@ parse_args() {
 # ── Interactive Prompts ──────────────────────────────────────────────────────
 
 interactive_prompt() {
+    local abs_target
+    abs_target="$(cd "$TARGET_DIR" && pwd)"
+
     echo ""
-    echo "=== Accord Project Initialization ==="
+    echo -e "${BOLD}=== Accord Project Initialization ===${NC}"
     echo ""
+
+    # ── Auto-detect and display ──────────────────────────────────────────
+
+    local detected_name
+    detected_name="$(detect_project_name "$abs_target")"
+
+    local detected_adapter
+    if [[ -z "$ADAPTER" ]]; then
+        detected_adapter="$(detect_adapter "$abs_target")"
+    else
+        detected_adapter="$ADAPTER"
+    fi
+
+    local detected_lang
+    detected_lang="$(detect_language "$abs_target")"
+    LANGUAGE="$detected_lang"
+
+    local detected_teams
+    detected_teams="$(list_subdirs "$abs_target")"
+
+    # ── Show what we found ───────────────────────────────────────────────
+
+    echo -e "  ${DIM}Scanning project directory...${NC}"
+    echo ""
+    echo -e "  Project name:  ${GREEN}${detected_name}${NC}"
+    [[ "$detected_adapter" != "none" ]] && \
+        echo -e "  Client:        ${GREEN}${detected_adapter}${NC} ${DIM}(detected)${NC}"
+    echo -e "  Language:      ${GREEN}${detected_lang}${NC}"
+    if [[ -n "$detected_teams" ]]; then
+        echo -e "  Directories:   ${GREEN}${detected_teams}${NC}"
+    fi
+    echo ""
+
+    # ── Confirm project name ─────────────────────────────────────────────
 
     if [[ -z "$PROJECT_NAME" ]]; then
-        read -r -p "Project name: " PROJECT_NAME
+        read -r -p "  Project name [$detected_name]: " input
+        PROJECT_NAME="${input:-$detected_name}"
     fi
 
-    if [[ -z "$REPO_MODEL" ]]; then
-        read -r -p "Repository model (monorepo/multi-repo) [monorepo]: " REPO_MODEL
-        REPO_MODEL="${REPO_MODEL:-monorepo}"
-    fi
+    # ── Confirm teams ────────────────────────────────────────────────────
 
     if [[ -z "$TEAMS" ]]; then
-        read -r -p "Team names (comma-separated): " TEAMS
+        if [[ -n "$detected_teams" ]]; then
+            read -r -p "  Teams (edit or Enter to confirm) [$detected_teams]: " input
+            TEAMS="${input:-$detected_teams}"
+        else
+            read -r -p "  Team names (comma-separated): " TEAMS
+        fi
     fi
 
-    if [[ "$REPO_MODEL" == "multi-repo" && -z "$HUB" ]]; then
-        read -r -p "Hub repo URL: " HUB
-    fi
+    [[ -z "$TEAMS" ]] && err "At least one team is required"
+
+    # ── Detect modules in each team directory ────────────────────────────
 
     if [[ -z "$SERVICE" ]]; then
-        read -r -p "Service with sub-modules? (name or empty to skip): " SERVICE
+        IFS=',' read -ra _teams <<< "$TEAMS"
+        for _team in "${_teams[@]}"; do
+            _team="$(echo "$_team" | xargs)"
+            local team_dir="$abs_target/$_team"
+            if [[ -d "$team_dir" ]]; then
+                local detected_mods
+                detected_mods="$(list_subdirs "$team_dir")"
+                if [[ -n "$detected_mods" ]]; then
+                    echo ""
+                    echo -e "  ${CYAN}$_team/${NC} has sub-modules: ${GREEN}$detected_mods${NC}"
+                    read -r -p "  Use these as modules? (y/n/edit) [y]: " confirm
+                    confirm="${confirm:-y}"
+                    if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+                        SERVICE="$_team"
+                        MODULES="$detected_mods"
+                    elif [[ "$confirm" != "n" && "$confirm" != "N" ]]; then
+                        SERVICE="$_team"
+                        MODULES="$confirm"
+                    fi
+                    [[ -n "$SERVICE" ]] && break
+                fi
+            fi
+        done
     fi
 
+    # If --service was passed but no modules, auto-detect
     if [[ -n "$SERVICE" && -z "$MODULES" ]]; then
-        read -r -p "Module names for $SERVICE (comma-separated): " MODULES
+        local svc_dir="$abs_target/$SERVICE"
+        if [[ -d "$svc_dir" ]]; then
+            MODULES="$(list_subdirs "$svc_dir")"
+            if [[ -n "$MODULES" ]]; then
+                echo -e "  Auto-detected modules in $SERVICE/: ${GREEN}$MODULES${NC}"
+            else
+                read -r -p "  No subdirectories found in $SERVICE/. Module names (comma-separated, empty to skip): " MODULES
+            fi
+        fi
     fi
 
-    if [[ -n "$SERVICE" && -n "$MODULES" && "$LANGUAGE" == "java" ]]; then
-        read -r -p "Language for module contracts (java/python/typescript/go) [java]: " lang_input
-        LANGUAGE="${lang_input:-java}"
+    # ── Confirm adapter ──────────────────────────────────────────────────
+
+    if [[ -z "$ADAPTER" ]]; then
+        if [[ "$detected_adapter" != "none" ]]; then
+            read -r -p "  Adapter [$detected_adapter]: " input
+            ADAPTER="${input:-$detected_adapter}"
+        else
+            read -r -p "  Adapter (claude-code/cursor/codex/generic/none) [none]: " input
+            ADAPTER="${input:-none}"
+        fi
     fi
 
-    if [[ "$ADAPTER" == "none" ]]; then
-        read -r -p "Install adapter? (claude-code/cursor/codex/generic/none) [none]: " ADAPTER
-        ADAPTER="${ADAPTER:-none}"
+    # ── Sync mode ────────────────────────────────────────────────────────
+
+    if [[ -z "$SYNC_MODE" ]]; then
+        echo ""
+        echo "  Sync mode — how agents check for incoming requests:"
+        echo -e "    ${BOLD}1${NC}. on-action   — agent auto-checks before/after operations ${DIM}(recommended)${NC}"
+        echo -e "    ${BOLD}2${NC}. auto-poll   — background script pulls every 5 minutes"
+        echo -e "    ${BOLD}3${NC}. manual      — you run /check-inbox explicitly"
+        read -r -p "  Choice [1]: " sync_choice
+        case "${sync_choice:-1}" in
+            1|on-action)  SYNC_MODE="on-action" ;;
+            2|auto-poll)  SYNC_MODE="auto-poll" ;;
+            3|manual)     SYNC_MODE="manual" ;;
+            *)            SYNC_MODE="on-action" ;;
+        esac
     fi
+
+    # ── Scan ─────────────────────────────────────────────────────────────
 
     if [[ "$SCAN" == false ]]; then
-        read -r -p "Auto-scan source code for contracts? (y/n) [n]: " scan_input
+        read -r -p "  Auto-scan source code for contracts? (y/n) [n]: " scan_input
         [[ "$scan_input" == "y" || "$scan_input" == "Y" ]] && SCAN=true
     fi
 }
@@ -165,10 +377,9 @@ interactive_prompt() {
 # ── Validation ───────────────────────────────────────────────────────────────
 
 validate_inputs() {
-    [[ -z "$PROJECT_NAME" ]] && err "Project name is required (--project-name)"
-    [[ -z "$TEAMS" ]] && err "At least one team is required (--teams)"
+    [[ -z "$PROJECT_NAME" ]] && err "Project name is required (--project-name or auto-detect)"
+    [[ -z "$TEAMS" ]] && err "At least one team is required (--teams or auto-detect)"
 
-    REPO_MODEL="${REPO_MODEL:-monorepo}"
     [[ "$REPO_MODEL" != "monorepo" && "$REPO_MODEL" != "multi-repo" ]] && \
         err "Invalid repo model: $REPO_MODEL (must be monorepo or multi-repo)"
 
@@ -180,6 +391,19 @@ validate_inputs() {
         err "Service name is required when modules are specified (--service)"
     fi
 
+    # Auto-detect modules from directory if --service given without --modules
+    if [[ -n "$SERVICE" && -z "$MODULES" ]]; then
+        local svc_dir="$TARGET_DIR/$SERVICE"
+        if [[ -d "$svc_dir" ]]; then
+            MODULES="$(list_subdirs "$svc_dir")"
+            [[ -n "$MODULES" ]] && log "Auto-detected modules in $SERVICE/: $MODULES"
+        fi
+    fi
+
+    # Defaults
+    SYNC_MODE="${SYNC_MODE:-on-action}"
+    ADAPTER="${ADAPTER:-none}"
+
     case "$LANGUAGE" in
         java|python|typescript|go) ;;
         *) err "Invalid language: $LANGUAGE (must be java, python, typescript, or go)" ;;
@@ -188,6 +412,11 @@ validate_inputs() {
     case "$ADAPTER" in
         claude-code|cursor|codex|generic|none) ;;
         *) err "Invalid adapter: $ADAPTER (must be claude-code, cursor, codex, generic, or none)" ;;
+    esac
+
+    case "$SYNC_MODE" in
+        on-action|auto-poll|manual) ;;
+        *) err "Invalid sync mode: $SYNC_MODE (must be on-action, auto-poll, or manual)" ;;
     esac
 }
 
@@ -229,6 +458,7 @@ repo_model: ${REPO_MODEL}${hub_line}
 teams:${teams_yaml}
 
 settings:
+  sync_mode: ${SYNC_MODE}
   auto_pull_on_start: true
   require_human_approval: true
   archive_completed: true
@@ -442,6 +672,71 @@ PROTO
     log "Created $output_file"
 }
 
+# ── Watch Script (auto-poll sync mode) ──────────────────────────────────────
+
+generate_watch_script() {
+    [[ "$SYNC_MODE" != "auto-poll" ]] && return
+
+    local watch_file="$TARGET_DIR/.accord/accord-watch.sh"
+
+    if [[ -f "$watch_file" ]]; then
+        warn "Watch script already exists: $watch_file (skipping)"
+        return
+    fi
+
+    cat > "$watch_file" <<'WATCH'
+#!/usr/bin/env bash
+# Accord Watch — auto-poll for incoming requests
+# Runs in the background, pulls every INTERVAL seconds, reports new requests.
+#
+# Usage:
+#   .accord/accord-watch.sh &              # run in background
+#   .accord/accord-watch.sh --interval 60  # custom interval (seconds)
+#   kill %1                                 # stop it
+
+set -euo pipefail
+
+INTERVAL=300  # default: 5 minutes
+COMMS_DIR=".agent-comms"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --interval) INTERVAL="$2"; shift 2 ;;
+        *) echo "Unknown option: $1"; exit 1 ;;
+    esac
+done
+
+log() { echo "[accord-watch] $(date '+%H:%M:%S') $*"; }
+
+log "Started — polling every ${INTERVAL}s (pid $$)"
+
+while true; do
+    sleep "$INTERVAL"
+
+    # Pull latest
+    if git pull --quiet 2>/dev/null; then
+        # Count new request files
+        count=0
+        for inbox_dir in "$COMMS_DIR"/inbox/*/; do
+            [[ ! -d "$inbox_dir" ]] && continue
+            for f in "$inbox_dir"req-*.md; do
+                [[ -f "$f" ]] && count=$((count + 1))
+            done
+        done
+
+        if [[ "$count" -gt 0 ]]; then
+            log "Found $count pending request(s) in inbox"
+        fi
+    else
+        log "git pull failed (offline?)"
+    fi
+done
+WATCH
+
+    chmod +x "$watch_file"
+    log "Created $watch_file (run with: .accord/accord-watch.sh &)"
+}
+
 # ── Adapter Installation ─────────────────────────────────────────────────────
 
 install_adapter() {
@@ -472,6 +767,7 @@ install_adapter() {
             --team-list "$TEAMS" \
             --contracts-dir "contracts/" \
             --comms-dir ".agent-comms/" \
+            --sync-mode "$SYNC_MODE" \
             ${modules_arg:+$modules_arg} \
             ${internal_dir:+--internal-contracts-dir "$internal_dir"}
 
@@ -574,42 +870,37 @@ run_scan() {
 
 print_summary() {
     echo ""
-    echo "=== Accord initialization complete ==="
+    echo -e "${BOLD}=== Accord initialization complete ===${NC}"
     echo ""
-    echo "  Project:    $PROJECT_NAME"
-    echo "  Repo model: $REPO_MODEL"
-    echo "  Teams:      $TEAMS"
-    [[ -n "$SERVICE" ]] && echo "  Service:    $SERVICE (modules: $MODULES)"
-    [[ "$ADAPTER" != "none" ]] && echo "  Adapter:    $ADAPTER"
+    echo -e "  Project:    ${GREEN}$PROJECT_NAME${NC}"
+    echo -e "  Teams:      ${GREEN}$TEAMS${NC}"
+    [[ -n "$SERVICE" ]] && echo -e "  Modules:    ${GREEN}$SERVICE/ → $MODULES${NC}"
+    [[ "$ADAPTER" != "none" ]] && echo -e "  Adapter:    ${GREEN}$ADAPTER${NC}"
+    echo -e "  Sync mode:  ${GREEN}$SYNC_MODE${NC}"
     echo ""
-    echo "Created structure:"
-    echo "  .accord/config.yaml          — Project configuration"
-    echo "  contracts/                    — External contracts (one per team)"
-    echo "  .agent-comms/                — Communication directory"
-    echo "  .agent-comms/inbox/{team}/   — Team inboxes"
-    echo "  .agent-comms/PROTOCOL.md     — Protocol reference"
-    echo "  .agent-comms/TEMPLATE.md     — Request template"
+    echo "  Created structure:"
+    echo "    .accord/config.yaml          — Project configuration"
+    echo "    contracts/                    — External contracts (one per team)"
+    echo "    .agent-comms/inbox/{team}/   — Team inboxes"
+    echo "    .agent-comms/PROTOCOL.md     — Protocol reference"
     if [[ -n "$SERVICE" ]]; then
-        echo "  $SERVICE/.accord/config.yaml — Service configuration"
-        echo "  $SERVICE/.accord/internal-contracts/ — Collected module contracts"
-        echo "  $SERVICE/.agent-comms/       — Module communication"
+        echo "    $SERVICE/.accord/            — Service config + internal contracts"
+        echo "    $SERVICE/.agent-comms/       — Module communication"
+    fi
+    if [[ "$SYNC_MODE" == "auto-poll" ]]; then
+        echo "    .accord/accord-watch.sh      — Background polling script"
     fi
     echo ""
-    echo "Next steps:"
+    echo "  Next steps:"
     if [[ "$SCAN" == true ]]; then
-        echo "  1. Review generated contracts (status: draft) and change to 'stable' when ready"
+        echo "    1. Review generated contracts (status: draft) and change to 'stable'"
     else
-        echo "  1. Edit contracts in contracts/ to match your actual APIs"
-        echo "     Or run with --scan to auto-generate from source code"
+        echo "    1. Edit contracts in contracts/ to match your actual APIs"
     fi
-    if [[ -n "$SERVICE" ]]; then
-        echo "  2. Edit internal contracts in $SERVICE/{module}/.accord/contract.md"
-    fi
-    echo "  3. Commit the scaffolded structure: git add -A && git commit -m 'accord: init project'"
-    echo "  4. Each team member starts their agent — it will check the inbox on start"
-    if [[ "$ADAPTER" == "claude-code" ]]; then
-        echo ""
-        echo "  Claude Code users: use /accord-init for a fully automated setup experience"
+    echo "    2. git add -A && git commit -m 'accord: init project'"
+    echo "    3. Start your agent — it will check the inbox on start"
+    if [[ "$SYNC_MODE" == "auto-poll" ]]; then
+        echo "    4. Run: .accord/accord-watch.sh &"
     fi
     echo ""
 }
@@ -622,22 +913,48 @@ main() {
     # Auto-disable interactive mode when stdin is not a terminal (e.g., curl | bash)
     if [[ "$INTERACTIVE" == true ]] && ! tty -s 2>/dev/null; then
         INTERACTIVE=false
-        if [[ -z "$PROJECT_NAME" ]]; then
-            err "Piped input detected — interactive prompts unavailable. Pass flags instead:
-  curl ... | bash -s -- --project-name my-app --teams \"a,b\" --adapter claude-code --no-interactive"
-        fi
     fi
 
-    if [[ "$INTERACTIVE" == true && -z "$PROJECT_NAME" ]]; then
+    # Resolve target directory early so auto-detection works
+    TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
+
+    # Non-interactive: apply auto-detection for missing values
+    if [[ "$INTERACTIVE" == false ]]; then
+        [[ -z "$PROJECT_NAME" ]] && PROJECT_NAME="$(detect_project_name "$TARGET_DIR")"
+        [[ -z "$ADAPTER" ]] && ADAPTER="$(detect_adapter "$TARGET_DIR")"
+        [[ -z "$TEAMS" ]] && TEAMS="$(list_subdirs "$TARGET_DIR")"
+        LANGUAGE="$(detect_language "$TARGET_DIR")"
+
+        # Auto-detect service with modules
+        if [[ -z "$SERVICE" && -n "$TEAMS" ]]; then
+            IFS=',' read -ra _teams <<< "$TEAMS"
+            for _team in "${_teams[@]}"; do
+                _team="$(echo "$_team" | xargs)"
+                if [[ -d "$TARGET_DIR/$_team" ]]; then
+                    local mods
+                    mods="$(list_subdirs "$TARGET_DIR/$_team")"
+                    if [[ -n "$mods" ]]; then
+                        SERVICE="$_team"
+                        MODULES="$mods"
+                        break
+                    fi
+                fi
+            done
+        fi
+
+        log "Auto-detected: project=$PROJECT_NAME teams=$TEAMS adapter=${ADAPTER:-none} lang=$LANGUAGE"
+        [[ -n "$SERVICE" ]] && log "Auto-detected: service=$SERVICE modules=$MODULES"
+    fi
+
+    if [[ "$INTERACTIVE" == true ]]; then
         interactive_prompt
     fi
 
     validate_inputs
 
-    TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
-
     scaffold_project
     scaffold_service
+    generate_watch_script
     install_adapter
     run_scan
     print_summary

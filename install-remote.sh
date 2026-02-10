@@ -46,15 +46,16 @@ else
     log "Downloaded successfully"
 fi
 
-chmod +x "$ACCORD_HOME/init.sh"
+chmod +x "$ACCORD_HOME/init.sh" "$ACCORD_HOME/uninstall.sh" "$ACCORD_HOME/upgrade.sh"
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}${BOLD}Accord installed at ~/.accord/${NC}"
 echo ""
-echo "Next: cd into your project and run:"
+echo "Commands:"
 echo ""
-echo -e "  ${BOLD}~/.accord/init.sh${NC}                          # interactive"
-echo -e "  ${BOLD}~/.accord/init.sh --adapter claude-code${NC}    # with Claude Code adapter"
+echo -e "  ${BOLD}~/.accord/init.sh${NC}          Initialize Accord in your project (auto-detects everything)"
+echo -e "  ${BOLD}~/.accord/upgrade.sh${NC}       Upgrade adapter templates and commands"
+echo -e "  ${BOLD}~/.accord/uninstall.sh${NC}     Remove Accord from your project"
 echo ""
-echo "Run ~/.accord/init.sh --help for all options."
+echo "Run any command with --help for options."
