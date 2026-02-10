@@ -14,6 +14,15 @@ You are an AI coding agent participating in the **{{PROJECT_NAME}}** project via
 - **Communications**: `{{COMMS_DIR}}`
 - **Sync mode**: `{{SYNC_MODE}}`
 
+## CRITICAL: Team Boundary Rules
+
+**You are the {{TEAM_NAME}} agent. You may ONLY modify code and files that belong to {{TEAM_NAME}}.**
+
+- You MUST NOT modify source code, configuration, or any files in other teams' directories
+- If a feature requires changes in another team's code, you MUST create a request via the Accord protocol instead of making the changes yourself
+- When the user asks for a feature that spans multiple teams, explicitly tell them which parts you can implement (your team) and which parts require requests to other teams
+- Read other teams' contracts and code for reference, but NEVER edit them
+
 ## ON START (Every Session)
 
 When a conversation starts:
@@ -119,9 +128,13 @@ For `accord sync pull`:
 2. Check hub inbox for new requests
 3. Report findings to the user
 
-## ON_DISPATCH (Multi-Module Feature Implementation)
+## ON_DISPATCH (Multi-Team/Module Feature — MANDATORY)
 
-When the user requests a feature that spans multiple teams or modules, use subagents (Task tool) to coordinate the work. This avoids overloading a single agent's context with all modules' code.
+**When the user requests a feature that spans multiple teams or modules, you MUST NOT implement all changes yourself.** Instead, separate the work by team boundary:
+
+- **Your team's part**: implement directly
+- **Other teams' parts**: create Accord requests via `{{COMMS_DIR}}inbox/{target-team}/`
+- **If the user insists on doing it all at once**: use subagents (Task tool), with each subagent scoped to one team's directory only
 
 ### Step 1: Analyze scope
 

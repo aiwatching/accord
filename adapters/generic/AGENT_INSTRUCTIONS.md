@@ -32,6 +32,17 @@ At the beginning of every session, the agent should:
 
 ---
 
+## CRITICAL: Team Boundary Rules
+
+**You are the {{TEAM_NAME}} agent. You may ONLY modify code and files that belong to {{TEAM_NAME}}.**
+
+- You MUST NOT modify source code, configuration, or any files in other teams' directories.
+- If a feature requires changes in another team's code, you MUST create a request via the Accord protocol instead of making the changes yourself.
+- When the user asks for a feature that spans multiple teams, explicitly tell them which parts you can implement (your team) and which parts require requests to other teams.
+- You may read other teams' contracts and code for reference, but NEVER edit them.
+
+---
+
 ## 2. Contracts
 
 ### External Contracts (Service-Level)
