@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Accord Upgrade Script
-# Updates Accord tooling in a project to the latest version.
+#
+# Automatically pulls the latest Accord version and upgrades the project.
 #
 # What it upgrades:
+#   - Accord framework at ~/.accord/ (auto-pull latest version)
 #   - Adapter templates (CLAUDE.md rules, slash commands, skills)
 #   - Protocol reference (.accord/comms/PROTOCOL.md)
 #   - Request template (.accord/comms/TEMPLATE.md)
@@ -14,8 +16,9 @@
 #   - .accord/comms/inbox/ and archive/ (your request data)
 #
 # Usage:
-#   ~/.accord/upgrade.sh              # Upgrade current project
-#   ~/.accord/upgrade.sh --self       # Also update ~/.accord/ itself first
+#   ~/.accord/upgrade.sh                    # Upgrade current project (auto-pulls latest)
+#   ~/.accord/upgrade.sh --version v0.2.0   # Upgrade to a specific version
+#   ~/.accord/upgrade.sh --offline          # Skip auto-pull, use current local version
 
 set -euo pipefail
 
@@ -24,9 +27,11 @@ ACCORD_DIR="$(cd "$(dirname "$0")" && pwd)"
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
 TARGET_DIR="."
-SELF_UPDATE=false
+REQUESTED_VERSION="latest"
+OFFLINE=false
 
 GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
 CYAN='\033[0;36m'
 DIM='\033[2m'
 BOLD='\033[1m'
@@ -35,7 +40,7 @@ NC='\033[0m'
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 log() { echo -e "[accord] $*"; }
-warn() { echo -e "[accord] WARNING: $*" >&2; }
+warn() { echo -e "${YELLOW}[accord] WARNING:${NC} $*" >&2; }
 err() { echo -e "[accord] ERROR: $*" >&2; exit 1; }
 
 sed_inplace() {
@@ -56,41 +61,108 @@ replace_vars() {
     done
 }
 
+get_version() {
+    local dir="$1"
+    if [[ -f "$dir/VERSION" ]]; then
+        cat "$dir/VERSION" | tr -d '[:space:]'
+    else
+        echo "unknown"
+    fi
+}
+
 # ── Argument Parsing ─────────────────────────────────────────────────────────
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --target-dir) TARGET_DIR="$2"; shift 2 ;;
-        --self)       SELF_UPDATE=true; shift ;;
+        --version)    REQUESTED_VERSION="$2"; shift 2 ;;
+        --offline)    OFFLINE=true; shift ;;
         --help)
-            echo "Usage: upgrade.sh [--target-dir <path>] [--self]"
+            echo "Usage: upgrade.sh [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --target-dir <path>  Project directory (default: current directory)"
-            echo "  --self               Update ~/.accord/ from git before upgrading the project"
+            echo "  --target-dir <path>    Project directory (default: current directory)"
+            echo "  --version <version>    Upgrade to specific version (e.g., v0.2.0)"
+            echo "  --offline              Skip auto-pull, use current local version"
+            echo "  --help                 Show this help"
+            echo ""
+            echo "Examples:"
+            echo "  ~/.accord/upgrade.sh                    # Auto-pull latest + upgrade"
+            echo "  ~/.accord/upgrade.sh --version v0.2.0   # Upgrade to specific version"
+            echo "  ~/.accord/upgrade.sh --offline           # Upgrade without pulling"
             exit 0
             ;;
-        *) err "Unknown option: $1. Use --help for usage." ;;
+        *)
+            # Accept positional arg as target dir
+            if [[ -d "$1" ]]; then
+                TARGET_DIR="$1"; shift
+            else
+                err "Unknown option: $1. Use --help for usage."
+            fi
+            ;;
     esac
 done
 
 TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
 
-# ── Self-update ──────────────────────────────────────────────────────────────
+# ── Step 1: Self-update (pull latest Accord framework) ───────────────────────
 
-if [[ "$SELF_UPDATE" == true ]]; then
-    if [[ -d "$ACCORD_DIR/.git" ]]; then
-        log "Updating Accord installation at $ACCORD_DIR ..."
-        (cd "$ACCORD_DIR" && git pull --quiet origin main 2>/dev/null) || \
-            warn "Self-update failed (offline?), continuing with current version"
-        log "Self-update complete"
-        echo ""
-    else
-        warn "$ACCORD_DIR is not a git repository — skipping self-update"
+CURRENT_VERSION="$(get_version "$ACCORD_DIR")"
+
+echo ""
+echo -e "${BOLD}=== Accord Upgrade ===${NC}"
+echo ""
+
+if [[ "$OFFLINE" == true ]]; then
+    log "Offline mode — skipping framework update"
+    log "Using Accord v${CURRENT_VERSION}"
+elif [[ -d "$ACCORD_DIR/.git" ]]; then
+    log "Checking for updates..."
+
+    (
+        cd "$ACCORD_DIR"
+        git fetch --quiet --tags origin 2>/dev/null
+    ) || {
+        warn "Failed to fetch updates (offline?), continuing with v${CURRENT_VERSION}"
+        OFFLINE=true
+    }
+
+    if [[ "$OFFLINE" != true ]]; then
+        if [[ "$REQUESTED_VERSION" == "latest" ]]; then
+            # Find latest tag
+            LATEST_TAG="$(cd "$ACCORD_DIR" && git tag --sort=-v:refname 'v*' 2>/dev/null | head -1)"
+            if [[ -n "$LATEST_TAG" ]]; then
+                REQUESTED_VERSION="$LATEST_TAG"
+            else
+                REQUESTED_VERSION="main"
+            fi
+        fi
+
+        if [[ "$REQUESTED_VERSION" == "main" ]]; then
+            (cd "$ACCORD_DIR" && git checkout --quiet main 2>/dev/null && git pull --quiet origin main 2>/dev/null) || \
+                warn "Failed to update to main"
+        else
+            (cd "$ACCORD_DIR" && git checkout --quiet "$REQUESTED_VERSION" 2>/dev/null) || \
+                err "Version $REQUESTED_VERSION not found. Available versions: $(cd "$ACCORD_DIR" && git tag --sort=-v:refname 'v*' | head -5 | tr '\n' ' ')"
+        fi
+
+        NEW_VERSION="$(get_version "$ACCORD_DIR")"
+
+        if [[ "$CURRENT_VERSION" != "$NEW_VERSION" ]]; then
+            log "Updated: v${CURRENT_VERSION} → v${NEW_VERSION}"
+        else
+            log "Already at latest: v${CURRENT_VERSION}"
+        fi
+        CURRENT_VERSION="$NEW_VERSION"
     fi
+else
+    warn "$ACCORD_DIR is not a git repository — skipping framework update"
+    log "Using Accord v${CURRENT_VERSION}"
 fi
 
-# ── Read project config ─────────────────────────────────────────────────────
+echo ""
+
+# ── Step 2: Read project config ──────────────────────────────────────────────
 
 CONFIG_FILE="$TARGET_DIR/.accord/config.yaml"
 
@@ -117,11 +189,9 @@ fi
 # Detect modules from config
 MODULES=""
 SERVICE=""
-# Look for team entries that have modules: section
 IFS=',' read -ra team_arr <<< "$TEAMS"
 for team in "${team_arr[@]}"; do
     team="$(echo "$team" | xargs)"
-    # Check if this team has modules in config
     if sed -n "/- name: ${team}/,/- name: /p" "$CONFIG_FILE" | grep -q "modules:"; then
         SERVICE="$team"
         MODULES="$(sed -n "/- name: ${team}/,/^  - name: /{ /modules:/,/^  - name: /{ s/^      - name: //p; }; }" "$CONFIG_FILE" | tr '\n' ',' | sed 's/,$//')"
@@ -138,14 +208,12 @@ fi
 
 # ── Display current state ───────────────────────────────────────────────────
 
-echo ""
-echo -e "${BOLD}=== Accord Upgrade ===${NC}"
-echo ""
-echo -e "  Project:    ${GREEN}$PROJECT_NAME${NC}"
-echo -e "  Teams:      ${GREEN}$TEAMS${NC}"
-[[ -n "$SERVICE" ]] && echo -e "  Modules:    ${GREEN}$SERVICE/ → $MODULES${NC}"
-echo -e "  Adapter:    ${GREEN}$ADAPTER${NC}"
-echo -e "  Sync mode:  ${GREEN}$SYNC_MODE${NC}"
+echo -e "  Project:       ${GREEN}$PROJECT_NAME${NC}"
+echo -e "  Teams:         ${GREEN}$TEAMS${NC}"
+[[ -n "$SERVICE" ]] && echo -e "  Modules:       ${GREEN}$SERVICE/ → $MODULES${NC}"
+echo -e "  Adapter:       ${GREEN}$ADAPTER${NC}"
+echo -e "  Sync mode:     ${GREEN}$SYNC_MODE${NC}"
+echo -e "  Accord:        ${GREEN}v${CURRENT_VERSION}${NC}"
 echo ""
 
 UPDATED=0
@@ -295,7 +363,6 @@ WATCH
         chmod +x "$watch_file"
         UPDATED=$((UPDATED + 1))
     elif [[ -f "$watch_file" ]]; then
-        # Sync mode changed away from auto-poll — remove watch script
         rm -f "$watch_file"
         log "Removed .accord/accord-watch.sh (sync mode changed to $SYNC_MODE)"
         UPDATED=$((UPDATED + 1))
@@ -313,9 +380,9 @@ upgrade_watch_script
 
 echo ""
 if [[ "$UPDATED" -gt 0 ]]; then
-    echo -e "${BOLD}=== Upgrade complete ===${NC} ($UPDATED items updated)"
+    echo -e "${BOLD}=== Upgrade complete ===${NC} (v${CURRENT_VERSION}, $UPDATED items updated)"
 else
-    echo -e "${BOLD}=== Already up to date ===${NC}"
+    echo -e "${BOLD}=== Already up to date ===${NC} (v${CURRENT_VERSION})"
 fi
 echo ""
 echo -e "  ${DIM}Unchanged: .accord/config.yaml, .accord/contracts/, inbox data${NC}"
