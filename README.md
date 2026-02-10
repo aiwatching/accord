@@ -18,26 +18,44 @@ Accord replaces all of that with a file-based protocol that lives in your Git re
 
 ## How It Works
 
+Real example: three independent Claude Code sessions coordinated a device search feature across a multi-repo Spring Boot project — with zero direct communication between agents.
+
 ```
-Device-Manager Agent                    NAC-Engine Agent
-        │                                      │
-        │  1. "I need a policy-by-type API"     │
-        │  → creates request file               │
-        │  → git commit (monorepo: done!)       │
-        │                                       │
-        │                              2. sees request in inbox
-        │                              → developer approves
-        │                                       │
-        │                              3. implements API
-        │                              → updates contract
-        │                              → git commit
-        │                                       │
-        │  4. sees updated contract             │
-        │  → codes against new API              │
-        ▼                                       ▼
+FRONTEND                       WEB-SERVER                      DEVICE-MANAGER
+(session 1)                    (session 2)                     (session 3)
+    │                              │                                │
+    │  "Add device search page"    │                                │
+    │  ├─ implement with mock data │                                │
+    │  ├─ create req-001 ─────────>│                                │
+    │  └─ push to hub              │                                │
+    │     (continues working)      │                                │
+    │                              │  /check-inbox                  │
+    │                              │  ├─ receive req-001            │
+    │                              │  ├─ approve, implement proxy   │
+    │                              │  ├─ create req-002 ──────────> │
+    │                              │  └─ push to hub                │
+    │                              │                                │
+    │                              │                     /check-inbox
+    │                              │                     ├─ receive req-002
+    │                              │                     ├─ approve, implement
+    │                              │                     ├─ update contract
+    │                              │                     ├─ complete req-002 ✓
+    │                              │                     └─ push to hub
+    │                              │                                │
+    │                              │  /check-inbox                  │
+    │                              │  ├─ see req-002 completed      │
+    │                              │  ├─ complete req-001 ✓         │
+    │                              │  └─ push to hub                │
+    │                              │                                │
+    │  /check-inbox                │                                │
+    │  full chain completed ✓      │                                │
+    │  switch from mock to real    │                                │
+    ▼                              ▼                                ▼
 ```
 
 No servers. No message queues. No infrastructure. Just files and Git.
+
+Each agent worked independently in its own repo, reading contracts to understand other services' APIs, creating request files when it needed something new, and syncing through a shared hub repo. The full request chain (`pending → approved → in-progress → completed`) propagated across three services automatically.
 
 ## Key Features
 
