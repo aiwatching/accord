@@ -1,39 +1,44 @@
 #!/usr/bin/env bash
 # Accord Remote Installer
-# One-liner to set up Accord in any project without cloning the repo manually.
+# Sets up Accord in any project without manually cloning the full repo.
 #
-# Usage:
+# ── For PUBLIC repos ──────────────────────────────────────────────────────────
 #   curl -fsSL https://raw.githubusercontent.com/aiwatching/accord/main/install-remote.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/aiwatching/accord/main/install-remote.sh | bash -s -- [init.sh flags]
+#   curl -fsSL https://raw.githubusercontent.com/aiwatching/accord/main/install-remote.sh | bash -s -- [flags]
 #
-# Examples:
+# ── For PRIVATE repos (or any repo) ──────────────────────────────────────────
+#   bash <(git archive --remote=https://github.com/aiwatching/accord.git HEAD install-remote.sh | tar -xO)
+#
+#   Or the simplest approach — just run this directly:
+#     npx accord-init    (future)
+#     git clone https://github.com/aiwatching/accord.git ~/.accord && ~/.accord/install-remote.sh
+#
+# ── Examples ──────────────────────────────────────────────────────────────────
 #   # Interactive mode
-#   curl -fsSL https://raw.githubusercontent.com/aiwatching/accord/main/install-remote.sh | bash
+#   ~/.accord/install-remote.sh
 #
 #   # Non-interactive with flags
-#   curl -fsSL https://raw.githubusercontent.com/aiwatching/accord/main/install-remote.sh | bash -s -- \
+#   ~/.accord/install-remote.sh \
 #     --project-name my-app --teams "frontend,backend" --adapter claude-code --no-interactive
 #
 #   # With auto-scan
-#   curl -fsSL https://raw.githubusercontent.com/aiwatching/accord/main/install-remote.sh | bash -s -- \
+#   ~/.accord/install-remote.sh \
 #     --project-name my-app --teams "a,b" --adapter claude-code --scan --no-interactive
 #
-# What it does:
-#   1. Downloads Accord to ~/.accord/ (shallow clone, ~1MB)
+# ── What it does ──────────────────────────────────────────────────────────────
+#   1. Downloads Accord to ~/.accord/ (shallow clone, ~1MB) — or updates if cached
 #   2. Runs init.sh in the current directory with your flags
 #   3. Subsequent runs reuse the cached copy (git pull to update)
 
 set -euo pipefail
 
-ACCORD_REPO="https://github.com/aiwatching/accord.git"
+ACCORD_REPO="${ACCORD_REPO:-https://github.com/aiwatching/accord.git}"
 ACCORD_HOME="${ACCORD_HOME:-$HOME/.accord}"
-ACCORD_BRANCH="main"
+ACCORD_BRANCH="${ACCORD_BRANCH:-main}"
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
-GREEN='\033[0;32m'
 CYAN='\033[0;36m'
-BOLD='\033[1m'
 NC='\033[0m'
 
 log() { echo -e "${CYAN}[accord]${NC} $*"; }
@@ -47,6 +52,9 @@ if [[ -d "$ACCORD_HOME/.git" ]]; then
     log "Updating Accord at $ACCORD_HOME ..."
     (cd "$ACCORD_HOME" && git pull --quiet origin "$ACCORD_BRANCH" 2>/dev/null) || \
         log "Update failed (offline?), using cached version"
+elif [[ -d "$ACCORD_HOME" && -f "$ACCORD_HOME/init.sh" ]]; then
+    # Script is being run from inside an existing accord clone (e.g., ~/.accord/install-remote.sh)
+    log "Using Accord at $ACCORD_HOME"
 else
     log "Downloading Accord to $ACCORD_HOME ..."
     rm -rf "$ACCORD_HOME"

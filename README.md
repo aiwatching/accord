@@ -54,16 +54,16 @@ No servers. No message queues. No infrastructure. Just Git.
 
 ## Quick Start
 
-### One-liner (recommended)
+### One-liner install
 
 ```bash
+# First time: clone once (works with private repos — uses your git credentials)
+git clone --depth 1 https://github.com/aiwatching/accord.git ~/.accord
+
+# Then in any project:
 cd your-project
-
-# Interactive — asks for project name, teams, adapter
-curl -fsSL https://raw.githubusercontent.com/aiwatching/accord/main/install-remote.sh | bash
-
-# Or non-interactive with flags
-curl -fsSL https://raw.githubusercontent.com/aiwatching/accord/main/install-remote.sh | bash -s -- \
+~/.accord/install-remote.sh                    # Interactive
+~/.accord/install-remote.sh \                  # Non-interactive
   --project-name my-app \
   --teams "frontend,backend-api,backend-engine" \
   --adapter claude-code \
@@ -71,14 +71,11 @@ curl -fsSL https://raw.githubusercontent.com/aiwatching/accord/main/install-remo
   --no-interactive
 ```
 
-This downloads Accord to `~/.accord/` (cached for future use) and runs `init.sh` in your project.
+After the first clone, `~/.accord/` is cached. The installer auto-updates it on each run.
 
-### Manual install
-
+For **public repos**, you can also use:
 ```bash
-git clone https://github.com/aiwatching/accord.git ~/.accord
-cd your-project
-~/.accord/init.sh --adapter claude-code --teams "frontend,backend-api,backend-engine"
+curl -fsSL https://raw.githubusercontent.com/aiwatching/accord/main/install-remote.sh | bash
 ```
 
 ### What it creates
