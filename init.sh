@@ -619,6 +619,15 @@ print_summary() {
 main() {
     parse_args "$@"
 
+    # Auto-disable interactive mode when stdin is not a terminal (e.g., curl | bash)
+    if [[ "$INTERACTIVE" == true ]] && ! tty -s 2>/dev/null; then
+        INTERACTIVE=false
+        if [[ -z "$PROJECT_NAME" ]]; then
+            err "Piped input detected — interactive prompts unavailable. Pass flags instead:
+  curl ... | bash -s -- --project-name my-app --teams \"a,b\" --adapter claude-code --no-interactive"
+        fi
+    fi
+
     if [[ "$INTERACTIVE" == true && -z "$PROJECT_NAME" ]]; then
         interactive_prompt
     fi
