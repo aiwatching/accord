@@ -25,7 +25,7 @@ description: >
 4. For Python/FastAPI: look for `@app.get`, `@app.post`, `@router.get` decorators
 5. For TypeScript/Express: look for `router.get()`, `router.post()`, `app.get()`
 6. For each endpoint, extract: path, method, parameters, request/response types
-7. Generate OpenAPI 3.0 YAML at `contracts/{service-name}.yaml`
+7. Generate OpenAPI 3.0 YAML at `.accord/contracts/{service-name}.yaml`
 8. Mark all generated content with `x-accord-status: draft`
 
 ### Internal Contracts (Module Interfaces)
@@ -34,7 +34,7 @@ description: >
 2. Find public interfaces/protocols/ABCs that are **imported by other modules**
 3. For each cross-module interface, extract: method signatures, parameter types, return types
 4. Extract behavioral notes from JavaDoc/docstrings if available
-5. Generate contract markdown at `{service}/.accord/internal-contracts/{module}.md`
+5. Generate contract markdown at `.accord/contracts/internal/{module}.md`
 6. Mark with `status: draft` in frontmatter
 7. Include a `## Used By` section listing which modules depend on this interface
 

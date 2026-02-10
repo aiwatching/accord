@@ -9,7 +9,6 @@
 #   - Contract format (via validators)
 #   - Request file format
 #   - Cross-reference integrity
-#   - Source/collected contract sync
 #   - Stale request detection
 
 set -euo pipefail
@@ -63,29 +62,29 @@ else
     fail ".accord/config.yaml not found — run 'accord init' first"
 fi
 
-if [[ -d "$PROJECT_DIR/contracts" ]]; then
-    count=$(find "$PROJECT_DIR/contracts" -name "*.yaml" -type f | wc -l | xargs)
-    ok "contracts/ directory exists ($count contract files)"
+if [[ -d "$PROJECT_DIR/.accord/contracts" ]]; then
+    count=$(find "$PROJECT_DIR/.accord/contracts" -maxdepth 1 -name "*.yaml" -type f | wc -l | xargs)
+    ok ".accord/contracts/ directory exists ($count contract files)"
 else
-    fail "contracts/ directory not found"
+    fail ".accord/contracts/ directory not found"
 fi
 
-if [[ -d "$PROJECT_DIR/.agent-comms" ]]; then
-    ok ".agent-comms/ directory exists"
+if [[ -d "$PROJECT_DIR/.accord/comms" ]]; then
+    ok ".accord/comms/ directory exists"
 else
-    fail ".agent-comms/ directory not found"
+    fail ".accord/comms/ directory not found"
 fi
 
-if [[ -f "$PROJECT_DIR/.agent-comms/PROTOCOL.md" ]]; then
-    ok ".agent-comms/PROTOCOL.md exists"
+if [[ -f "$PROJECT_DIR/.accord/comms/PROTOCOL.md" ]]; then
+    ok ".accord/comms/PROTOCOL.md exists"
 else
-    warn ".agent-comms/PROTOCOL.md missing — agents won't have protocol reference"
+    warn ".accord/comms/PROTOCOL.md missing — agents won't have protocol reference"
 fi
 
-if [[ -f "$PROJECT_DIR/.agent-comms/TEMPLATE.md" ]]; then
-    ok ".agent-comms/TEMPLATE.md exists"
+if [[ -f "$PROJECT_DIR/.accord/comms/TEMPLATE.md" ]]; then
+    ok ".accord/comms/TEMPLATE.md exists"
 else
-    warn ".agent-comms/TEMPLATE.md missing — agents won't have request template"
+    warn ".accord/comms/TEMPLATE.md missing — agents won't have request template"
 fi
 
 # ── 2. Config Checks ─────────────────────────────────────────────────────────
@@ -113,16 +112,16 @@ if [[ -f "$PROJECT_DIR/.accord/config.yaml" ]]; then
     if grep -q "^teams:" "$config"; then
         teams=$(grep "^  - name:" "$config" | sed 's/.*name:[[:space:]]*//')
         for team in $teams; do
-            if [[ -f "$PROJECT_DIR/contracts/${team}.yaml" ]]; then
+            if [[ -f "$PROJECT_DIR/.accord/contracts/${team}.yaml" ]]; then
                 ok "Team '$team' has contract file"
             else
-                fail "Team '$team' missing contract: contracts/${team}.yaml"
+                fail "Team '$team' missing contract: .accord/contracts/${team}.yaml"
             fi
 
-            if [[ -d "$PROJECT_DIR/.agent-comms/inbox/${team}" ]]; then
+            if [[ -d "$PROJECT_DIR/.accord/comms/inbox/${team}" ]]; then
                 ok "Team '$team' has inbox directory"
             else
-                fail "Team '$team' missing inbox: .agent-comms/inbox/${team}/"
+                fail "Team '$team' missing inbox: .accord/comms/inbox/${team}/"
             fi
         done
     else
@@ -130,56 +129,34 @@ if [[ -f "$PROJECT_DIR/.accord/config.yaml" ]]; then
     fi
 fi
 
-# ── 3. Service/Module Checks ─────────────────────────────────────────────────
-# Find service configs
-for svc_config in "$PROJECT_DIR"/*/.accord/config.yaml; do
-    [[ -f "$svc_config" ]] || continue
+# ── 3. Module Checks ─────────────────────────────────────────────────────────
+if [[ -f "$PROJECT_DIR/.accord/config.yaml" ]]; then
+    config="$PROJECT_DIR/.accord/config.yaml"
 
-    svc_dir=$(dirname "$(dirname "$svc_config")")
-    svc_name=$(basename "$svc_dir")
+    # Check for modules in config (nested under team entries)
+    if grep -q "modules:" "$config"; then
+        echo -e "\n${BOLD}[Modules]${NC}"
 
-    echo -e "\n${BOLD}[Service: $svc_name]${NC}"
-
-    if grep -q "^modules:" "$svc_config"; then
-        modules=$(grep "^  - name:" "$svc_config" | sed 's/.*name:[[:space:]]*//')
+        # Extract module names from config
+        modules=$(sed -n '/modules:/,/^  - name: /{ s/^      - name: //p; }' "$config")
         for mod in $modules; do
-            # Source contract
-            src="$svc_dir/$mod/.accord/contract.md"
-            if [[ -f "$src" ]]; then
-                ok "Module '$mod' source contract exists"
+            # Internal contract
+            contract="$PROJECT_DIR/.accord/contracts/internal/${mod}.md"
+            if [[ -f "$contract" ]]; then
+                ok "Module '$mod' internal contract exists"
             else
-                fail "Module '$mod' missing source: $mod/.accord/contract.md"
-            fi
-
-            # Collected copy
-            collected="$svc_dir/.accord/internal-contracts/${mod}.md"
-            if [[ -f "$collected" ]]; then
-                ok "Module '$mod' collected copy exists"
-            else
-                fail "Module '$mod' missing collected: .accord/internal-contracts/${mod}.md"
-            fi
-
-            # Source == Collected?
-            if [[ -f "$src" && -f "$collected" ]]; then
-                if diff -q "$src" "$collected" > /dev/null 2>&1; then
-                    ok "Module '$mod' source matches collected copy"
-                else
-                    warn "Module '$mod' source and collected copy are OUT OF SYNC"
-                    if [[ "$VERBOSE" == true ]]; then
-                        echo "       Run: cp $src $collected"
-                    fi
-                fi
+                fail "Module '$mod' missing contract: .accord/contracts/internal/${mod}.md"
             fi
 
             # Module inbox
-            if [[ -d "$svc_dir/.agent-comms/inbox/${mod}" ]]; then
+            if [[ -d "$PROJECT_DIR/.accord/comms/inbox/${mod}" ]]; then
                 ok "Module '$mod' has inbox"
             else
-                fail "Module '$mod' missing inbox: .agent-comms/inbox/${mod}/"
+                fail "Module '$mod' missing inbox: .accord/comms/inbox/${mod}/"
             fi
         done
     fi
-done
+fi
 
 # ── 4. Contract Validation ────────────────────────────────────────────────────
 echo -e "\n${BOLD}[Contract Validation]${NC}"
@@ -189,7 +166,7 @@ validator_int="$ACCORD_DIR/protocol/scan/validators/validate-internal.sh"
 validator_req="$ACCORD_DIR/protocol/scan/validators/validate-request.sh"
 
 # External contracts
-for f in "$PROJECT_DIR/contracts"/*.yaml; do
+for f in "$PROJECT_DIR/.accord/contracts"/*.yaml; do
     [[ -f "$f" ]] || continue
     fname=$(basename "$f")
     if bash "$validator_ext" "$f" 2>/dev/null; then
@@ -201,14 +178,14 @@ for f in "$PROJECT_DIR/contracts"/*.yaml; do
 done
 
 # Internal contracts
-for f in "$PROJECT_DIR"/*/.accord/internal-contracts/*.md; do
+for f in "$PROJECT_DIR/.accord/contracts/internal"/*.md; do
     [[ -f "$f" ]] || continue
     # Skip template placeholders
     if grep -q "{{" "$f"; then
         info "Skipping template: $f"
         continue
     fi
-    fname=$(echo "$f" | sed "s|$PROJECT_DIR/||")
+    fname=$(basename "$f")
     if bash "$validator_int" "$f" 2>/dev/null; then
         ok "Internal: $fname"
     else
@@ -222,22 +199,24 @@ echo -e "\n${BOLD}[Request Validation]${NC}"
 
 request_count=0
 
-# Find all request files (inbox + archive, both project-level and service-level)
-while IFS= read -r -d '' reqfile; do
-    [[ -f "$reqfile" ]] || continue
-    fname=$(basename "$reqfile")
-    [[ "$fname" == ".gitkeep" ]] && continue
+# Find all request files in .accord/comms/
+if [[ -d "$PROJECT_DIR/.accord/comms" ]]; then
+    while IFS= read -r -d '' reqfile; do
+        [[ -f "$reqfile" ]] || continue
+        fname=$(basename "$reqfile")
+        [[ "$fname" == ".gitkeep" ]] && continue
 
-    request_count=$((request_count + 1))
-    rel=$(echo "$reqfile" | sed "s|$PROJECT_DIR/||")
+        request_count=$((request_count + 1))
+        rel=$(echo "$reqfile" | sed "s|$PROJECT_DIR/||")
 
-    if bash "$validator_req" "$reqfile" 2>/dev/null; then
-        ok "Request: $rel"
-    else
-        fail "Request: $rel — format errors"
-        [[ "$VERBOSE" == true ]] && bash "$validator_req" "$reqfile" 2>&1 | sed 's/^/       /'
-    fi
-done < <(find "$PROJECT_DIR/.agent-comms" "$PROJECT_DIR"/*/.agent-comms -name "*.md" -not -name "PROTOCOL.md" -not -name "TEMPLATE.md" -print0 2>/dev/null || true)
+        if bash "$validator_req" "$reqfile" 2>/dev/null; then
+            ok "Request: $rel"
+        else
+            fail "Request: $rel — format errors"
+            [[ "$VERBOSE" == true ]] && bash "$validator_req" "$reqfile" 2>&1 | sed 's/^/       /'
+        fi
+    done < <(find "$PROJECT_DIR/.accord/comms/inbox" "$PROJECT_DIR/.accord/comms/archive" -name "*.md" -not -name "PROTOCOL.md" -not -name "TEMPLATE.md" -print0 2>/dev/null || true)
+fi
 
 [[ $request_count -eq 0 ]] && info "No request files found"
 
@@ -245,12 +224,12 @@ done < <(find "$PROJECT_DIR/.agent-comms" "$PROJECT_DIR"/*/.agent-comms -name "*
 echo -e "\n${BOLD}[Cross-References]${NC}"
 
 # Check proposed annotations have matching requests
-for f in "$PROJECT_DIR/contracts"/*.yaml; do
+for f in "$PROJECT_DIR/.accord/contracts"/*.yaml; do
     [[ -f "$f" ]] || continue
     while IFS= read -r line; do
         req_id=$(echo "$line" | sed 's/.*x-accord-request:[[:space:]]*//')
         # Search for matching request file
-        found=$(find "$PROJECT_DIR/.agent-comms" -name "${req_id}*.md" 2>/dev/null | head -1)
+        found=$(find "$PROJECT_DIR/.accord/comms" -name "${req_id}*.md" 2>/dev/null | head -1)
         if [[ -n "$found" ]]; then
             ok "Proposed annotation '$req_id' in $(basename "$f") → request exists"
         else
@@ -260,54 +239,58 @@ for f in "$PROJECT_DIR/contracts"/*.yaml; do
 done
 
 # Check request related_contract references
-while IFS= read -r -d '' reqfile; do
-    [[ -f "$reqfile" ]] || continue
-    fname=$(basename "$reqfile")
-    [[ "$fname" == ".gitkeep" || "$fname" == "PROTOCOL.md" || "$fname" == "TEMPLATE.md" ]] && continue
+if [[ -d "$PROJECT_DIR/.accord/comms" ]]; then
+    while IFS= read -r -d '' reqfile; do
+        [[ -f "$reqfile" ]] || continue
+        fname=$(basename "$reqfile")
+        [[ "$fname" == ".gitkeep" || "$fname" == "PROTOCOL.md" || "$fname" == "TEMPLATE.md" ]] && continue
 
-    related=$(grep "^related_contract:" "$reqfile" 2>/dev/null | head -1 | sed 's/related_contract:[[:space:]]*//')
-    if [[ -n "$related" ]]; then
-        if [[ -f "$PROJECT_DIR/$related" ]]; then
-            ok "Request $fname → $related exists"
-        else
-            warn "Request $fname references $related but file not found"
+        related=$(grep "^related_contract:" "$reqfile" 2>/dev/null | head -1 | sed 's/related_contract:[[:space:]]*//')
+        if [[ -n "$related" ]]; then
+            if [[ -f "$PROJECT_DIR/$related" ]]; then
+                ok "Request $fname → $related exists"
+            else
+                warn "Request $fname references $related but file not found"
+            fi
         fi
-    fi
-done < <(find "$PROJECT_DIR/.agent-comms" "$PROJECT_DIR"/*/.agent-comms -name "*.md" -not -name "PROTOCOL.md" -not -name "TEMPLATE.md" -print0 2>/dev/null || true)
+    done < <(find "$PROJECT_DIR/.accord/comms" -name "*.md" -not -name "PROTOCOL.md" -not -name "TEMPLATE.md" -print0 2>/dev/null || true)
+fi
 
 # ── 7. Staleness Checks ──────────────────────────────────────────────────────
 echo -e "\n${BOLD}[Staleness]${NC}"
 
 now=$(date +%s)
 
-while IFS= read -r -d '' reqfile; do
-    [[ -f "$reqfile" ]] || continue
-    fname=$(basename "$reqfile")
-    [[ "$fname" == ".gitkeep" || "$fname" == "PROTOCOL.md" || "$fname" == "TEMPLATE.md" ]] && continue
+if [[ -d "$PROJECT_DIR/.accord/comms/inbox" ]]; then
+    while IFS= read -r -d '' reqfile; do
+        [[ -f "$reqfile" ]] || continue
+        fname=$(basename "$reqfile")
+        [[ "$fname" == ".gitkeep" || "$fname" == "PROTOCOL.md" || "$fname" == "TEMPLATE.md" ]] && continue
 
-    status=$(grep "^status:" "$reqfile" 2>/dev/null | head -1 | sed 's/status:[[:space:]]*//')
-    updated=$(grep "^updated:" "$reqfile" 2>/dev/null | head -1 | sed 's/updated:[[:space:]]*//')
+        status=$(grep "^status:" "$reqfile" 2>/dev/null | head -1 | sed 's/status:[[:space:]]*//')
+        updated=$(grep "^updated:" "$reqfile" 2>/dev/null | head -1 | sed 's/updated:[[:space:]]*//')
 
-    # Only check non-terminal states in inbox
-    if [[ "$status" == "pending" || "$status" == "approved" || "$status" == "in-progress" ]]; then
-        if [[ -n "$updated" ]]; then
-            # Try to parse the date (macOS and Linux compatible)
-            req_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$updated" +%s 2>/dev/null || \
-                        date -d "$updated" +%s 2>/dev/null || echo "0")
-            if [[ "$req_epoch" -gt 0 ]]; then
-                age_days=$(( (now - req_epoch) / 86400 ))
-                if [[ $age_days -gt 7 ]]; then
-                    warn "Request $fname is $status for ${age_days} days (updated: $updated)"
-                elif [[ $age_days -gt 3 ]]; then
-                    info "Request $fname is $status for ${age_days} days"
+        # Only check non-terminal states in inbox
+        if [[ "$status" == "pending" || "$status" == "approved" || "$status" == "in-progress" ]]; then
+            if [[ -n "$updated" ]]; then
+                # Try to parse the date (macOS and Linux compatible)
+                req_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$updated" +%s 2>/dev/null || \
+                            date -d "$updated" +%s 2>/dev/null || echo "0")
+                if [[ "$req_epoch" -gt 0 ]]; then
+                    age_days=$(( (now - req_epoch) / 86400 ))
+                    if [[ $age_days -gt 7 ]]; then
+                        warn "Request $fname is $status for ${age_days} days (updated: $updated)"
+                    elif [[ $age_days -gt 3 ]]; then
+                        info "Request $fname is $status for ${age_days} days"
+                    fi
                 fi
             fi
         fi
-    fi
-done < <(find "$PROJECT_DIR/.agent-comms/inbox" "$PROJECT_DIR"/*/.agent-comms/inbox -name "*.md" -print0 2>/dev/null || true)
+    done < <(find "$PROJECT_DIR/.accord/comms/inbox" -name "*.md" -print0 2>/dev/null || true)
+fi
 
 # Check for old draft contracts
-for f in "$PROJECT_DIR/contracts"/*.yaml; do
+for f in "$PROJECT_DIR/.accord/contracts"/*.yaml; do
     [[ -f "$f" ]] || continue
     if grep -q "x-accord-status: draft" "$f"; then
         # Use git to check age if available

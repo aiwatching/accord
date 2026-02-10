@@ -44,10 +44,10 @@ session was insufficient for complex multi-service development because:
 
 ### Decision 7: Multi-repo via Hub-and-Spoke model
 **Rejected alternatives**: Git submodules (painful UX), cross-repo remotes (complex, no central view), monorepo-only (doesn't fit large orgs)
-**Rationale**: A dedicated Accord Hub repo centralizes contracts and cross-service communication while each team keeps its own service repo. Still zero infrastructure — just an extra Git repo. `accord sync` wraps hub pull/push. Internal contracts are collected from module-level `.accord/contract.md` → service root → hub for backup. Module-level communication stays within the service repo via normal git operations.
+**Rationale**: A dedicated Accord Hub repo centralizes contracts and cross-service communication while each team keeps its own service repo. Still zero infrastructure — just an extra Git repo. `accord sync` wraps hub pull/push. In multi-repo, `accord sync push` copies `.accord/contracts/` and `.accord/contracts/internal/` to the hub for backup. Module-level communication stays within the service repo via normal git operations.
 
-### Decision 8: Distributed contract ownership with centralized collection
-**Key insight**: Each module owns its contract at `{module}/.accord/contract.md` (source of truth), but contracts are auto-collected to the service root and hub. This gives clear ownership (edit at the source) while preventing data loss (backup at hub). The flow is always one-directional: module → service root → hub.
+### Decision 8: Centralized contract structure
+**Key insight**: All contracts live under `.accord/contracts/` (external) and `.accord/contracts/internal/` (internal). In monorepo, there's a single copy — no collection step needed. In multi-repo, each service repo has its own `.accord/contracts/internal/` for module contracts, and `accord sync push` backs them up to the hub at `accord-hub/.accord/contracts/internal/{service}/`. This keeps the directory structure simple and predictable.
 
 ## Architecture Hierarchy (from the developer's actual project)
 

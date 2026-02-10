@@ -20,9 +20,9 @@ PROJECT_NAME=""
 TEAM_NAME=""
 TEAM_LIST=""
 MODULE_LIST=""
-CONTRACTS_DIR="contracts/"
-INTERNAL_CONTRACTS_DIR=""
-COMMS_DIR=".agent-comms/"
+CONTRACTS_DIR=".accord/contracts/"
+INTERNAL_CONTRACTS_DIR=".accord/contracts/internal/"
+COMMS_DIR=".accord/comms/"
 SYNC_MODE="on-action"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

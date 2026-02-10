@@ -13,8 +13,7 @@ Ask the user (if not already clear):
 ### 2. Analyze module boundaries
 
 Read project configuration:
-- `.accord/config.yaml` — teams and their contracts
-- `{service}/.accord/config.yaml` — modules within a service
+- `.accord/config.yaml` — teams, modules, and their contracts
 - External contracts in `{{CONTRACTS_DIR}}` — existing APIs per team
 - Internal contracts in `{{INTERNAL_CONTRACTS_DIR}}` — existing interfaces per module
 
@@ -34,13 +33,13 @@ Dispatch plan for: "Add device search to nac-admin"
 
   Step 1: device-manager (no dependency)
     - Add GET /api/devices/search endpoint
-    - Update contracts/device-manager.yaml
+    - Update .accord/contracts/device-manager.yaml
     - Params: name (string), type (string), status (enum)
     - Returns: { devices: Device[], total: int }
 
   Step 2: nac-admin (depends on step 1)
     - Add admin search page/API that calls device-manager search
-    - Update contracts/nac-admin.yaml if BFF endpoint added
+    - Update .accord/contracts/nac-admin.yaml if BFF endpoint added
 
 Proceed? [y/n]
 ```

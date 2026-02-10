@@ -5,7 +5,7 @@
 # Usage:
 #   ~/.accord/uninstall.sh                  # Interactive — shows what will be removed
 #   ~/.accord/uninstall.sh --force          # No confirmation prompt
-#   ~/.accord/uninstall.sh --keep-contracts # Remove Accord but keep contracts/
+#   ~/.accord/uninstall.sh --keep-contracts # Remove Accord but keep contracts
 #
 # Run in the project directory, or specify --target-dir <path>.
 
@@ -42,7 +42,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --target-dir <path>   Project directory (default: current directory)"
             echo "  --force               Skip confirmation prompt"
-            echo "  --keep-contracts      Remove Accord infrastructure but keep contracts/"
+            echo "  --keep-contracts      Remove Accord infrastructure but keep .accord/contracts/"
             exit 0
             ;;
         *) err "Unknown option: $1. Use --help for usage." ;;
@@ -53,22 +53,8 @@ TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
 
 # ── Detect Accord installation ───────────────────────────────────────────────
 
-if [[ ! -d "$TARGET_DIR/.accord" && ! -d "$TARGET_DIR/.agent-comms" ]]; then
+if [[ ! -d "$TARGET_DIR/.accord" ]]; then
     err "No Accord installation found in $TARGET_DIR"
-fi
-
-# Read config to discover service/module structure
-SERVICE=""
-if [[ -f "$TARGET_DIR/.accord/config.yaml" ]]; then
-    # Find team directories that have .accord subdirectories (service with modules)
-    IFS=',' read -ra teams <<< "$(sed -n 's/^  - name: //p' "$TARGET_DIR/.accord/config.yaml" | tr '\n' ',' | sed 's/,$//')"
-    for team in "${teams[@]}"; do
-        team="$(echo "$team" | xargs)"
-        if [[ -d "$TARGET_DIR/$team/.accord" || -d "$TARGET_DIR/$team/.agent-comms" ]]; then
-            SERVICE="$team"
-            break
-        fi
-    done
 fi
 
 # ── Build removal list ───────────────────────────────────────────────────────
@@ -76,28 +62,18 @@ fi
 REMOVE_DIRS=()
 REMOVE_FILES=()
 MODIFY_FILES=()
+BACKUP_DIRS=()
 
-# Core Accord directories
-[[ -d "$TARGET_DIR/.accord" ]] && REMOVE_DIRS+=(".accord/")
-[[ -d "$TARGET_DIR/.agent-comms" ]] && REMOVE_DIRS+=(".agent-comms/")
-
-# Contracts
-if [[ "$KEEP_CONTRACTS" == false && -d "$TARGET_DIR/contracts" ]]; then
-    REMOVE_DIRS+=("contracts/")
-fi
-
-# Service-level directories
-if [[ -n "$SERVICE" ]]; then
-    [[ -d "$TARGET_DIR/$SERVICE/.accord" ]] && REMOVE_DIRS+=("$SERVICE/.accord/")
-    [[ -d "$TARGET_DIR/$SERVICE/.agent-comms" ]] && REMOVE_DIRS+=("$SERVICE/.agent-comms/")
-    # Module-level .accord dirs
-    for mod_dir in "$TARGET_DIR/$SERVICE"/*/; do
-        [[ ! -d "$mod_dir" ]] && continue
-        local_name="$(basename "$mod_dir")"
-        if [[ -d "$mod_dir/.accord" ]]; then
-            REMOVE_DIRS+=("$SERVICE/$local_name/.accord/")
-        fi
-    done
+# Core: .accord/ directory (everything is centralized here)
+if [[ "$KEEP_CONTRACTS" == true && -d "$TARGET_DIR/.accord/contracts" ]]; then
+    # Remove everything in .accord/ EXCEPT contracts/
+    [[ -d "$TARGET_DIR/.accord/comms" ]] && REMOVE_DIRS+=(".accord/comms/")
+    [[ -f "$TARGET_DIR/.accord/config.yaml" ]] && REMOVE_FILES+=(".accord/config.yaml")
+    [[ -f "$TARGET_DIR/.accord/accord-watch.sh" ]] && REMOVE_FILES+=(".accord/accord-watch.sh")
+    [[ -d "$TARGET_DIR/.accord/adapter" ]] && REMOVE_DIRS+=(".accord/adapter/")
+    BACKUP_DIRS+=(".accord/contracts/ (kept)")
+else
+    REMOVE_DIRS+=(".accord/")
 fi
 
 # Claude Code adapter files
@@ -120,12 +96,6 @@ fi
 # CLAUDE.md — remove ACCORD block (modify, not delete)
 if [[ -f "$TARGET_DIR/CLAUDE.md" ]] && grep -q "<!-- ACCORD START" "$TARGET_DIR/CLAUDE.md"; then
     MODIFY_FILES+=("CLAUDE.md (remove Accord block)")
-fi
-
-# Generic adapter instructions
-if [[ -f "$TARGET_DIR/.accord/adapter/AGENT_INSTRUCTIONS.md" ]]; then
-    # Already covered by .accord/ removal
-    :
 fi
 
 # ── Display plan ─────────────────────────────────────────────────────────────
@@ -157,9 +127,12 @@ if [[ "${#MODIFY_FILES[@]}" -gt 0 ]]; then
     done
 fi
 
-if [[ "$KEEP_CONTRACTS" == true && -d "$TARGET_DIR/contracts" ]]; then
+if [[ "${#BACKUP_DIRS[@]}" -gt 0 ]]; then
     echo ""
-    echo -e "  ${GREEN}Keeping:${NC} contracts/ (--keep-contracts)"
+    echo -e "  ${GREEN}Keeping:${NC}"
+    for d in "${BACKUP_DIRS[@]+"${BACKUP_DIRS[@]}"}"; do
+        echo "    - $d"
+    done
 fi
 
 echo ""
@@ -225,11 +198,21 @@ if [[ -d "$TARGET_DIR/.claude/skills" ]] && [ -z "$(ls -A "$TARGET_DIR/.claude/s
     rmdir "$TARGET_DIR/.claude/skills" 2>/dev/null || true
 fi
 
+# Clean up empty .accord/ if keep-contracts left it mostly empty
+if [[ "$KEEP_CONTRACTS" == true && -d "$TARGET_DIR/.accord" ]]; then
+    # Only config.yaml, comms, adapter were removed — contracts/ stays
+    # Remove .accord/ itself only if contracts/ is the only thing left
+    remaining="$(ls -A "$TARGET_DIR/.accord" 2>/dev/null | grep -v contracts || true)"
+    if [[ -z "$remaining" ]]; then
+        log ".accord/ now only contains contracts/ (as requested)"
+    fi
+fi
+
 echo ""
 echo -e "${BOLD}=== Accord uninstalled ===${NC}"
 echo ""
 if [[ "$KEEP_CONTRACTS" == true ]]; then
-    echo "  Contracts preserved in contracts/. Remove manually if no longer needed."
+    echo "  Contracts preserved in .accord/contracts/. Remove manually if no longer needed."
 else
     echo "  All Accord files removed."
 fi

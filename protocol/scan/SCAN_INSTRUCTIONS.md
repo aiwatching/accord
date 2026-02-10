@@ -9,8 +9,8 @@ This document defines the agent-agnostic instructions for automatically scanning
 ## 1. Overview
 
 The Contract Scanner analyzes source code within a service or module and generates:
-- **External contracts** (`contracts/{service}.yaml`): OpenAPI specs for REST/RPC endpoints
-- **Internal contracts** (`{service}/.accord/internal-contracts/{module}.md`): Code-level interface definitions
+- **External contracts** (`.accord/contracts/{service}.yaml`): OpenAPI specs for REST/RPC endpoints
+- **Internal contracts** (`.accord/contracts/internal/{module}.md`): Code-level interface definitions
 
 Generated contracts are marked with `status: draft` and require human review before becoming `stable`.
 
@@ -51,7 +51,7 @@ For each detected endpoint, extract:
 
 ### 3.3 Output Format
 
-Generate a valid OpenAPI 3.0+ YAML file at `contracts/{service-name}.yaml`:
+Generate a valid OpenAPI 3.0+ YAML file at `.accord/contracts/{service-name}.yaml`:
 
 ```yaml
 openapi: "3.0.3"
@@ -116,7 +116,7 @@ paths:
 
 ### 4.4 Output Format
 
-Generate a markdown file at `{service-dir}/.accord/internal-contracts/{module-name}.md`:
+Generate a markdown file at `.accord/contracts/internal/{module-name}.md`:
 
 ```markdown
 ---

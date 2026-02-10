@@ -20,7 +20,7 @@ When a conversation starts:
 
 1. Run `git pull` to sync latest changes
 2. Check your external inbox: `{{COMMS_DIR}}inbox/{{TEAM_NAME}}/`
-3. Check your module inboxes (if any): `{{TEAM_NAME}}/.agent-comms/inbox/{module}/`
+3. Check your module inboxes (if any): `{{COMMS_DIR}}inbox/{module}/`
 4. For each request file found, read the YAML frontmatter
 5. Report to the user:
    - Number of pending/approved requests (grouped by scope)
@@ -48,8 +48,7 @@ This ensures you always work against the latest contracts and don't miss incomin
 - Proposed changes use `x-accord-status: proposed` + `x-accord-request: {id}` annotations
 
 ### Internal Contracts
-- Source of truth: `{{TEAM_NAME}}/{module}/.accord/contract.md`
-- Collected copies: `{{INTERNAL_CONTRACTS_DIR}}{module}.md`
+- Location: `{{INTERNAL_CONTRACTS_DIR}}{module}.md`
 - You may ONLY modify contracts for your own modules
 - Never edit another module's contract directly — create a request instead
 
@@ -71,7 +70,7 @@ When you need an API or interface that doesn't exist in another team's/module's 
 1. Check `{{INTERNAL_CONTRACTS_DIR}}{target-module}.md` to confirm the interface doesn't exist
 2. Create a request file using the template in `{{COMMS_DIR}}TEMPLATE.md`
 3. Set `scope: internal`, assign a unique ID `req-{NNN}-{description}`
-4. Place in `{{TEAM_NAME}}/.agent-comms/inbox/{target-module}/`
+4. Place in `{{COMMS_DIR}}inbox/{target-module}/`
 5. `git add` + `git commit -m "comms({target-module}): request - {summary}"` + `git push`
 6. Tell the user: "Created internal request {id} to module {target-module}."
 7. Do NOT block — continue with mock data or TODO markers
@@ -87,7 +86,7 @@ When you find an approved request in your inbox:
    b. Implement the requested change
    c. Update the relevant contract:
       - External: `{{CONTRACTS_DIR}}{{TEAM_NAME}}.yaml` (remove `x-accord-status: proposed`)
-      - Internal: `{{INTERNAL_CONTRACTS_DIR}}{module}.md` + source at `{module}/.accord/contract.md`
+      - Internal: `{{INTERNAL_CONTRACTS_DIR}}{module}.md`
    d. Update status to `completed`
    e. Move request to archive directory
    f. Commit: `comms({{TEAM_NAME}}): completed - {request-id}` + push
@@ -112,9 +111,8 @@ When the user asks to generate or update contracts:
 ## ON_SYNC (Multi-Repo Only)
 
 For `accord sync push`:
-1. Collect module contracts: copy each `{module}/.accord/contract.md` → `.accord/internal-contracts/{module}.md`
-2. Sync collected contracts and requests to the hub repo
-3. Commit and push the hub
+1. Sync contracts and requests to the hub repo
+2. Commit and push the hub
 
 For `accord sync pull`:
 1. Pull latest from the hub repo
@@ -158,14 +156,14 @@ Example subagent prompt:
 ```
 You are working as the device-manager team.
 Your module directory: device-manager/
-Your contract: contracts/device-manager.yaml
+Your contract: .accord/contracts/device-manager.yaml
 
 Task: Add a GET /api/devices/search endpoint that accepts query params
 (name, type, status) and returns matching devices.
 
 Rules:
 - Only modify files under device-manager/
-- Update contracts/device-manager.yaml with the new endpoint
+- Update .accord/contracts/device-manager.yaml with the new endpoint
 - Follow existing code patterns in the module
 ```
 

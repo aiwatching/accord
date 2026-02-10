@@ -18,7 +18,6 @@ Create and send an Accord request to another team or module.
 
 3. **Determine the next request ID**:
    - Check existing request files in `{{COMMS_DIR}}inbox/` and `{{COMMS_DIR}}archive/`
-   - Also check `{{TEAM_NAME}}/.agent-comms/` if internal
    - Assign the next sequential number: `req-{NNN}-{short-description}`
 
 4. **Create the request file** using the template from `{{COMMS_DIR}}TEMPLATE.md`:
@@ -29,7 +28,7 @@ Create and send an Accord request to another team or module.
 
 5. **Place the request file**:
    - External: `{{COMMS_DIR}}inbox/{target-team}/{request-id}.md`
-   - Internal: `{{TEAM_NAME}}/.agent-comms/inbox/{target-module}/{request-id}.md`
+   - Internal: `{{COMMS_DIR}}inbox/{target-module}/{request-id}.md`
 
 6. **(Optional) Annotate the target contract**:
    - External: add `x-accord-status: proposed` and `x-accord-request: {id}` to the relevant path in `{{CONTRACTS_DIR}}{target}.yaml`
@@ -37,7 +36,7 @@ Create and send an Accord request to another team or module.
 
 7. **Commit and push**:
    ```
-   git add {{COMMS_DIR}} {{CONTRACTS_DIR}}
+   git add .accord/
    git commit -m "comms({target}): request - {summary}"
    git push
    ```

@@ -12,37 +12,33 @@ Accord supports two repository models: **monorepo** (all services in one repo) a
 
 ### 1.1 Monorepo Model
 
-All services share a single repository:
+All services share a single repository. All Accord files are centralized under `.accord/`:
 
 ```
 {project-root}/
-├── contracts/                         # External Contract Registry
-│   └── {team-name}.yaml              # One OpenAPI spec per team/service
-│
-├── .agent-comms/                      # Communication directory (all scopes)
-│   ├── inbox/
-│   │   └── {team-or-module}/         # One inbox per team or sub-module
-│   │       └── {request-id}.md
-│   ├── archive/
-│   ├── PROTOCOL.md
-│   └── TEMPLATE.md
-│
 ├── .accord/
-│   ├── config.yaml                    # Project-level config
-│   └── adapter/
+│   ├── config.yaml                    # Project configuration (teams, modules, settings)
+│   ├── contracts/                     # External Contract Registry
+│   │   ├── {team-name}.yaml          # One OpenAPI spec per team/service
+│   │   └── internal/                  # Internal Contract Registry
+│   │       └── {module-name}.md      # Code-level interface contracts
+│   └── comms/                         # Communication directory (all scopes)
+│       ├── inbox/
+│       │   └── {team-or-module}/     # One inbox per team or sub-module
+│       │       └── {request-id}.md
+│       ├── archive/
+│       ├── PROTOCOL.md
+│       └── TEMPLATE.md
 │
+├── CLAUDE.md                          # (Claude Code adapter, if installed)
+├── .claude/commands/                  # (Slash commands, if installed)
+│
+├── {team-dir}/                        # Team source code
+│   └── src/...
 └── {service-dir}/                     # Service with sub-modules
-    ├── .accord/
-    │   ├── config.yaml                # Service-level config (lists modules)
-    │   └── internal-contracts/        # Collected copies from modules
-    │       └── {module-name}.md
-    ├── .agent-comms/                  # Module-level communication
-    │   ├── inbox/
-    │   │   └── {module-name}/
-    │   └── archive/
-    └── {module-dir}/
-        └── .accord/
-            └── contract.md            # Module's own contract (source of truth)
+    ├── {module-dir}/
+    │   └── src/...                    # Module source code
+    └── ...
 ```
 
 ### 1.2 Multi-Repo Model (Hub-and-Spoke)
@@ -53,25 +49,18 @@ Each service has its own repository. A shared **Accord Hub** repository centrali
 
 ```
 accord-hub/
-├── contracts/                         # All external contracts
-│   ├── device-manager.yaml
-│   ├── nac-engine.yaml
-│   └── nac-admin.yaml
-├── internal-contracts/                # Collected internal contracts (backup)
-│   ├── device-manager/
-│   │   ├── plugin.md
-│   │   ├── discovery.md
-│   │   └── lifecycle.md
-│   └── nac-engine/
-│       └── ...
-├── .agent-comms/                      # Cross-service communication
-│   ├── inbox/
-│   │   ├── device-manager/
-│   │   ├── nac-engine/
-│   │   └── nac-admin/
-│   └── archive/
-└── .accord/
-    └── config.yaml                    # Project-level config
+├── .accord/
+│   ├── config.yaml                    # Project-level config
+│   ├── contracts/                     # All external contracts
+│   │   ├── device-manager.yaml
+│   │   ├── nac-engine.yaml
+│   │   └── nac-admin.yaml
+│   └── comms/                         # Cross-service communication
+│       ├── inbox/
+│       │   ├── device-manager/
+│       │   ├── nac-engine/
+│       │   └── nac-admin/
+│       └── archive/
 ```
 
 **Service Repository** (per team):
@@ -79,53 +68,49 @@ accord-hub/
 ```
 device-manager/                        # Team's own Git repo
 ├── .accord/
-│   ├── hub: git@.../accord-hub.git    # Hub repo reference
-│   ├── config.yaml                    # Service-level config (lists modules)
-│   └── internal-contracts/            # Collected copies from modules
-│       ├── plugin.md
-│       ├── discovery.md
-│       └── lifecycle.md
-├── .agent-comms/                      # Module-level communication
-│   ├── inbox/
-│   │   ├── plugin/
-│   │   ├── discovery/
-│   │   └── lifecycle/
-│   └── archive/
+│   ├── config.yaml                    # Service config (modules, hub reference)
+│   ├── contracts/
+│   │   └── internal/                  # Internal contracts for modules
+│   │       ├── plugin.md
+│   │       ├── discovery.md
+│   │       └── lifecycle.md
+│   └── comms/                         # Module-level communication
+│       ├── inbox/
+│       │   ├── plugin/
+│       │   ├── discovery/
+│       │   └── lifecycle/
+│       └── archive/
 │
 ├── plugin/
-│   ├── .accord/
-│   │   └── contract.md                # Source of truth (plugin team maintains)
 │   └── src/...
 ├── discovery/
-│   ├── .accord/
-│   │   └── contract.md                # Source of truth
 │   └── src/...
 └── lifecycle/
-    ├── .accord/
-    │   └── contract.md                # Source of truth
     └── src/...
 ```
 
-### 1.3 Contract Collection Flow (Multi-Repo)
+### 1.3 Contract Sync Flow (Multi-Repo)
 
-Internal contracts flow from module → service root → hub:
+In multi-repo mode, `accord sync` synchronizes between service repo and hub:
 
 ```
-plugin/.accord/contract.md             (source of truth, module maintains)
-        │
-        ▼  accord sync collect
-.accord/internal-contracts/plugin.md   (service-root collected copy)
+.accord/contracts/device-manager.yaml     (service's external contract)
         │
         ▼  accord sync push
-accord-hub/internal-contracts/device-manager/plugin.md  (hub backup)
+accord-hub/.accord/contracts/device-manager.yaml  (hub copy)
+
+.accord/contracts/internal/plugin.md      (internal contract)
+        │
+        ▼  accord sync push
+accord-hub/.accord/contracts/internal/device-manager/plugin.md  (hub backup)
 ```
 
 ### 1.4 Naming Conventions
 - Team names: lowercase, hyphenated (e.g., `device-manager`, `nac-engine`)
 - Module names: lowercase, hyphenated (e.g., `plugin`, `discovery`, `lifecycle`)
 - Request IDs: `req-{NNN}-{short-description}` (e.g., `req-001-add-policy-api`)
-- External contract files: `{team-name}.yaml`
-- Internal contract files: `contract.md` (in module's `.accord/`) or `{module-name}.md` (collected)
+- External contract files: `.accord/contracts/{team-name}.yaml`
+- Internal contract files: `.accord/contracts/internal/{module-name}.md`
 
 ---
 
@@ -139,10 +124,10 @@ External contracts define the API boundary between services or teams. Other team
 
 **Format**: OpenAPI 3.0+ YAML, gRPC Proto, or GraphQL Schema.
 
-**Location**: `contracts/{team-name}.yaml`
+**Location**: `.accord/contracts/{team-name}.yaml`
 
 **Rules**:
-1. Each team/service owns exactly one external contract file in `contracts/`
+1. Each team/service owns exactly one external contract file
 2. A team may ONLY modify its own contract file
 3. To propose changes to another team's contract, use the Message Protocol (Section 3)
 4. Proposed changes are annotated with `x-accord-status: proposed` in the spec
@@ -165,17 +150,13 @@ Internal contracts define the code-level interface boundary between sub-modules 
 
 **Format**: Markdown with embedded interface signatures (Java interface, Python Protocol/ABC, TypeScript interface, etc.)
 
-**Location**:
-- **Source of truth**: `{module-dir}/.accord/contract.md` (each module owns its contract)
-- **Collected copy**: `{service-dir}/.accord/internal-contracts/{module-name}.md` (auto-collected by `accord sync`)
-- **Hub backup**: `accord-hub/internal-contracts/{service-name}/{module-name}.md` (multi-repo only)
+**Location**: `.accord/contracts/internal/{module-name}.md`
 
 **Rules**:
-1. Each module owns its contract file at `{module-dir}/.accord/contract.md`
+1. Each module owns its contract file
 2. A module may ONLY modify its own contract
 3. To propose changes to another module's contract, use the same Message Protocol (Section 3)
 4. Proposed changes are annotated with `x-accord-status: proposed` in the frontmatter
-5. `accord sync` auto-collects module contracts to the service root and hub — never edit collected copies directly
 
 **Internal Contract File Format**:
 
@@ -243,7 +224,7 @@ Contracts are versioned through Git. There is no separate version number — the
 
 ### 3.1 Request File Format
 
-Request files are Markdown with YAML frontmatter. Stored in `.agent-comms/inbox/{target-team}/`.
+Request files are Markdown with YAML frontmatter. Stored in `.accord/comms/inbox/{target-team-or-module}/`.
 
 ```yaml
 ---
@@ -255,7 +236,7 @@ priority: medium
 status: pending
 created: 2026-02-09T10:30:00Z
 updated: 2026-02-09T10:30:00Z
-related_contract: contracts/nac-engine.yaml
+related_contract: .accord/contracts/nac-engine.yaml
 ---
 
 ## What
@@ -341,7 +322,7 @@ in-progress → pending   (by: either team, if requirements changed)
 1. **Human approval required**: `pending → approved` MUST involve a human decision. Agents should NOT auto-approve requests.
 2. **Rejection requires reason**: When rejecting, add a `## Rejection Reason` section to the request file.
 3. **Completion requires contract update**: A request cannot be marked `completed` unless the related contract file has been updated accordingly.
-4. **Archive on terminal states**: When a request reaches `completed` or `rejected`, move it to `.agent-comms/archive/`.
+4. **Archive on terminal states**: When a request reaches `completed` or `rejected`, move it to `.accord/comms/archive/`.
 
 ---
 
@@ -349,9 +330,9 @@ in-progress → pending   (by: either team, if requirements changed)
 
 ### 5.1 Sending a Request (requesting team)
 ```
-1. Create request file in .agent-comms/inbox/{target-team}/
-2. (Optional) Annotate proposed changes in contracts/{target}.yaml
-3. git add .agent-comms/ contracts/
+1. Create request file in .accord/comms/inbox/{target-team}/
+2. (Optional) Annotate proposed changes in .accord/contracts/{target}.yaml
+3. git add .accord/
 4. git commit -m "comms({target}): request - {summary}"
 5. git push
 ```
@@ -359,7 +340,7 @@ in-progress → pending   (by: either team, if requirements changed)
 ### 5.2 Receiving Requests (target team)
 ```
 1. git pull
-2. Check .agent-comms/inbox/{own-team}/ for new or updated files
+2. Check .accord/comms/inbox/{own-team}/ for new or updated files
 3. Report findings to user
 ```
 
@@ -367,7 +348,7 @@ in-progress → pending   (by: either team, if requirements changed)
 ```
 1. Update status field in request file
 2. (If rejected) Add rejection reason
-3. git add .agent-comms/
+3. git add .accord/
 4. git commit -m "comms({own-team}): {approved|rejected} - {request-id}"
 5. git push
 ```
@@ -375,9 +356,9 @@ in-progress → pending   (by: either team, if requirements changed)
 ### 5.4 Completing a Request (target team)
 ```
 1. Implement the requested change
-2. Update contracts/{own-team}.yaml (remove x-accord-status annotation)
+2. Update .accord/contracts/{own-team}.yaml (remove x-accord-status annotation)
 3. Update request file status to completed
-4. Move request to .agent-comms/archive/
+4. Move request to .accord/comms/archive/
 5. git add .
 6. git commit -m "comms({own-team}): completed - {request-id}"
 7. git push
@@ -390,26 +371,23 @@ In the multi-repo model, `accord sync` manages communication between the service
 **`accord sync pull`** (receive from hub):
 ```
 1. cd .accord/hub && git pull
-2. Agent checks hub/.agent-comms/inbox/{own-team}/ for new requests
+2. Agent checks hub .accord/comms/inbox/{own-team}/ for new requests
 3. Report findings to user
 ```
 
 **`accord sync push`** (send to hub):
 ```
-1. Collect module contracts:
-   - For each {module}/.accord/contract.md
-   - Copy to .accord/internal-contracts/{module}.md
-2. Sync to hub:
-   - Copy .accord/internal-contracts/* → hub/internal-contracts/{service}/
-   - Copy local external contract → hub/contracts/ (if updated)
-   - Copy request files → hub/.agent-comms/inbox/{target}/
-3. cd .accord/hub && git add -A && git commit -m "..." && git push
+1. Sync contracts and requests to hub:
+   - Copy .accord/contracts/{own-team}.yaml → hub/.accord/contracts/
+   - Copy .accord/contracts/internal/* → hub/.accord/contracts/internal/{service}/
+   - Copy request files → hub/.accord/comms/inbox/{target}/
+2. cd .accord/hub && git add -A && git commit -m "..." && git push
 ```
 
 **Internal communication** (module ↔ module within same service repo):
 ```
 Uses normal git pull/push — no hub involved.
-Requests go to .agent-comms/inbox/{module}/ in the service repo.
+Requests go to .accord/comms/inbox/{module}/ in the service repo.
 ```
 
 ### 5.6 Commit Message Convention
@@ -426,7 +404,7 @@ Actions: `request`, `approved`, `rejected`, `in-progress`, `completed`, `update`
 
 ### 6.1 Config File: `.accord/config.yaml`
 
-**Project-level config** (in hub or monorepo root):
+All configuration lives in a single file. For monorepo, teams and modules are nested together:
 
 ```yaml
 version: "0.1"
@@ -434,64 +412,45 @@ project:
   name: next-nac
   description: "Next-generation Network Access Control system"
 
-repo_model: multi-repo                   # monorepo | multi-repo
-hub: git@github.com:org/accord-hub.git   # Only for multi-repo
+repo_model: monorepo
 
 teams:
   - name: frontend
     description: "Web management UI"
-    repo: git@github.com:org/frontend.git  # Only for multi-repo
-    contracts:
-      external: contracts/frontend-api.yaml
-
   - name: nac-engine
     description: "Policy evaluation and enforcement engine"
-    repo: git@github.com:org/nac-engine.git
-    contracts:
-      external: contracts/nac-engine.yaml
-
   - name: device-manager
     description: "Device discovery, lifecycle, and plugin management"
-    repo: git@github.com:org/device-manager.git
-    contracts:
-      external: contracts/device-manager.yaml
-
+    modules:
+      - name: plugin
+        path: device-manager/plugin/
+        type: java-interface
+      - name: discovery
+        path: device-manager/discovery/
+        type: java-interface
+      - name: lifecycle
+        path: device-manager/lifecycle/
+        type: java-interface
   - name: nac-admin
     description: "Administration, RBAC, and audit logging"
-    repo: git@github.com:org/nac-admin.git
-    contracts:
-      external: contracts/nac-admin.yaml
 
 settings:
+  sync_mode: on-action            # on-action | auto-poll | manual
   auto_pull_on_start: true
   require_human_approval: true
   archive_completed: true
 ```
 
-**Service-level config** (in each service repo's `.accord/config.yaml`):
+For multi-repo, add hub and repo references:
 
 ```yaml
-version: "0.1"
-service:
-  name: device-manager
-  hub: git@github.com:org/accord-hub.git
+repo_model: multi-repo
+hub: git@github.com:org/accord-hub.git
 
-modules:
-  - name: plugin
-    path: plugin/
-    contract: plugin/.accord/contract.md
-    type: java-interface
-  - name: discovery
-    path: discovery/
-    contract: discovery/.accord/contract.md
-    type: java-interface
-  - name: lifecycle
-    path: lifecycle/
-    contract: lifecycle/.accord/contract.md
-    type: java-interface
-
-settings:
-  auto_collect_on_sync: true           # Auto-collect module contracts on accord sync
+teams:
+  - name: device-manager
+    repo: git@github.com:org/device-manager.git
+    # ...
 ```
 
 ---

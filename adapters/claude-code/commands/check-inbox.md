@@ -11,7 +11,7 @@ Check for incoming Accord requests across all inboxes.
    - Note the `id`, `from`, `scope`, `type`, `priority`, `status`
 
 3. **Module inboxes** (if modules exist) — for each module in `{{MODULE_LIST}}`:
-   - Check `{{TEAM_NAME}}/.agent-comms/inbox/{module}/` for request files
+   - Check `{{COMMS_DIR}}inbox/{module}/` for request files
    - Read each `.md` file's YAML frontmatter
 
 4. **Report** to the user grouped by status:

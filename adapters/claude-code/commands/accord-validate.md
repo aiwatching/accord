@@ -15,7 +15,7 @@ If the Accord repo path is unknown, check if these exist relative to the project
 
 ### 2. Validate External Contracts
 
-For each `contracts/*.yaml` file:
+For each `.accord/contracts/*.yaml` file:
 ```bash
 bash /path/to/accord/protocol/scan/validators/validate-openapi.sh <file>
 ```
@@ -23,30 +23,17 @@ Report PASS or FAIL with details.
 
 ### 3. Validate Internal Contracts
 
-For each service with modules (from `.accord/config.yaml` or `{service}/.accord/config.yaml`):
-
-**Source contracts**:
+For each `.accord/contracts/internal/*.md` file:
 ```bash
-for module in {modules}; do
-  bash /path/to/accord/protocol/scan/validators/validate-internal.sh {service}/${module}/.accord/contract.md
-done
-```
-
-**Collected copies**:
-```bash
-for f in {service}/.accord/internal-contracts/*.md; do
-  bash /path/to/accord/protocol/scan/validators/validate-internal.sh "$f"
-done
+bash /path/to/accord/protocol/scan/validators/validate-internal.sh <file>
 ```
 
 ### 4. Validate Request Files
 
-For each `.md` file in `.agent-comms/inbox/*/` and `.agent-comms/archive/`:
+For each `.md` file in `.accord/comms/inbox/*/` and `.accord/comms/archive/`:
 ```bash
 bash /path/to/accord/protocol/scan/validators/validate-request.sh <file>
 ```
-
-Also check `{service}/.agent-comms/inbox/*/` and `{service}/.agent-comms/archive/`.
 
 ### 5. Cross-Reference Checks
 
@@ -55,8 +42,7 @@ Beyond format validation, check logical consistency:
 - **Contract references**: Each request's `related_contract` field points to a file that exists
 - **Proposed annotations**: Each `x-accord-status: proposed` in a contract has a matching request file
 - **Request-contract alignment**: Each `x-accord-request: req-XXX` annotation has a corresponding request that is not yet completed
-- **Source-collected sync**: Each module's source contract (`{module}/.accord/contract.md`) matches its collected copy (`{service}/.accord/internal-contracts/{module}.md`)
-- **Config completeness**: All teams in config have a contract file; all modules in service config have a source contract
+- **Config completeness**: All teams in config have a contract file; all modules have an internal contract
 
 ### 6. Report
 
@@ -65,29 +51,23 @@ Format the output as a validation report:
 === Accord Validation Report ===
 
 External Contracts:
-  contracts/nac-engine.yaml       PASS
-  contracts/device-manager.yaml   PASS
-  contracts/frontend.yaml         PASS
-  contracts/nac-admin.yaml        PASS
+  .accord/contracts/nac-engine.yaml       PASS
+  .accord/contracts/device-manager.yaml   PASS
+  .accord/contracts/frontend.yaml         PASS
+  .accord/contracts/nac-admin.yaml        PASS
 
-Internal Contracts (source):
-  device-manager/plugin/.accord/contract.md      PASS
-  device-manager/discovery/.accord/contract.md   PASS
-  device-manager/lifecycle/.accord/contract.md   PASS
-
-Internal Contracts (collected):
-  device-manager/.accord/internal-contracts/plugin.md      PASS
-  device-manager/.accord/internal-contracts/discovery.md   PASS
-  device-manager/.accord/internal-contracts/lifecycle.md   PASS
+Internal Contracts:
+  .accord/contracts/internal/plugin.md      PASS
+  .accord/contracts/internal/discovery.md   PASS
+  .accord/contracts/internal/lifecycle.md   PASS
 
 Requests:
-  .agent-comms/inbox/nac-admin/req-002-rbac-permissions.md   PASS
-  .agent-comms/archive/req-001-policy-by-type.md             PASS
+  .accord/comms/inbox/nac-admin/req-002-rbac-permissions.md   PASS
+  .accord/comms/archive/req-001-policy-by-type.md             PASS
 
 Cross-references:
-  req-002 → contracts/nac-admin.yaml              PASS (file exists)
-  nac-admin.yaml proposed → req-002               PASS (request exists)
-  Source-collected sync: plugin                    PASS (match)
+  req-002 → .accord/contracts/nac-admin.yaml   PASS (file exists)
+  nac-admin.yaml proposed → req-002            PASS (request exists)
 
-Summary: 12 checked, 12 passed, 0 failed
+Summary: 10 checked, 10 passed, 0 failed
 ```

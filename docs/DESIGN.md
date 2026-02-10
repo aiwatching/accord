@@ -60,16 +60,15 @@ There is no standard protocol for AI coding agents to collaborate asynchronously
 Accord supports contracts at two granularities, unified under the same protocol:
 
 **External Contracts (Service-Level)**:
-- Location: `contracts/` directory in project root
+- Location: `.accord/contracts/{team}.yaml`
 - Format: OpenAPI 3.0+ YAML (also supports gRPC Proto, GraphQL Schema)
 - One file per service/team
 - Defines the HTTP/RPC API boundary between services
 - Can auto-generate mock servers and client SDKs
 
 **Internal Contracts (Module-Level)**:
-- Source of truth: `{module-dir}/.accord/contract.md` (each module owns its contract)
-- Collected to: `{service-dir}/.accord/internal-contracts/` (auto-collected by `accord sync`)
-- Backed up to: `accord-hub/internal-contracts/{service}/` (multi-repo only)
+- Location: `.accord/contracts/internal/{module}.md` (single copy, no collection needed in monorepo)
+- Multi-repo backup: `accord-hub/.accord/contracts/internal/{service}/{module}.md`
 - Format: Markdown with embedded code-level interface signatures (Java interface, Python Protocol, TypeScript interface, etc.)
 - One contract per module within a service
 - Defines the class/method boundary between sub-modules
@@ -78,11 +77,11 @@ Accord supports contracts at two granularities, unified under the same protocol:
 Both levels use the same state machine, message protocol, and Git operations. The only differences are the contract format and the granularity of the inbox directories.
 
 #### Message Protocol
-- Location: `.agent-comms/inbox/{team-name}/` directories
+- Location: `.accord/comms/inbox/{team-or-module}/` directories
 - Format: Markdown files with YAML frontmatter
 - Each request is a single file with structured metadata
 - Git operations are the transport: commit + push = send, pull = receive
-- Archive completed requests to `.agent-comms/archive/`
+- Archive completed requests to `.accord/comms/archive/`
 
 #### Contract Scanner
 - Location: `protocol/scan/`
@@ -140,46 +139,47 @@ Accord supports two Git topologies:
 
 ### 4.1 Monorepo
 
-All services in one repo. Simplest setup. All `.agent-comms/` and `contracts/` are in the same repo.
+All services in one repo. Simplest setup. Everything under `.accord/` — contracts, internal contracts, and comms all in one place.
 
 ### 4.2 Multi-Repo (Hub-and-Spoke)
 
 Each service has its own repo. A shared **Accord Hub** repo centralizes contracts and cross-service communication.
 
 ```
-┌─────────────────────────────────────────────────┐
-│                  Accord Hub                      │
-│  (shared repo: contracts + cross-service comms)  │
-│                                                  │
-│  contracts/    .agent-comms/    internal-contracts/
-│                                (backup copies)    │
-└───────┬──────────────┬────────────────┬──────────┘
-        │              │                │
-   accord sync    accord sync      accord sync
-        │              │                │
-┌───────▼──────┐ ┌─────▼──────┐ ┌──────▼───────┐
-│device-manager│ │ nac-engine │ │  nac-admin   │
-│   (own repo) │ │ (own repo) │ │  (own repo)  │
-│              │ │            │ │              │
-│ plugin/      │ │            │ │              │
-│  └.accord/   │ │            │ │              │
-│   └contract  │ │            │ │              │
-│ discovery/   │ │            │ │              │
-│  └.accord/   │ │            │ │              │
-│   └contract  │ │            │ │              │
-└──────────────┘ └────────────┘ └──────────────┘
+┌──────────────────────────────────────────────────────┐
+│                    Accord Hub                         │
+│    (shared repo: contracts + cross-service comms)     │
+│                                                       │
+│  .accord/contracts/   .accord/comms/                  │
+│  .accord/contracts/internal/{service}/  (backups)     │
+└───────┬──────────────────┬────────────────┬───────────┘
+        │                  │                │
+   accord sync        accord sync      accord sync
+        │                  │                │
+┌───────▼──────┐   ┌──────▼──────┐  ┌──────▼───────┐
+│device-manager│   │ nac-engine  │  │  nac-admin   │
+│   (own repo) │   │  (own repo) │  │  (own repo)  │
+│              │   │             │  │              │
+│ .accord/     │   │             │  │              │
+│  contracts/  │   │             │  │              │
+│   internal/  │   │             │  │              │
+│  comms/      │   │             │  │              │
+│   inbox/     │   │             │  │              │
+└──────────────┘   └─────────────┘  └──────────────┘
 ```
 
-### 4.3 Contract Collection (Multi-Repo)
+### 4.3 Contract Sync (Multi-Repo)
 
-Internal contracts are owned by modules but collected upward for backup:
+In multi-repo mode, `accord sync` pushes contracts from service repos to the hub:
 
 ```
-plugin/.accord/contract.md          → source of truth (module edits here)
-        ↓ accord sync collect
-.accord/internal-contracts/plugin.md → service-root collected copy
+.accord/contracts/device-manager.yaml   → service's external contract
         ↓ accord sync push
-accord-hub/internal-contracts/device-manager/plugin.md → hub backup
+accord-hub/.accord/contracts/device-manager.yaml  → hub copy
+
+.accord/contracts/internal/plugin.md    → service's internal contract
+        ↓ accord sync push
+accord-hub/.accord/contracts/internal/device-manager/plugin.md → hub backup
 ```
 
 ### 4.4 Scope Hierarchy
@@ -215,7 +215,7 @@ priority: medium
 status: pending
 created: 2026-02-09T10:30:00Z
 updated: 2026-02-09T10:30:00Z
-related_contract: contracts/nac-engine.yaml
+related_contract: .accord/contracts/nac-engine.yaml
 ---
 
 ## What
@@ -247,7 +247,7 @@ priority: medium
 status: pending
 created: 2026-02-09T14:00:00Z
 updated: 2026-02-09T14:00:00Z
-related_contract: device-manager/.accord/internal-contracts/plugin-registry.md
+related_contract: .accord/contracts/internal/plugin-registry.md
 ---
 
 ## What
@@ -296,8 +296,8 @@ Rules:
 - Only the **receiving team** (or their human) can transition pending → approved/rejected
 - Only the **receiving team's agent** can transition approved → in-progress → completed
 - The **requesting team** can withdraw (delete) a pending request
-- completed requests are moved to `.agent-comms/archive/`
-- rejected requests are moved to `.agent-comms/archive/` with rejection reason
+- completed requests are moved to `.accord/comms/archive/`
+- rejected requests are moved to `.accord/comms/archive/` with rejection reason
 
 ## 7. Git Conventions
 
@@ -322,8 +322,8 @@ Examples:
 
 **Step 1: device-manager agent creates request**
 ```bash
-# Agent creates: .agent-comms/inbox/nac-engine/req-001-policy-by-type.md
-# Agent updates: contracts/nac-engine.yaml (marks new endpoint as PROPOSED)
+# Agent creates: .accord/comms/inbox/nac-engine/req-001-policy-by-type.md
+# Agent updates: .accord/contracts/nac-engine.yaml (marks new endpoint as PROPOSED)
 # Agent commits: "comms(nac-engine): request - add policy-by-type API"
 # Agent pushes
 ```
@@ -331,7 +331,7 @@ Examples:
 **Step 2: nac-engine developer gets notified**
 ```bash
 # On next session start, agent runs: git pull
-# Agent checks: .agent-comms/inbox/nac-engine/
+# Agent checks: .accord/comms/inbox/nac-engine/
 # Agent reports: "You have 1 pending request from device-manager"
 # Developer reviews and approves (changes status to 'approved')
 ```
@@ -340,8 +340,8 @@ Examples:
 ```bash
 # Agent reads the approved request
 # Agent implements the endpoint
-# Agent updates contracts/nac-engine.yaml (removes PROPOSED marker)
-# Agent moves request to .agent-comms/archive/
+# Agent updates .accord/contracts/nac-engine.yaml (removes PROPOSED marker)
+# Agent moves request to .accord/comms/archive/
 # Agent commits: "comms(nac-engine): completed - req-001, contract updated"
 # Agent pushes
 ```

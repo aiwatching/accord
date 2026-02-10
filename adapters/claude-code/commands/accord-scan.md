@@ -24,7 +24,7 @@ Scan source code and generate Accord contract files.
 
 ## Output
 
-- External contracts: `contracts/{service}.yaml` (OpenAPI 3.0)
-- Internal contracts: `{service}/.accord/internal-contracts/{module}.md`
+- External contracts: `.accord/contracts/{service}.yaml` (OpenAPI 3.0)
+- Internal contracts: `.accord/contracts/internal/{module}.md`
 
 All generated contracts are marked as `draft` and require human review.

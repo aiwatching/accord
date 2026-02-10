@@ -41,15 +41,14 @@ Now scan the actual source code to generate real contracts (replacing the templa
 1. Find all REST endpoint definitions (controllers, routes, handlers)
 2. Follow the detection rules in `protocol/scan/SCAN_INSTRUCTIONS.md` Section 3
 3. Extract: HTTP method, path, parameters, request/response types
-4. Generate OpenAPI 3.0 YAML at `contracts/{service}.yaml`
+4. Generate OpenAPI 3.0 YAML at `.accord/contracts/{service}.yaml`
 5. Mark with `x-accord-status: draft`
 
 **Internal contracts** — If the service has sub-modules:
 1. Identify cross-module interfaces following Section 4 of SCAN_INSTRUCTIONS.md
 2. For each interface: extract signatures, types, behavioral notes from doc comments
-3. Generate contract markdown at `{service}/{module}/.accord/contract.md`
-4. Copy to `{service}/.accord/internal-contracts/{module}.md`
-5. Mark with `status: draft`
+3. Generate contract markdown at `.accord/contracts/internal/{module}.md`
+4. Mark with `status: draft`
 
 If a directory has no source code yet, keep the template contracts.
 
@@ -59,12 +58,12 @@ Run validators on all generated contracts:
 
 ```bash
 # External contracts
-for f in contracts/*.yaml; do
+for f in .accord/contracts/*.yaml; do
   bash /path/to/accord/protocol/scan/validators/validate-openapi.sh "$f"
 done
 
 # Internal contracts
-for f in {service}/.accord/internal-contracts/*.md; do
+for f in .accord/contracts/internal/*.md; do
   bash /path/to/accord/protocol/scan/validators/validate-internal.sh "$f"
 done
 ```
@@ -83,15 +82,15 @@ Accord setup complete!
   Adapter:    Claude Code
 
 Generated contracts:
-  - contracts/{team-a}.yaml  (draft — from source scan)
-  - contracts/{team-b}.yaml  (draft — template, no source found)
-  - {service}/.accord/internal-contracts/{module}.md  (draft — from source scan)
+  - .accord/contracts/{team-a}.yaml  (draft — from source scan)
+  - .accord/contracts/{team-b}.yaml  (draft — template, no source found)
+  - .accord/contracts/internal/{module}.md  (draft — from source scan)
 
 Validation: all passed
 
 Next steps:
   1. Review generated contracts and change status from 'draft' to 'stable'
-  2. git add -A && git commit -m "accord: init project"
+  2. git add .accord && git commit -m "accord: init project"
   3. Use /check-inbox to see incoming requests
   4. Use /send-request to coordinate with other teams
 ```

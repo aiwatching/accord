@@ -22,7 +22,7 @@ At the beginning of every session, the agent should:
 
 1. Run `git pull` to sync the latest changes.
 2. Check the external inbox at `{{COMMS_DIR}}inbox/{{TEAM_NAME}}/` for request files (`.md` files).
-3. If the team has sub-modules, check each module inbox at `{{TEAM_NAME}}/.agent-comms/inbox/{module}/`.
+3. If the team has sub-modules, check each module inbox at `{{COMMS_DIR}}inbox/{module}/`.
 4. For each request file found, read the YAML frontmatter to extract: `id`, `from`, `to`, `scope`, `type`, `priority`, `status`.
 5. Report a summary to the user:
    - Number of pending requests (awaiting review)
@@ -44,11 +44,9 @@ At the beginning of every session, the agent should:
 
 ### Internal Contracts (Module-Level)
 
-- Source of truth: `{{TEAM_NAME}}/{module}/.accord/contract.md`
-- Collected copies: `{{INTERNAL_CONTRACTS_DIR}}{module}.md`
+- Location: `{{INTERNAL_CONTRACTS_DIR}}{module}.md`
 - Format: Markdown with YAML frontmatter and embedded code signatures.
 - The agent may only modify contracts for its own modules.
-- Never edit collected copies directly — edit the source, then collect.
 
 ### Contract Status Lifecycle
 
@@ -109,7 +107,7 @@ When the agent needs an API or interface from another team/module that doesn't e
 4. Assign a unique ID: check existing requests, use next sequential number.
 5. Place the file at `{{COMMS_DIR}}inbox/{target-team}/{request-id}.md`.
 6. Optionally annotate the target contract with `x-accord-status: proposed`.
-7. Run: `git add {{COMMS_DIR}} {{CONTRACTS_DIR}} && git commit -m "comms({target}): request - {summary}" && git push`
+7. Run: `git add .accord/ && git commit -m "comms({target}): request - {summary}" && git push`
 8. Inform the user. Do **not** block — continue with mock data or TODO markers.
 
 ### Internal Request (cross-module)
@@ -117,8 +115,8 @@ When the agent needs an API or interface from another team/module that doesn't e
 1. Verify the interface doesn't exist in `{{INTERNAL_CONTRACTS_DIR}}{target-module}.md`.
 2. Create a request file from `{{COMMS_DIR}}TEMPLATE.md`.
 3. Set `scope: internal` and appropriate `type`.
-4. Place at `{{TEAM_NAME}}/.agent-comms/inbox/{target-module}/{request-id}.md`.
-5. Run: `git add . && git commit -m "comms({target-module}): request - {summary}" && git push`
+4. Place at `{{COMMS_DIR}}inbox/{target-module}/{request-id}.md`.
+5. Run: `git add .accord/ && git commit -m "comms({target-module}): request - {summary}" && git push`
 6. Inform the user. Do **not** block.
 
 ---
@@ -152,7 +150,7 @@ When an approved request is found in the inbox:
    b. Implement the requested change.
    c. Update the relevant contract:
       - External: `{{CONTRACTS_DIR}}{{TEAM_NAME}}.yaml` (finalize proposed changes, remove annotations)
-      - Internal: both the source contract and collected copy
+      - Internal: `{{INTERNAL_CONTRACTS_DIR}}{module}.md`
    d. Update the request status to `completed`.
    e. Move the request to the archive directory.
    f. Commit: `comms({{TEAM_NAME}}): completed - {request-id}` and push.
@@ -170,7 +168,7 @@ Before marking a request as `completed`:
 4. Add a `## Resolution` section to the request file.
 5. Move the request from inbox to archive:
    - External: `{{COMMS_DIR}}inbox/{team}/` → `{{COMMS_DIR}}archive/`
-   - Internal: `{{TEAM_NAME}}/.agent-comms/inbox/{module}/` → `{{TEAM_NAME}}/.agent-comms/archive/`
+   - Internal: `{{COMMS_DIR}}inbox/{module}/` → `{{COMMS_DIR}}archive/`
 6. Commit and push: `comms({{TEAM_NAME}}): completed - {request-id}`
 7. Inform the user.
 
@@ -195,9 +193,8 @@ When the user asks to generate or update contracts:
 For multi-repo projects only. Skip if using monorepo.
 
 **Sync push**:
-1. Collect module contracts: copy each `{module}/.accord/contract.md` → `.accord/internal-contracts/{module}.md`
-2. Sync to hub: copy contracts and outgoing requests to the hub repo.
-3. Commit and push the hub repo.
+1. Sync contracts and requests to the hub repo.
+2. Commit and push the hub repo.
 
 **Sync pull**:
 1. Pull latest from the hub repo.

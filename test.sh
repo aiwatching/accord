@@ -64,21 +64,21 @@ bash "$ACCORD_DIR/init.sh" \
     --target-dir "$TEST1_DIR" \
     --no-interactive > /dev/null 2>&1
 
-assert_file "$TEST1_DIR/.accord/config.yaml"          "Config created"
-assert_file "$TEST1_DIR/contracts/alpha.yaml"          "Alpha contract created"
-assert_file "$TEST1_DIR/contracts/beta.yaml"           "Beta contract created"
-assert_dir  "$TEST1_DIR/.agent-comms/inbox/alpha"      "Alpha inbox created"
-assert_dir  "$TEST1_DIR/.agent-comms/inbox/beta"       "Beta inbox created"
-assert_file "$TEST1_DIR/.agent-comms/PROTOCOL.md"      "PROTOCOL.md created"
-assert_file "$TEST1_DIR/.agent-comms/TEMPLATE.md"      "TEMPLATE.md created"
+assert_file "$TEST1_DIR/.accord/config.yaml"               "Config created"
+assert_file "$TEST1_DIR/.accord/contracts/alpha.yaml"       "Alpha contract created"
+assert_file "$TEST1_DIR/.accord/contracts/beta.yaml"        "Beta contract created"
+assert_dir  "$TEST1_DIR/.accord/comms/inbox/alpha"          "Alpha inbox created"
+assert_dir  "$TEST1_DIR/.accord/comms/inbox/beta"           "Beta inbox created"
+assert_file "$TEST1_DIR/.accord/comms/PROTOCOL.md"          "PROTOCOL.md created"
+assert_file "$TEST1_DIR/.accord/comms/TEMPLATE.md"          "TEMPLATE.md created"
 assert_contains "$TEST1_DIR/.accord/config.yaml" "test-basic" "Config has project name"
 assert_contains "$TEST1_DIR/.accord/config.yaml" "monorepo"   "Config has repo model"
 
 # Contract validation
 assert_validator "$ACCORD_DIR/protocol/scan/validators/validate-openapi.sh" \
-    "$TEST1_DIR/contracts/alpha.yaml" "Alpha contract validates"
+    "$TEST1_DIR/.accord/contracts/alpha.yaml" "Alpha contract validates"
 assert_validator "$ACCORD_DIR/protocol/scan/validators/validate-openapi.sh" \
-    "$TEST1_DIR/contracts/beta.yaml" "Beta contract validates"
+    "$TEST1_DIR/.accord/contracts/beta.yaml" "Beta contract validates"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TEST 2: Init with service + modules
@@ -99,19 +99,17 @@ bash "$ACCORD_DIR/init.sh" \
     --target-dir "$TEST2_DIR" \
     --no-interactive > /dev/null 2>&1
 
-assert_file "$TEST2_DIR/svc-a/.accord/config.yaml"                     "Service config created"
-assert_file "$TEST2_DIR/svc-a/mod-x/.accord/contract.md"               "mod-x source contract"
-assert_file "$TEST2_DIR/svc-a/mod-y/.accord/contract.md"               "mod-y source contract"
-assert_file "$TEST2_DIR/svc-a/.accord/internal-contracts/mod-x.md"     "mod-x collected copy"
-assert_file "$TEST2_DIR/svc-a/.accord/internal-contracts/mod-y.md"     "mod-y collected copy"
-assert_dir  "$TEST2_DIR/svc-a/.agent-comms/inbox/mod-x"                "mod-x inbox"
-assert_dir  "$TEST2_DIR/svc-a/.agent-comms/inbox/mod-y"                "mod-y inbox"
-assert_contains "$TEST2_DIR/svc-a/.accord/config.yaml" "mod-x" "Service config lists mod-x"
-assert_contains "$TEST2_DIR/svc-a/mod-x/.accord/contract.md" "language: java" "Contract has language"
+assert_file "$TEST2_DIR/.accord/config.yaml"                          "Config created"
+assert_file "$TEST2_DIR/.accord/contracts/internal/mod-x.md"          "mod-x internal contract"
+assert_file "$TEST2_DIR/.accord/contracts/internal/mod-y.md"          "mod-y internal contract"
+assert_dir  "$TEST2_DIR/.accord/comms/inbox/mod-x"                    "mod-x inbox"
+assert_dir  "$TEST2_DIR/.accord/comms/inbox/mod-y"                    "mod-y inbox"
+assert_contains "$TEST2_DIR/.accord/config.yaml" "mod-x"              "Config lists mod-x"
+assert_contains "$TEST2_DIR/.accord/config.yaml" "modules:"           "Config has modules section"
 
 # Internal contract validation
 assert_validator "$ACCORD_DIR/protocol/scan/validators/validate-internal.sh" \
-    "$TEST2_DIR/svc-a/.accord/internal-contracts/mod-x.md" "mod-x internal validates"
+    "$TEST2_DIR/.accord/contracts/internal/mod-x.md" "mod-x internal validates"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TEST 3: Idempotency — running init twice doesn't break things
@@ -134,7 +132,7 @@ bash "$ACCORD_DIR/init.sh" \
 config_count=$(grep -c "^  name: test-modules" "$TEST2_DIR/.accord/config.yaml" 2>/dev/null || echo 0)
 if [[ "$config_count" -le 1 ]]; then pass "Config not duplicated"; else fail "Config duplicated"; fi
 
-assert_file "$TEST2_DIR/svc-a/mod-x/.accord/contract.md" "Contracts still exist after re-run"
+assert_file "$TEST2_DIR/.accord/contracts/internal/mod-x.md" "Contracts still exist after re-run"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TEST 4: Claude Code adapter installation
@@ -167,14 +165,16 @@ assert_not_contains "$TEST4_DIR/CLAUDE.md" "{{PROJECT_NAME}}" "No unresolved var
 assert_contains "$TEST4_DIR/CLAUDE.md" "ACCORD START"    "Has ACCORD START marker"
 assert_contains "$TEST4_DIR/CLAUDE.md" "ACCORD END"      "Has ACCORD END marker"
 
+# Check centralized paths in CLAUDE.md
+assert_contains "$TEST4_DIR/CLAUDE.md" ".accord/contracts/" "CLAUDE.md uses centralized contract path"
+assert_contains "$TEST4_DIR/CLAUDE.md" ".accord/comms/"     "CLAUDE.md uses centralized comms path"
+
 # Idempotency — run install again
 bash "$ACCORD_DIR/adapters/claude-code/install.sh" \
     --project-dir "$TEST4_DIR" \
     --project-name "test-adapter" \
     --team-name "team-a" \
-    --team-list "team-a,team-b" \
-    --contracts-dir "contracts/" \
-    --comms-dir ".agent-comms/" > /dev/null 2>&1
+    --team-list "team-a,team-b" > /dev/null 2>&1
 
 accord_blocks=$(grep -c "ACCORD START" "$TEST4_DIR/CLAUDE.md" 2>/dev/null || echo 0)
 if [[ "$accord_blocks" -eq 1 ]]; then
@@ -202,6 +202,7 @@ bash "$ACCORD_DIR/init.sh" \
 assert_file "$TEST5_DIR/.accord/adapter/AGENT_INSTRUCTIONS.md" "Generic instructions created"
 assert_not_contains "$TEST5_DIR/.accord/adapter/AGENT_INSTRUCTIONS.md" "{{" "No unresolved vars"
 assert_contains "$TEST5_DIR/.accord/adapter/AGENT_INSTRUCTIONS.md" "test-generic" "Has project name"
+assert_contains "$TEST5_DIR/.accord/adapter/AGENT_INSTRUCTIONS.md" ".accord/contracts/" "Uses centralized paths"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TEST 6: Full request lifecycle simulation
@@ -220,7 +221,7 @@ bash "$ACCORD_DIR/init.sh" \
     --no-interactive > /dev/null 2>&1
 
 # Step 1: Create a request (frontend → backend)
-cat > "$TEST6_DIR/.agent-comms/inbox/backend/req-001-add-users-api.md" <<'EOF'
+cat > "$TEST6_DIR/.accord/comms/inbox/backend/req-001-add-users-api.md" <<'EOF'
 ---
 id: req-001-add-users-api
 from: frontend
@@ -231,7 +232,7 @@ priority: medium
 status: pending
 created: 2026-02-09T10:00:00Z
 updated: 2026-02-09T10:00:00Z
-related_contract: contracts/backend.yaml
+related_contract: .accord/contracts/backend.yaml
 ---
 
 ## What
@@ -255,30 +256,30 @@ Frontend dashboard needs to display user list.
 - New User model
 EOF
 
-assert_file "$TEST6_DIR/.agent-comms/inbox/backend/req-001-add-users-api.md" "Request created"
+assert_file "$TEST6_DIR/.accord/comms/inbox/backend/req-001-add-users-api.md" "Request created"
 assert_validator "$ACCORD_DIR/protocol/scan/validators/validate-request.sh" \
-    "$TEST6_DIR/.agent-comms/inbox/backend/req-001-add-users-api.md" "Request validates"
+    "$TEST6_DIR/.accord/comms/inbox/backend/req-001-add-users-api.md" "Request validates"
 
 # Step 2: Approve the request
 sed 's/status: pending/status: approved/' \
-    "$TEST6_DIR/.agent-comms/inbox/backend/req-001-add-users-api.md" > "$TEST6_DIR/.agent-comms/inbox/backend/req-001-add-users-api.md.tmp"
-mv "$TEST6_DIR/.agent-comms/inbox/backend/req-001-add-users-api.md.tmp" \
-    "$TEST6_DIR/.agent-comms/inbox/backend/req-001-add-users-api.md"
+    "$TEST6_DIR/.accord/comms/inbox/backend/req-001-add-users-api.md" > "$TEST6_DIR/.accord/comms/inbox/backend/req-001-add-users-api.md.tmp"
+mv "$TEST6_DIR/.accord/comms/inbox/backend/req-001-add-users-api.md.tmp" \
+    "$TEST6_DIR/.accord/comms/inbox/backend/req-001-add-users-api.md"
 
-assert_contains "$TEST6_DIR/.agent-comms/inbox/backend/req-001-add-users-api.md" \
+assert_contains "$TEST6_DIR/.accord/comms/inbox/backend/req-001-add-users-api.md" \
     "status: approved" "Status changed to approved"
 
 # Step 3: Mark in-progress
 sed 's/status: approved/status: in-progress/' \
-    "$TEST6_DIR/.agent-comms/inbox/backend/req-001-add-users-api.md" > "$TEST6_DIR/.agent-comms/inbox/backend/req-001-add-users-api.md.tmp"
-mv "$TEST6_DIR/.agent-comms/inbox/backend/req-001-add-users-api.md.tmp" \
-    "$TEST6_DIR/.agent-comms/inbox/backend/req-001-add-users-api.md"
+    "$TEST6_DIR/.accord/comms/inbox/backend/req-001-add-users-api.md" > "$TEST6_DIR/.accord/comms/inbox/backend/req-001-add-users-api.md.tmp"
+mv "$TEST6_DIR/.accord/comms/inbox/backend/req-001-add-users-api.md.tmp" \
+    "$TEST6_DIR/.accord/comms/inbox/backend/req-001-add-users-api.md"
 
-assert_contains "$TEST6_DIR/.agent-comms/inbox/backend/req-001-add-users-api.md" \
+assert_contains "$TEST6_DIR/.accord/comms/inbox/backend/req-001-add-users-api.md" \
     "status: in-progress" "Status changed to in-progress"
 
 # Step 4: Complete — update contract (add a real endpoint to make it pass validation)
-cat > "$TEST6_DIR/contracts/backend.yaml" <<'EOF'
+cat > "$TEST6_DIR/.accord/contracts/backend.yaml" <<'EOF'
 openapi: "3.0.3"
 info:
   title: "backend API"
@@ -317,24 +318,23 @@ paths:
 EOF
 
 assert_validator "$ACCORD_DIR/protocol/scan/validators/validate-openapi.sh" \
-    "$TEST6_DIR/contracts/backend.yaml" "Updated contract validates"
+    "$TEST6_DIR/.accord/contracts/backend.yaml" "Updated contract validates"
 
 # Step 5: Mark completed + archive
 sed 's/status: in-progress/status: completed/' \
-    "$TEST6_DIR/.agent-comms/inbox/backend/req-001-add-users-api.md" > "$TEST6_DIR/.agent-comms/inbox/backend/req-001-add-users-api.md.tmp"
-mv "$TEST6_DIR/.agent-comms/inbox/backend/req-001-add-users-api.md.tmp" \
-    "$TEST6_DIR/.agent-comms/inbox/backend/req-001-add-users-api.md"
+    "$TEST6_DIR/.accord/comms/inbox/backend/req-001-add-users-api.md" > "$TEST6_DIR/.accord/comms/inbox/backend/req-001-add-users-api.md.tmp"
+mv "$TEST6_DIR/.accord/comms/inbox/backend/req-001-add-users-api.md.tmp" \
+    "$TEST6_DIR/.accord/comms/inbox/backend/req-001-add-users-api.md"
 
-mkdir -p "$TEST6_DIR/.agent-comms/archive"
-mv "$TEST6_DIR/.agent-comms/inbox/backend/req-001-add-users-api.md" \
-    "$TEST6_DIR/.agent-comms/archive/req-001-add-users-api.md"
+mv "$TEST6_DIR/.accord/comms/inbox/backend/req-001-add-users-api.md" \
+    "$TEST6_DIR/.accord/comms/archive/req-001-add-users-api.md"
 
-assert_file "$TEST6_DIR/.agent-comms/archive/req-001-add-users-api.md" "Request archived"
-assert_contains "$TEST6_DIR/.agent-comms/archive/req-001-add-users-api.md" \
+assert_file "$TEST6_DIR/.accord/comms/archive/req-001-add-users-api.md" "Request archived"
+assert_contains "$TEST6_DIR/.accord/comms/archive/req-001-add-users-api.md" \
     "status: completed" "Archived request has completed status"
 
 # Verify inbox is now empty (except .gitkeep)
-inbox_files=$(find "$TEST6_DIR/.agent-comms/inbox/backend" -name "*.md" -type f 2>/dev/null | wc -l | xargs)
+inbox_files=$(find "$TEST6_DIR/.accord/comms/inbox/backend" -name "*.md" -type f 2>/dev/null | wc -l | xargs)
 if [[ "$inbox_files" -eq 0 ]]; then
     pass "Inbox cleared after archive"
 else
@@ -429,6 +429,26 @@ bash "$ACCORD_DIR/init.sh" \
 
 assert_contains "$TEST9_DIR/.accord/config.yaml" "multi-repo" "Config has multi-repo model"
 assert_contains "$TEST9_DIR/.accord/config.yaml" "git@github.com:org/accord-hub.git" "Config has hub URL"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 10: Sync mode — auto-poll creates watch script
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 10] Sync mode auto-poll${NC}"
+
+TEST10_DIR="$TMPDIR/test10"
+mkdir -p "$TEST10_DIR"
+
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-poll" \
+    --repo-model monorepo \
+    --teams "alpha" \
+    --adapter none \
+    --sync-mode auto-poll \
+    --target-dir "$TEST10_DIR" \
+    --no-interactive > /dev/null 2>&1
+
+assert_file "$TEST10_DIR/.accord/accord-watch.sh" "Watch script created for auto-poll"
+assert_contains "$TEST10_DIR/.accord/config.yaml" "auto-poll" "Config has auto-poll sync mode"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Summary

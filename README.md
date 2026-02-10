@@ -71,12 +71,20 @@ That's it — interactive prompts will guide you through project name, teams, an
 
 ### What it creates
 
+Everything under `.accord/`:
+
 ```
-contracts/          — External OpenAPI specs for each team
-.agent-comms/       — Inbox directories for each team
-.accord/            — Configuration
-CLAUDE.md           — Protocol rules injected (Claude Code adapter)
-.claude/commands/   — Slash commands (/check-inbox, /send-request, etc.)
+.accord/
+├── config.yaml              — Project configuration
+├── contracts/               — External OpenAPI specs for each team
+│   └── internal/            — Internal module-level contracts
+└── comms/                   — Inbox directories for each team/module
+    ├── inbox/{team}/
+    ├── archive/
+    └── PROTOCOL.md / TEMPLATE.md
+
+CLAUDE.md                    — Protocol rules (Claude Code adapter)
+.claude/commands/            — Slash commands (/check-inbox, /send-request, etc.)
 ```
 
 Then start your agent. It will automatically check for incoming requests on session start.
@@ -85,27 +93,27 @@ Then start your agent. It will automatically check for incoming requests on sess
 
 ```
 your-project/
-├── contracts/                          # External Contract Registry
-│   ├── frontend.yaml                   # OpenAPI spec
-│   ├── backend-api.yaml
-│   └── backend-engine.yaml
-├── .agent-comms/                       # Communication Layer
-│   ├── inbox/
-│   │   ├── frontend/                   # Team-level inboxes
-│   │   ├── backend-api/
-│   │   ├── backend-engine/
-│   │   ├── plugin/                     # Module-level inboxes (if applicable)
-│   │   └── discovery/
-│   ├── archive/
-│   ├── PROTOCOL.md
-│   └── TEMPLATE.md
 ├── .accord/
-│   └── config.yaml
-├── backend-engine/                     # Service with sub-modules
-│   ├── .accord/
-│   │   └── internal-contracts/         # Internal Contract Registry
-│   │       ├── plugin-registry.md      # Code-level interface contract
+│   ├── config.yaml                        # Project configuration
+│   ├── contracts/                         # External Contract Registry
+│   │   ├── frontend.yaml                  # OpenAPI spec per team
+│   │   ├── backend-api.yaml
+│   │   ├── backend-engine.yaml
+│   │   └── internal/                      # Internal Contract Registry
+│   │       ├── plugin-registry.md         # Code-level interface contract
 │   │       └── discovery-service.md
+│   └── comms/                             # Communication Layer
+│       ├── inbox/
+│       │   ├── frontend/                  # Team-level inboxes
+│       │   ├── backend-api/
+│       │   ├── backend-engine/
+│       │   ├── plugin/                    # Module-level inboxes
+│       │   └── discovery/
+│       ├── archive/
+│       ├── PROTOCOL.md
+│       └── TEMPLATE.md
+│
+├── backend-engine/                        # Service with sub-modules
 │   ├── plugin/
 │   └── discovery/
 └── ... (your source code)

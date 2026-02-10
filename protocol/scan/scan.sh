@@ -13,7 +13,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_ROOT="$(pwd)"
 CONFIG_FILE="$PROJECT_ROOT/.accord/config.yaml"
 SCAN_INSTRUCTIONS="$SCRIPT_DIR/SCAN_INSTRUCTIONS.md"
 
@@ -108,10 +108,10 @@ generate_prompt() {
         echo ""
         echo "1. Find all REST/HTTP endpoint definitions (controllers, routes, handlers)"
         echo "2. Extract: HTTP method, path, parameters, request/response types"
-        echo "3. Generate OpenAPI 3.0 YAML at: contracts/${service}.yaml"
+        echo "3. Generate OpenAPI 3.0 YAML at: .accord/contracts/${service}.yaml"
         echo "4. Mark with x-accord-status: draft"
         echo ""
-        echo "Output file: $PROJECT_ROOT/contracts/${service}.yaml"
+        echo "Output file: $PROJECT_ROOT/.accord/contracts/${service}.yaml"
         echo ""
     fi
 
@@ -124,10 +124,10 @@ generate_prompt() {
         echo "1. Identify sub-module boundaries (separate packages/directories)"
         echo "2. Find public interfaces/protocols/ABCs imported by OTHER modules"
         echo "3. For each cross-module interface, extract: signatures, types, behavioral notes"
-        echo "4. Generate contract markdown at: ${service}/.accord/internal-contracts/{module}.md"
+        echo "4. Generate contract markdown at: .accord/contracts/internal/{module}.md"
         echo "5. Mark with status: draft"
         echo ""
-        echo "Output directory: $service_dir/.accord/internal-contracts/"
+        echo "Output directory: $PROJECT_ROOT/.accord/contracts/internal/"
         echo ""
     fi
 
@@ -142,14 +142,14 @@ validate_contracts() {
     local errors=0
 
     if [[ "$type" == "external" || "$type" == "all" ]]; then
-        local ext_contract="$PROJECT_ROOT/contracts/${service}.yaml"
+        local ext_contract="$PROJECT_ROOT/.accord/contracts/${service}.yaml"
         if [[ -f "$ext_contract" ]]; then
             echo -e "Validating external contract: $ext_contract"
             if bash "$SCRIPT_DIR/validators/validate-openapi.sh" "$ext_contract"; then
                 echo -e "  ${GREEN}PASS${NC}"
             else
                 echo -e "  ${RED}FAIL${NC}"
-                ((errors++))
+                errors=$((errors + 1))
             fi
         else
             echo -e "  ${YELLOW}SKIP${NC} - $ext_contract not found"
@@ -157,7 +157,7 @@ validate_contracts() {
     fi
 
     if [[ "$type" == "internal" || "$type" == "all" ]]; then
-        local int_dir="$PROJECT_ROOT/$service/.accord/internal-contracts"
+        local int_dir="$PROJECT_ROOT/.accord/contracts/internal"
         if [[ -d "$int_dir" ]]; then
             for contract in "$int_dir"/*.md; do
                 [[ -f "$contract" ]] || continue
@@ -166,7 +166,7 @@ validate_contracts() {
                     echo -e "  ${GREEN}PASS${NC}"
                 else
                     echo -e "  ${RED}FAIL${NC}"
-                    ((errors++))
+                    errors=$((errors + 1))
                 fi
             done
         else

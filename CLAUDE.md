@@ -11,7 +11,7 @@ Accord solves this with a file-based protocol layered on Git, so any agent that 
 
 ### Protocol Layer (agent-agnostic)
 - Contract Registry: Two levels — external contracts (OpenAPI) for inter-service APIs, internal contracts (code-level interfaces) for intra-service modules
-- Message Protocol: request files in `.agent-comms/inbox/` for cross-team and cross-module communication
+- Message Protocol: request files in `.accord/comms/inbox/` for cross-team and cross-module communication
 - Task Lifecycle: state machine governing request status transitions (same at both levels — fractal protocol)
 - All based on Git + files. No external dependencies.
 
@@ -27,7 +27,7 @@ Accord solves this with a file-based protocol layered on Git, so any agent that 
 - Two-level contracts: OpenAPI for service-level APIs, code-level interfaces (Java/Python/TS) for module-level boundaries
 - Fractal protocol: same state machine and message format at every granularity level
 - Multi-repo support: Hub-and-Spoke model — shared Accord Hub repo for cross-service, service repos for internal modules
-- Distributed ownership, centralized collection: modules own their contracts, `accord sync` collects to service root and hub
+- Centralized contracts: all contracts live under `.accord/contracts/` (external) and `.accord/contracts/internal/` (internal) — single copy, no collection needed in monorepo
 - File-based protocol: no databases, no message queues, no servers to deploy
 - Agent-agnostic core: the protocol layer has zero dependency on any specific AI tool
 - Adapters are thin: just template files that inject protocol rules into agent-specific config formats

@@ -4,15 +4,14 @@
 #
 # What it upgrades:
 #   - Adapter templates (CLAUDE.md rules, slash commands, skills)
-#   - Protocol reference (.agent-comms/PROTOCOL.md)
-#   - Request template (.agent-comms/TEMPLATE.md)
+#   - Protocol reference (.accord/comms/PROTOCOL.md)
+#   - Request template (.accord/comms/TEMPLATE.md)
 #   - Watch script (if using auto-poll)
 #
 # What it does NOT touch:
 #   - .accord/config.yaml (your project settings)
-#   - contracts/ (your API contracts)
-#   - .agent-comms/inbox/ and archive/ (your request data)
-#   - Module contracts ({module}/.accord/contract.md)
+#   - .accord/contracts/ (your API contracts)
+#   - .accord/comms/inbox/ and archive/ (your request data)
 #
 # Usage:
 #   ~/.accord/upgrade.sh              # Upgrade current project
@@ -115,23 +114,25 @@ elif [[ -f "$TARGET_DIR/.accord/adapter/AGENT_INSTRUCTIONS.md" ]]; then
     ADAPTER="generic"
 fi
 
-# Detect service with modules
-SERVICE=""
+# Detect modules from config
 MODULES=""
+SERVICE=""
+# Look for team entries that have modules: section
 IFS=',' read -ra team_arr <<< "$TEAMS"
 for team in "${team_arr[@]}"; do
     team="$(echo "$team" | xargs)"
-    if [[ -f "$TARGET_DIR/$team/.accord/config.yaml" ]]; then
+    # Check if this team has modules in config
+    if sed -n "/- name: ${team}/,/- name: /p" "$CONFIG_FILE" | grep -q "modules:"; then
         SERVICE="$team"
-        MODULES="$(sed -n 's/^  - name: //p' "$TARGET_DIR/$team/.accord/config.yaml" | tr '\n' ',' | sed 's/,$//')"
+        MODULES="$(sed -n "/- name: ${team}/,/^  - name: /{ /modules:/,/^  - name: /{ s/^      - name: //p; }; }" "$CONFIG_FILE" | tr '\n' ',' | sed 's/,$//')"
         break
     fi
 done
 
-# Detect language from service config
+# Detect language from config
 LANGUAGE="java"
-if [[ -n "$SERVICE" && -f "$TARGET_DIR/$SERVICE/.accord/config.yaml" ]]; then
-    detected_type="$(sed -n 's/.*type: \(.*\)-interface/\1/p' "$TARGET_DIR/$SERVICE/.accord/config.yaml" | head -1)"
+if [[ -n "$SERVICE" ]]; then
+    detected_type="$(sed -n 's/.*type: \(.*\)-interface/\1/p' "$CONFIG_FILE" | head -1)"
     [[ -n "$detected_type" ]] && LANGUAGE="$detected_type"
 fi
 
@@ -152,29 +153,16 @@ UPDATED=0
 # ── Upgrade protocol reference ───────────────────────────────────────────────
 
 upgrade_protocol_files() {
-    # .agent-comms/PROTOCOL.md — always overwrite with latest
-    local proto_file="$TARGET_DIR/.agent-comms/PROTOCOL.md"
-    if [[ -f "$proto_file" ]]; then
-        # Re-generate from init.sh's embedded version
-        # We source the generate function by extracting it, but simpler to just
-        # compare and copy from the template if available
-        local src_template="$ACCORD_DIR/protocol/templates/request.md.template"
-
-        # For PROTOCOL.md, we regenerate inline (same as init.sh does)
-        log "Upgrading .agent-comms/PROTOCOL.md"
-        UPDATED=$((UPDATED + 1))
-    fi
-
-    # .agent-comms/TEMPLATE.md — update from template
-    local template_file="$TARGET_DIR/.agent-comms/TEMPLATE.md"
+    # .accord/comms/TEMPLATE.md — update from template
+    local template_file="$TARGET_DIR/.accord/comms/TEMPLATE.md"
     local src_template="$ACCORD_DIR/protocol/templates/request.md.template"
     if [[ -f "$template_file" && -f "$src_template" ]]; then
         if ! diff -q "$template_file" "$src_template" >/dev/null 2>&1; then
             cp "$src_template" "$template_file"
-            log "Upgraded .agent-comms/TEMPLATE.md"
+            log "Upgraded .accord/comms/TEMPLATE.md"
             UPDATED=$((UPDATED + 1))
         else
-            log ".agent-comms/TEMPLATE.md — already up to date"
+            log ".accord/comms/TEMPLATE.md — already up to date"
         fi
     fi
 }
@@ -197,7 +185,7 @@ upgrade_claude_code() {
     [[ -n "$MODULES" ]] && modules_arg="--module-list $MODULES"
 
     local internal_dir=""
-    [[ -n "$SERVICE" ]] && internal_dir="$SERVICE/.accord/internal-contracts/"
+    [[ -n "$MODULES" ]] && internal_dir=".accord/contracts/internal/"
 
     log "Upgrading Claude Code adapter (CLAUDE.md + commands + skills)..."
 
@@ -206,8 +194,8 @@ upgrade_claude_code() {
         --project-name "$PROJECT_NAME" \
         --team-name "$team_name" \
         --team-list "$TEAMS" \
-        --contracts-dir "contracts/" \
-        --comms-dir ".agent-comms/" \
+        --contracts-dir ".accord/contracts/" \
+        --comms-dir ".accord/comms/" \
         --sync-mode "$SYNC_MODE" \
         ${modules_arg:+$modules_arg} \
         ${internal_dir:+--internal-contracts-dir "$internal_dir"}
@@ -235,9 +223,9 @@ upgrade_generic() {
         "TEAM_NAME" "$team_name" \
         "TEAM_LIST" "$TEAMS" \
         "MODULE_LIST" "${MODULES:-}" \
-        "CONTRACTS_DIR" "contracts/" \
-        "INTERNAL_CONTRACTS_DIR" "${SERVICE:+$SERVICE/.accord/internal-contracts/}" \
-        "COMMS_DIR" ".agent-comms/"
+        "CONTRACTS_DIR" ".accord/contracts/" \
+        "INTERNAL_CONTRACTS_DIR" ".accord/contracts/internal/" \
+        "COMMS_DIR" ".accord/comms/"
 
     log "Upgraded generic adapter instructions"
     UPDATED=$((UPDATED + 1))
@@ -249,7 +237,6 @@ upgrade_watch_script() {
     local watch_file="$TARGET_DIR/.accord/accord-watch.sh"
 
     if [[ "$SYNC_MODE" == "auto-poll" ]]; then
-        # Regenerate watch script from init.sh's version
         if [[ -f "$watch_file" ]]; then
             log "Upgrading .accord/accord-watch.sh"
         else
@@ -269,7 +256,7 @@ upgrade_watch_script() {
 set -euo pipefail
 
 INTERVAL=300  # default: 5 minutes
-COMMS_DIR=".agent-comms"
+COMMS_DIR=".accord/comms"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -331,5 +318,5 @@ else
     echo -e "${BOLD}=== Already up to date ===${NC}"
 fi
 echo ""
-echo -e "  ${DIM}Unchanged: .accord/config.yaml, contracts/, inbox data, module contracts${NC}"
+echo -e "  ${DIM}Unchanged: .accord/config.yaml, .accord/contracts/, inbox data${NC}"
 echo ""

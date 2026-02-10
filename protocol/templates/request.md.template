@@ -36,8 +36,8 @@ updated: {{CREATED_TIMESTAMP}}
 
 related_contract: {{RELATED_CONTRACT_PATH}}
   # Optional. Path to the related contract file.
-  # External: contracts/{team-name}.yaml
-  # Internal: {service}/.accord/internal-contracts/{module-name}.md
+  # External: .accord/contracts/{team-name}.yaml
+  # Internal: .accord/contracts/internal/{module-name}.md
 ---
 
 ## What
