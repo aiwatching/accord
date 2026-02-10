@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Accord Remote Installer
+# Accord Installer
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/aiwatching/accord/main/install-remote.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/aiwatching/accord/main/install.sh | bash
 #
 # That's it. No flags needed.
 #

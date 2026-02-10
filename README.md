@@ -57,7 +57,7 @@ No servers. No message queues. No infrastructure. Just Git.
 ### Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/aiwatching/accord/main/install-remote.sh | bash
+curl -fsSL https://raw.githubusercontent.com/aiwatching/accord/main/install.sh | bash
 ```
 
 ### Initialize your project
