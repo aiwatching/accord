@@ -54,21 +54,41 @@ No servers. No message queues. No infrastructure. Just Git.
 
 ## Quick Start
 
+### One-liner (recommended)
+
 ```bash
-# Clone Accord
-git clone https://github.com/yourname/accord.git
-
-# Initialize in your project
 cd your-project
-/path/to/accord/init.sh --adapter claude-code --teams "frontend,backend-api,backend-engine"
 
-# This creates:
-# - contracts/          (external OpenAPI specs for each team)
-# - .agent-comms/       (inbox directories for each team and module)
-# - .accord/            (configuration)
-# - CLAUDE.md updates   (protocol rules injected)
-# - slash commands       (check-inbox, send-request, etc.)
-# - {service}/.accord/internal-contracts/  (for services with sub-modules)
+# Interactive — asks for project name, teams, adapter
+curl -fsSL https://raw.githubusercontent.com/aiwatching/accord/main/install-remote.sh | bash
+
+# Or non-interactive with flags
+curl -fsSL https://raw.githubusercontent.com/aiwatching/accord/main/install-remote.sh | bash -s -- \
+  --project-name my-app \
+  --teams "frontend,backend-api,backend-engine" \
+  --adapter claude-code \
+  --scan \
+  --no-interactive
+```
+
+This downloads Accord to `~/.accord/` (cached for future use) and runs `init.sh` in your project.
+
+### Manual install
+
+```bash
+git clone https://github.com/aiwatching/accord.git ~/.accord
+cd your-project
+~/.accord/init.sh --adapter claude-code --teams "frontend,backend-api,backend-engine"
+```
+
+### What it creates
+
+```
+contracts/          — External OpenAPI specs for each team
+.agent-comms/       — Inbox directories for each team
+.accord/            — Configuration
+CLAUDE.md           — Protocol rules injected (Claude Code adapter)
+.claude/commands/   — Slash commands (/check-inbox, /send-request, etc.)
 ```
 
 Then start your agent. It will automatically check for incoming requests on session start.
