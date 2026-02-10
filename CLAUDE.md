@@ -1,9 +1,9 @@
 # Accord - Agent-Agnostic Collaboration Framework
 
 ## Project Overview
-Accord is a Git-based, agent-agnostic framework for coordinating multiple AI coding agents across teams, modules, and services in large-scale software projects.
+Accord is a Git-based, agent-agnostic framework for coordinating multiple AI coding agents across services, modules, and sessions in large-scale software projects.
 
-Core problem: AI coding agents (Claude Code, Cursor, Copilot, etc.) work well within a single session, but there's no standard way for multiple agent sessions to collaborate asynchronously — especially across teams, services, or time.
+Core problem: AI coding agents (Claude Code, Cursor, Copilot, etc.) work well within a single session, but there's no standard way for multiple agent sessions to collaborate asynchronously — especially across services, modules, or time.
 
 Accord solves this with a file-based protocol layered on Git, so any agent that can read/write files and run git commands can participate.
 
@@ -11,7 +11,7 @@ Accord solves this with a file-based protocol layered on Git, so any agent that 
 
 ### Protocol Layer (agent-agnostic)
 - Contract Registry: Two levels — external contracts (OpenAPI) for inter-service APIs, internal contracts (code-level interfaces) for intra-service modules
-- Message Protocol: request files in `.accord/comms/inbox/` for cross-team and cross-module communication
+- Message Protocol: request files in `.accord/comms/inbox/` for cross-service and cross-module communication
 - Task Lifecycle: state machine governing request status transitions (same at both levels — fractal protocol)
 - All based on Git + files. No external dependencies.
 

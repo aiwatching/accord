@@ -39,8 +39,8 @@ Adapters must inject these behaviors into the agent's instruction set:
 **Actions**:
 1. Run `git pull` to sync latest changes in the service repo
 2. If multi-repo: run `accord sync pull` to pull from the hub repo
-3. Check external inbox: `.accord/comms/inbox/{own-team}/`
-4. Check internal inbox (if team has sub-modules): `.accord/comms/inbox/{module-name}/`
+3. Check inbox: `.accord/comms/inbox/{own-module}/`
+4. If service has sub-modules, also check: `.accord/comms/inbox/{sub-module-name}/`
 5. For each request file, read the YAML frontmatter
 6. Report to user:
    - Number of pending/approved requests (grouped by scope: external vs internal)
@@ -51,20 +51,20 @@ Adapters must inject these behaviors into the agent's instruction set:
 
 ### 2.2 ON_NEED_INTERFACE (Cross-Boundary Request)
 
-**Trigger**: During implementation, the agent determines it needs an API or interface from another team/module that doesn't exist in their contract.
+**Trigger**: During implementation, the agent determines it needs an API or interface from another module that doesn't exist in their contract.
 
 **For external requests (scope: external)**:
-1. Check `.accord/contracts/{target-team}.yaml` to confirm the API doesn't exist
+1. Check `.accord/contracts/{target-module}.yaml` to confirm the API doesn't exist
 2. Generate a request file following the template in `.accord/comms/TEMPLATE.md`
 3. Assign a unique ID: `req-{NNN}-{short-description}`
 4. Set `scope: external`, `type: api-addition` (or `api-change`)
 5. Set status to `pending`
-6. (Optional) Add `x-accord-status: proposed` annotation to `.accord/contracts/{target-team}.yaml`
-7. Place request in `.accord/comms/inbox/{target-team}/`
+6. (Optional) Add `x-accord-status: proposed` annotation to `.accord/contracts/{target-module}.yaml`
+7. Place request in `.accord/comms/inbox/{target-module}/`
 8. `git add` the request file and any contract annotations
-9. `git commit -m "comms({target-team}): request - {summary}"`
+9. `git commit -m "comms({target-module}): request - {summary}"`
 10. `git push`
-11. Inform user: "Created cross-team request {id} to {target-team}. Needs their approval."
+11. Inform user: "Created cross-service request {id} to {target-module}. Needs their approval."
 
 **For internal requests (scope: internal)**:
 1. Check `.accord/contracts/internal/{target-module}.md` to confirm the interface doesn't exist
@@ -82,7 +82,7 @@ Adapters must inject these behaviors into the agent's instruction set:
 
 ### 2.3 ON_APPROVED_REQUEST (Processing Approved Requests)
 
-**Trigger**: An approved request is found in the team's or module's inbox (status: approved).
+**Trigger**: An approved request is found in the module's inbox (status: approved).
 
 **Actions**:
 1. Read the full request file
@@ -91,7 +91,7 @@ Adapters must inject these behaviors into the agent's instruction set:
    a. Update request status to `in-progress`, commit
    b. Implement the requested change
    c. Update the relevant contract:
-      - External: `.accord/contracts/{own-team}.yaml` (finalize proposed changes)
+      - External: `.accord/contracts/{own-module}.yaml` (finalize proposed changes)
       - Internal: `.accord/contracts/internal/{own-module}.md` (update interface)
    d. Move request to `.accord/comms/archive/`
    e. Commit and push
@@ -100,14 +100,14 @@ Adapters must inject these behaviors into the agent's instruction set:
 
 ### 2.4 ON_COMPLETE (Request Completion)
 
-**Trigger**: Implementation of a cross-team or cross-module request is finished.
+**Trigger**: Implementation of an external (cross-service) or internal (cross-module) request is finished.
 
 **Actions**:
 1. Verify: Is the contract file updated (external or internal)?
 2. Verify: Does the implementation match the contract?
 3. Update request status to `completed`
 4. Move request file from inbox to archive
-5. Commit with message: `comms({own-team-or-module}): completed - {request-id}`
+5. Commit with message: `comms({own-module}): completed - {request-id}`
 6. Push
 7. Inform user: "Completed request {id}. Contract updated."
 
@@ -130,7 +130,7 @@ Adapters must inject these behaviors into the agent's instruction set:
 7. Report results to user: "Generated {N} contracts with status: draft. Please review."
 8. Do NOT auto-commit — let the user review first
 
-**Important**: Generated contracts are `draft` and must be reviewed by a human before becoming `stable`. Other teams/modules should not depend on `draft` contracts.
+**Important**: Generated contracts are `draft` and must be reviewed by a human before becoming `stable`. Other modules should not depend on `draft` contracts.
 
 ### 2.6 ON_SYNC (Multi-Repo Synchronization)
 
@@ -138,12 +138,12 @@ Adapters must inject these behaviors into the agent's instruction set:
 
 **`accord sync pull` actions**:
 1. `cd .accord/hub && git pull`
-2. Check hub's `.accord/comms/inbox/{own-team}/` for new external requests
+2. Check hub's `.accord/comms/inbox/{own-service}/` for new external requests
 3. Report findings to user
 
 **`accord sync push` actions**:
 1. Sync to hub:
-   - Copy `.accord/contracts/{own-team}.yaml` → `hub/.accord/contracts/`
+   - Copy `.accord/contracts/{own-service}.yaml` → `hub/.accord/contracts/`
    - Copy `.accord/contracts/internal/*` → `hub/.accord/contracts/internal/{service}/`
    - Copy outgoing request files → `hub/.accord/comms/inbox/{target}/`
 2. `cd .accord/hub && git add -A && git commit && git push`
@@ -184,8 +184,8 @@ Templates may use the following variables, replaced during `accord init`:
 | Variable                      | Description                                  | Example                               |
 |-------------------------------|----------------------------------------------|---------------------------------------|
 | `{{PROJECT_NAME}}`            | Project name from config                     | `next-nac`                            |
-| `{{TEAM_NAME}}`               | Current team name                            | `device-manager`                      |
-| `{{TEAM_LIST}}`               | Comma-separated list of all teams            | `frontend,nac-engine,device-manager`  |
+| `{{SERVICE_NAME}}`             | Service name (used in contract templates only)        | `device-manager`              |
+| `{{SERVICE_LIST}}`             | Comma-separated list of all services         | `frontend,nac-engine,device-manager`  |
 | `{{MODULE_LIST}}`             | Comma-separated list of modules (if any)     | `plugin,discovery,lifecycle`          |
 | `{{CONTRACTS_DIR}}`           | Path to external contracts directory         | `.accord/contracts/`                  |
 | `{{INTERNAL_CONTRACTS_DIR}}`  | Path to internal contracts directory         | `.accord/contracts/internal/`         |
@@ -195,7 +195,7 @@ Templates may use the following variables, replaced during `accord init`:
 ### 3.3 Adapter Quality Checklist
 
 An adapter is considered complete when:
-- [ ] ON_START behavior is implemented (auto-pull + inbox check for both team and module levels)
+- [ ] ON_START behavior is implemented (auto-pull + inbox check for both service and module levels)
 - [ ] ON_NEED_INTERFACE behavior is implemented (request creation for both external and internal scopes)
 - [ ] ON_APPROVED_REQUEST behavior is implemented (processing for both contract types)
 - [ ] ON_COMPLETE behavior is implemented (archival + contract update)

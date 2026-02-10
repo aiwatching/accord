@@ -17,7 +17,7 @@ ACCORD_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 PROJECT_NAME=""
 REPO_MODEL="monorepo"
-TEAMS=""
+SERVICES=""
 ADAPTER=""
 SERVICE=""
 MODULES=""
@@ -34,14 +34,14 @@ usage() {
     cat <<'HELP'
 Usage: init.sh [options]
 
-Run in your project directory. Auto-detects project name, client, teams, and modules.
+Run in your project directory. Auto-detects project name, client, services, and modules.
 
 Options:
   --project-name <name>       Override auto-detected project name
-  --teams <csv>               Override auto-detected team names
+  --services <csv>             Override auto-detected service names
   --adapter <name>            Override auto-detected client (claude-code|cursor|codex|generic|none)
   --sync-mode <mode>          on-action | auto-poll | manual (default: on-action)
-  --service <name>            Team directory that has sub-modules (auto-detects modules)
+  --service <name>            Service directory that has sub-modules (auto-detects modules)
   --modules <csv>             Explicit module names (overrides auto-detection)
   --repo-model <model>        monorepo | multi-repo (default: monorepo)
   --hub <git-url>             Hub repo URL (multi-repo only)
@@ -59,7 +59,7 @@ Examples:
   ~/.accord/init.sh --no-interactive
 
   # Override specific values
-  ~/.accord/init.sh --teams "frontend,backend,engine" --sync-mode auto-poll
+  ~/.accord/init.sh --services "frontend,backend,engine" --sync-mode auto-poll
 HELP
 }
 
@@ -174,7 +174,7 @@ parse_args() {
         case "$1" in
             --project-name)   PROJECT_NAME="$2"; shift 2 ;;
             --repo-model)     REPO_MODEL="$2"; shift 2 ;;
-            --teams)          TEAMS="$2"; shift 2 ;;
+            --services)       SERVICES="$2"; shift 2 ;;
             --adapter)        ADAPTER="$2"; shift 2 ;;
             --sync-mode)      SYNC_MODE="$2"; shift 2 ;;
             --service)        SERVICE="$2"; shift 2 ;;
@@ -214,8 +214,8 @@ interactive_prompt() {
     detected_lang="$(detect_language "$abs_target")"
     LANGUAGE="$detected_lang"
 
-    local detected_teams
-    detected_teams="$(list_subdirs "$abs_target")"
+    local detected_services
+    detected_services="$(list_subdirs "$abs_target")"
 
     echo -e "  ${DIM}Scanning project directory...${NC}"
     echo ""
@@ -223,8 +223,8 @@ interactive_prompt() {
     [[ "$detected_adapter" != "none" ]] && \
         echo -e "  Client:        ${GREEN}${detected_adapter}${NC} ${DIM}(detected)${NC}"
     echo -e "  Language:      ${GREEN}${detected_lang}${NC}"
-    [[ -n "$detected_teams" ]] && \
-        echo -e "  Directories:   ${GREEN}${detected_teams}${NC}"
+    [[ -n "$detected_services" ]] && \
+        echo -e "  Directories:   ${GREEN}${detected_services}${NC}"
     echo ""
 
     if [[ -z "$PROJECT_NAME" ]]; then
@@ -232,35 +232,35 @@ interactive_prompt() {
         PROJECT_NAME="${input:-$detected_name}"
     fi
 
-    if [[ -z "$TEAMS" ]]; then
-        if [[ -n "$detected_teams" ]]; then
-            read -r -p "  Teams (edit or Enter to confirm) [$detected_teams]: " input
-            TEAMS="${input:-$detected_teams}"
+    if [[ -z "$SERVICES" ]]; then
+        if [[ -n "$detected_services" ]]; then
+            read -r -p "  Services (edit or Enter to confirm) [$detected_services]: " input
+            SERVICES="${input:-$detected_services}"
         else
-            read -r -p "  Team names (comma-separated): " TEAMS
+            read -r -p "  Service names (comma-separated): " SERVICES
         fi
     fi
-    [[ -z "$TEAMS" ]] && err "At least one team is required"
+    [[ -z "$SERVICES" ]] && err "At least one service is required"
 
-    # Detect modules in team directories
+    # Detect modules in service directories
     if [[ -z "$SERVICE" ]]; then
-        IFS=',' read -ra _teams <<< "$TEAMS"
-        for _team in "${_teams[@]}"; do
-            _team="$(echo "$_team" | xargs)"
-            local team_dir="$abs_target/$_team"
-            if [[ -d "$team_dir" ]]; then
+        IFS=',' read -ra _svcs <<< "$SERVICES"
+        for _svc in "${_svcs[@]}"; do
+            _svc="$(echo "$_svc" | xargs)"
+            local svc_dir="$abs_target/$_svc"
+            if [[ -d "$svc_dir" ]]; then
                 local detected_mods
-                detected_mods="$(list_subdirs "$team_dir")"
+                detected_mods="$(list_subdirs "$svc_dir")"
                 if [[ -n "$detected_mods" ]]; then
                     echo ""
-                    echo -e "  ${CYAN}$_team/${NC} has sub-modules: ${GREEN}$detected_mods${NC}"
+                    echo -e "  ${CYAN}$_svc/${NC} has sub-modules: ${GREEN}$detected_mods${NC}"
                     read -r -p "  Use these as modules? (y/n/edit) [y]: " confirm
                     confirm="${confirm:-y}"
                     if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
-                        SERVICE="$_team"
+                        SERVICE="$_svc"
                         MODULES="$detected_mods"
                     elif [[ "$confirm" != "n" && "$confirm" != "N" ]]; then
-                        SERVICE="$_team"
+                        SERVICE="$_svc"
                         MODULES="$confirm"
                     fi
                     [[ -n "$SERVICE" ]] && break
@@ -312,7 +312,7 @@ interactive_prompt() {
 
 validate_inputs() {
     [[ -z "$PROJECT_NAME" ]] && err "Project name is required (--project-name or auto-detect)"
-    [[ -z "$TEAMS" ]] && err "At least one team is required (--teams or auto-detect)"
+    [[ -z "$SERVICES" ]] && err "At least one service is required (--services or auto-detect)"
 
     [[ "$REPO_MODEL" != "monorepo" && "$REPO_MODEL" != "multi-repo" ]] && \
         err "Invalid repo model: $REPO_MODEL (must be monorepo or multi-repo)"
@@ -367,24 +367,24 @@ generate_config() {
         hub_line=$'\n'"hub: $HUB"
     fi
 
-    # Build teams section
-    local teams_yaml=""
-    IFS=',' read -ra team_arr <<< "$TEAMS"
-    for team in "${team_arr[@]}"; do
-        team="$(echo "$team" | xargs)"
-        teams_yaml="${teams_yaml}
-  - name: ${team}"
+    # Build services section for config.yaml
+    local services_yaml=""
+    IFS=',' read -ra svc_arr <<< "$SERVICES"
+    for svc in "${svc_arr[@]}"; do
+        svc="$(echo "$svc" | xargs)"
+        services_yaml="${services_yaml}
+  - name: ${svc}"
 
-        # If this team has modules, nest them
-        if [[ "$team" == "$SERVICE" && -n "$MODULES" ]]; then
-            teams_yaml="${teams_yaml}
+        # If this service has modules, nest them
+        if [[ "$svc" == "$SERVICE" && -n "$MODULES" ]]; then
+            services_yaml="${services_yaml}
     modules:"
             IFS=',' read -ra mod_arr <<< "$MODULES"
             for mod in "${mod_arr[@]}"; do
                 mod="$(echo "$mod" | xargs)"
-                teams_yaml="${teams_yaml}
+                services_yaml="${services_yaml}
       - name: ${mod}
-        path: ${team}/${mod}/
+        path: ${svc}/${mod}/
         type: ${LANGUAGE}-interface"
             done
         fi
@@ -397,7 +397,7 @@ project:
 
 repo_model: ${REPO_MODEL}${hub_line}
 
-teams:${teams_yaml}
+services:${services_yaml}
 
 settings:
   sync_mode: ${SYNC_MODE}
@@ -418,18 +418,18 @@ scaffold_project() {
 
     # .accord/contracts/
     mkdir -p "$accord_dir/contracts"
-    IFS=',' read -ra team_arr <<< "$TEAMS"
-    for team in "${team_arr[@]}"; do
-        team="$(echo "$team" | xargs)"
-        local contract_file="$accord_dir/contracts/${team}.yaml"
+    IFS=',' read -ra svc_arr <<< "$SERVICES"
+    for svc in "${svc_arr[@]}"; do
+        svc="$(echo "$svc" | xargs)"
+        local contract_file="$accord_dir/contracts/${svc}.yaml"
         if [[ ! -f "$contract_file" ]]; then
             cp "$ACCORD_DIR/protocol/templates/contract.yaml.template" "$contract_file"
             replace_vars "$contract_file" \
-                "TEAM_NAME" "$team" \
+                "SERVICE_NAME" "$svc" \
                 "SCANNED_TIMESTAMP" "" \
                 "RESOURCE" "example" \
                 "RESOURCE_PASCAL" "Example"
-            log "Created .accord/contracts/${team}.yaml"
+            log "Created .accord/contracts/${svc}.yaml"
         fi
     done
 
@@ -452,13 +452,13 @@ scaffold_project() {
 
     # .accord/comms/
     mkdir -p "$accord_dir/comms/archive"
-    for team in "${team_arr[@]}"; do
-        team="$(echo "$team" | xargs)"
-        mkdir -p "$accord_dir/comms/inbox/${team}"
-        touch "$accord_dir/comms/inbox/${team}/.gitkeep"
+    for svc in "${svc_arr[@]}"; do
+        svc="$(echo "$svc" | xargs)"
+        mkdir -p "$accord_dir/comms/inbox/${svc}"
+        touch "$accord_dir/comms/inbox/${svc}/.gitkeep"
     done
 
-    # Module inboxes (same level as team inboxes)
+    # Module inboxes (same level as service inboxes)
     if [[ -n "$MODULES" ]]; then
         IFS=',' read -ra mod_arr <<< "$MODULES"
         for mod in "${mod_arr[@]}"; do
@@ -502,13 +502,13 @@ Everything lives under `.accord/`:
 
 ```
 .accord/
-├── config.yaml                        — Project configuration (teams, modules, settings)
+├── config.yaml                        — Project configuration (services, modules, settings)
 ├── contracts/
-│   ├── {team}.yaml                    — External contracts (OpenAPI). Only the owning team edits.
+│   ├── {service}.yaml                 — External contracts (OpenAPI). Only the owning module edits.
 │   └── internal/
 │       └── {module}.md                — Internal contracts (code-level interfaces)
 └── comms/
-    ├── inbox/{team-or-module}/        — Incoming requests
+    ├── inbox/{service-or-module}/     — Incoming requests
     ├── archive/                       — Completed/rejected requests
     ├── PROTOCOL.md                    — This file
     └── TEMPLATE.md                    — Request template
@@ -527,7 +527,7 @@ pending → rejected
 
 ## Rules
 
-1. Never modify another team's contract directly — use a request.
+1. Never modify another module's contract directly — use a request.
 2. Never auto-approve requests — human review is required.
 3. A request cannot be `completed` unless the contract is updated.
 4. Check your inbox on every session start (`git pull` first).
@@ -536,8 +536,8 @@ pending → rejected
 ## Commit Convention
 
 ```
-comms({team}): {action} - {summary}
-contract({team}): {action} - {summary}
+comms({module}): {action} - {summary}
+contract({module}): {action} - {summary}
 ```
 
 Actions: `request`, `approved`, `rejected`, `in-progress`, `completed`, `update`
@@ -614,7 +614,6 @@ install_adapter() {
     if [[ -f "$install_script" ]]; then
         log "Installing adapter: $ADAPTER"
 
-        local team_name="${SERVICE:-$(echo "$TEAMS" | cut -d',' -f1 | xargs)}"
         local modules_arg=""
         [[ -n "$MODULES" ]] && modules_arg="--module-list $MODULES"
 
@@ -624,8 +623,7 @@ install_adapter() {
         bash "$install_script" \
             --project-dir "$TARGET_DIR" \
             --project-name "$PROJECT_NAME" \
-            --team-name "$team_name" \
-            --team-list "$TEAMS" \
+            --service-list "$SERVICES" \
             --contracts-dir ".accord/contracts/" \
             --internal-contracts-dir "${internal_dir:-N/A}" \
             --comms-dir ".accord/comms/" \
@@ -641,8 +639,7 @@ install_adapter() {
             cp "$instructions" "$dest"
             replace_vars "$dest" \
                 "PROJECT_NAME" "$PROJECT_NAME" \
-                "TEAM_NAME" "${SERVICE:-$(echo "$TEAMS" | cut -d',' -f1 | xargs)}" \
-                "TEAM_LIST" "$TEAMS" \
+                "SERVICE_LIST" "$SERVICES" \
                 "MODULE_LIST" "${MODULES:-}" \
                 "CONTRACTS_DIR" ".accord/contracts/" \
                 "INTERNAL_CONTRACTS_DIR" ".accord/contracts/internal/" \
@@ -666,12 +663,12 @@ run_scan() {
     echo ""
     log "=== Contract Scan ==="
 
-    IFS=',' read -ra team_arr <<< "$TEAMS"
-    for team in "${team_arr[@]}"; do
-        team="$(echo "$team" | xargs)"
-        if [[ -d "$TARGET_DIR/$team" ]]; then
-            log "Scanning service: $team"
-            (cd "$TARGET_DIR" && bash "$scan_script" --service "$team" --type all 2>&1) || true
+    IFS=',' read -ra svc_arr <<< "$SERVICES"
+    for svc in "${svc_arr[@]}"; do
+        svc="$(echo "$svc" | xargs)"
+        if [[ -d "$TARGET_DIR/$svc" ]]; then
+            log "Scanning service: $svc"
+            (cd "$TARGET_DIR" && bash "$scan_script" --service "$svc" --type all 2>&1) || true
         fi
     done
 
@@ -704,7 +701,7 @@ print_summary() {
     echo -e "${BOLD}=== Accord initialization complete ===${NC}"
     echo ""
     echo -e "  Project:    ${GREEN}$PROJECT_NAME${NC}"
-    echo -e "  Teams:      ${GREEN}$TEAMS${NC}"
+    echo -e "  Services:   ${GREEN}$SERVICES${NC}"
     [[ -n "$SERVICE" ]] && echo -e "  Modules:    ${GREEN}$SERVICE/ → $MODULES${NC}"
     [[ "$ADAPTER" != "none" ]] && echo -e "  Adapter:    ${GREEN}$ADAPTER${NC}"
     echo -e "  Sync mode:  ${GREEN}$SYNC_MODE${NC}"
@@ -712,11 +709,11 @@ print_summary() {
     echo "  Created structure:"
     echo "    .accord/"
     echo "    ├── config.yaml                 — Project configuration"
-    echo "    ├── contracts/{team}.yaml       — External contracts"
+    echo "    ├── contracts/{service}.yaml     — External contracts"
     [[ -n "$MODULES" ]] && \
     echo "    ├── contracts/internal/{mod}.md — Internal contracts"
     echo "    └── comms/"
-    echo "        ├── inbox/{team}/          — Team inboxes"
+    echo "        ├── inbox/{service}/        — Service inboxes"
     [[ -n "$MODULES" ]] && \
     echo "        ├── inbox/{module}/        — Module inboxes"
     echo "        ├── archive/               — Completed requests"
@@ -751,18 +748,18 @@ main() {
     if [[ "$INTERACTIVE" == false ]]; then
         [[ -z "$PROJECT_NAME" ]] && PROJECT_NAME="$(detect_project_name "$TARGET_DIR")"
         [[ -z "$ADAPTER" ]] && ADAPTER="$(detect_adapter "$TARGET_DIR")"
-        [[ -z "$TEAMS" ]] && TEAMS="$(list_subdirs "$TARGET_DIR")"
+        [[ -z "$SERVICES" ]] && SERVICES="$(list_subdirs "$TARGET_DIR")"
         LANGUAGE="$(detect_language "$TARGET_DIR")"
 
-        if [[ -z "$SERVICE" && -n "$TEAMS" ]]; then
-            IFS=',' read -ra _teams <<< "$TEAMS"
-            for _team in "${_teams[@]}"; do
-                _team="$(echo "$_team" | xargs)"
-                if [[ -d "$TARGET_DIR/$_team" ]]; then
+        if [[ -z "$SERVICE" && -n "$SERVICES" ]]; then
+            IFS=',' read -ra _svcs <<< "$SERVICES"
+            for _svc in "${_svcs[@]}"; do
+                _svc="$(echo "$_svc" | xargs)"
+                if [[ -d "$TARGET_DIR/$_svc" ]]; then
                     local mods
-                    mods="$(list_subdirs "$TARGET_DIR/$_team")"
+                    mods="$(list_subdirs "$TARGET_DIR/$_svc")"
                     if [[ -n "$mods" ]]; then
-                        SERVICE="$_team"
+                        SERVICE="$_svc"
                         MODULES="$mods"
                         break
                     fi
@@ -770,7 +767,7 @@ main() {
             done
         fi
 
-        log "Auto-detected: project=$PROJECT_NAME teams=$TEAMS adapter=${ADAPTER:-none} lang=$LANGUAGE"
+        log "Auto-detected: project=$PROJECT_NAME services=$SERVICES adapter=${ADAPTER:-none} lang=$LANGUAGE"
         [[ -n "$SERVICE" ]] && log "Auto-detected: service=$SERVICE modules=$MODULES"
     fi
 

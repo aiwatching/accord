@@ -2,7 +2,7 @@
 # Installs the Claude Code adapter into a target project.
 #
 # Usage:
-#   install.sh --project-dir <path> --team-name <name> --team-list <csv> [options]
+#   install.sh --project-dir <path> --service-list <csv> [options]
 #
 # This script:
 # 1. Injects Accord rules into the project's CLAUDE.md (idempotent, uses markers)
@@ -17,8 +17,8 @@ ADAPTER_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 PROJECT_DIR=""
 PROJECT_NAME=""
-TEAM_NAME=""
-TEAM_LIST=""
+SERVICE_NAME=""
+SERVICE_LIST=""
 MODULE_LIST=""
 CONTRACTS_DIR=".accord/contracts/"
 INTERNAL_CONTRACTS_DIR=".accord/contracts/internal/"
@@ -55,8 +55,8 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --project-dir)            PROJECT_DIR="$2"; shift 2 ;;
         --project-name)           PROJECT_NAME="$2"; shift 2 ;;
-        --team-name)              TEAM_NAME="$2"; shift 2 ;;
-        --team-list)              TEAM_LIST="$2"; shift 2 ;;
+        --service-name)           SERVICE_NAME="$2"; shift 2 ;;
+        --service-list)           SERVICE_LIST="$2"; shift 2 ;;
         --module-list)            MODULE_LIST="$2"; shift 2 ;;
         --contracts-dir)          CONTRACTS_DIR="$2"; shift 2 ;;
         --internal-contracts-dir) INTERNAL_CONTRACTS_DIR="$2"; shift 2 ;;
@@ -67,8 +67,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -z "$PROJECT_DIR" ]] && err "--project-dir is required"
-[[ -z "$TEAM_NAME" ]] && err "--team-name is required"
-[[ -z "$TEAM_LIST" ]] && err "--team-list is required"
+[[ -z "$SERVICE_LIST" ]] && err "--service-list is required"
 
 PROJECT_NAME="${PROJECT_NAME:-$(basename "$PROJECT_DIR")}"
 
@@ -92,8 +91,7 @@ inject_claude_md() {
     echo "$accord_block" > "$tmp_block"
     replace_vars "$tmp_block" \
         "PROJECT_NAME" "$PROJECT_NAME" \
-        "TEAM_NAME" "$TEAM_NAME" \
-        "TEAM_LIST" "$TEAM_LIST" \
+        "SERVICE_LIST" "$SERVICE_LIST" \
         "MODULE_LIST" "${MODULE_LIST:-none}" \
         "CONTRACTS_DIR" "$CONTRACTS_DIR" \
         "INTERNAL_CONTRACTS_DIR" "${INTERNAL_CONTRACTS_DIR:-N/A}" \
@@ -149,8 +147,7 @@ install_commands() {
         cp "$cmd_file" "$dest_file"
         replace_vars "$dest_file" \
             "PROJECT_NAME" "$PROJECT_NAME" \
-            "TEAM_NAME" "$TEAM_NAME" \
-            "TEAM_LIST" "$TEAM_LIST" \
+            "SERVICE_LIST" "$SERVICE_LIST" \
             "MODULE_LIST" "${MODULE_LIST:-none}" \
             "CONTRACTS_DIR" "$CONTRACTS_DIR" \
             "INTERNAL_CONTRACTS_DIR" "${INTERNAL_CONTRACTS_DIR:-N/A}" \
@@ -184,7 +181,7 @@ install_scanner_skill() {
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
-log "Installing Claude Code adapter for team: $TEAM_NAME"
+log "Installing Claude Code adapter for project: $PROJECT_NAME"
 
 inject_claude_md
 install_commands

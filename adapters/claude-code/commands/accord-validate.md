@@ -42,7 +42,7 @@ Beyond format validation, check logical consistency:
 - **Contract references**: Each request's `related_contract` field points to a file that exists
 - **Proposed annotations**: Each `x-accord-status: proposed` in a contract has a matching request file
 - **Request-contract alignment**: Each `x-accord-request: req-XXX` annotation has a corresponding request that is not yet completed
-- **Config completeness**: All teams in config have a contract file; all modules have an internal contract
+- **Config completeness**: All services in config have a contract file; all modules have an internal contract
 
 ### 6. Report
 

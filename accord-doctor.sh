@@ -108,24 +108,24 @@ if [[ -f "$PROJECT_DIR/.accord/config.yaml" ]]; then
         fail "Missing repo_model in config"
     fi
 
-    # Check each team has a contract file and inbox
-    if grep -q "^teams:" "$config"; then
-        teams=$(grep "^  - name:" "$config" | sed 's/.*name:[[:space:]]*//')
-        for team in $teams; do
-            if [[ -f "$PROJECT_DIR/.accord/contracts/${team}.yaml" ]]; then
-                ok "Team '$team' has contract file"
+    # Check each service has a contract file and inbox
+    if grep -q "^services:" "$config"; then
+        services=$(grep "^  - name:" "$config" | sed 's/.*name:[[:space:]]*//')
+        for svc in $services; do
+            if [[ -f "$PROJECT_DIR/.accord/contracts/${svc}.yaml" ]]; then
+                ok "Service '$svc' has contract file"
             else
-                fail "Team '$team' missing contract: .accord/contracts/${team}.yaml"
+                fail "Service '$svc' missing contract: .accord/contracts/${svc}.yaml"
             fi
 
-            if [[ -d "$PROJECT_DIR/.accord/comms/inbox/${team}" ]]; then
-                ok "Team '$team' has inbox directory"
+            if [[ -d "$PROJECT_DIR/.accord/comms/inbox/${svc}" ]]; then
+                ok "Service '$svc' has inbox directory"
             else
-                fail "Team '$team' missing inbox: .accord/comms/inbox/${team}/"
+                fail "Service '$svc' missing inbox: .accord/comms/inbox/${svc}/"
             fi
         done
     else
-        warn "No teams defined in config"
+        warn "No services defined in config"
     fi
 fi
 
@@ -133,7 +133,7 @@ fi
 if [[ -f "$PROJECT_DIR/.accord/config.yaml" ]]; then
     config="$PROJECT_DIR/.accord/config.yaml"
 
-    # Check for modules in config (nested under team entries)
+    # Check for modules in config (nested under service entries)
     if grep -q "modules:" "$config"; then
         echo -e "\n${BOLD}[Modules]${NC}"
 

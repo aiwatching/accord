@@ -10,8 +10,8 @@ Read the project state and produce a structured status report. Follow these step
 
 Read `.accord/config.yaml` and report:
 - Project name, repo model
-- Teams listed and whether each team's contract file exists
-- If a team has modules: list the modules from config
+- Services listed and whether each service's contract file exists
+- If a service has modules: list the modules from config
 
 ### 2. External Contracts
 
@@ -47,7 +47,7 @@ Internal Contracts:
 ### 4. Requests
 
 Scan all inbox and archive directories:
-- `.accord/comms/inbox/*/` — active requests for each team/module
+- `.accord/comms/inbox/*/` — active requests for each service/module
 - `.accord/comms/archive/` — completed/rejected requests
 
 For each request file, read frontmatter: `id`, `from`, `to`, `scope`, `status`, `priority`, `created`
@@ -76,8 +76,8 @@ Show the 10 most recent Accord-related commits.
 
 Run quick checks and flag issues:
 - [ ] `.accord/config.yaml` exists and is readable
-- [ ] All teams in config have a matching contract file
-- [ ] All team/module inboxes exist
+- [ ] All services in config have a matching contract file
+- [ ] All service/module inboxes exist
 - [ ] No requests stuck in `in-progress` for more than 7 days (check `updated` timestamp)
 - [ ] No `draft` contracts that are older than 7 days (should be reviewed)
 - [ ] No orphaned request files (referencing non-existent contracts)
@@ -86,7 +86,7 @@ Report issues as warnings:
 ```
 Health:
   OK    Config is valid
-  OK    All team contracts exist
+  OK    All service contracts exist
   WARN  req-002 has been pending for 3 days
   WARN  .accord/contracts/frontend.yaml is still draft
 ```

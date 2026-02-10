@@ -13,11 +13,11 @@ Ask the user (if not already clear):
 ### 2. Analyze module boundaries
 
 Read project configuration:
-- `.accord/config.yaml` — teams, modules, and their contracts
-- External contracts in `{{CONTRACTS_DIR}}` — existing APIs per team
+- `.accord/config.yaml` — services, modules, and their contracts
+- External contracts in `{{CONTRACTS_DIR}}` — existing APIs per module
 - Internal contracts in `{{INTERNAL_CONTRACTS_DIR}}` — existing interfaces per module
 
-For each team/module, understand what it currently provides.
+For each module, understand what it currently provides.
 
 ### 3. Build a dispatch plan
 
@@ -49,7 +49,7 @@ Proceed? [y/n]
 For each step, use the **Task tool** to spawn a subagent:
 
 **Important rules for subagent prompts:**
-- State which team/module the subagent is acting as
+- State which module the subagent is acting as
 - List the files/directories it should work within
 - Include the current contract content so it has context
 - Specify what to implement and what contract to update
@@ -70,7 +70,7 @@ After all subagents complete:
 1. Read all updated contracts
 2. Run validators: `/accord-validate`
 3. Check that implementations align with contracts
-4. If any Accord requests were created (cross-team), note them
+4. If any Accord requests were created (cross-service), note them
 
 Report to user:
 ```
@@ -81,10 +81,10 @@ Dispatch complete:
   - New requests: none (same-session dispatch, no async handoff needed)
 ```
 
-### 6. When a cross-team request IS needed
+### 6. When a cross-service request IS needed
 
-If the target module is managed by a different team (different repo, different session):
-- Don't dispatch a subagent — the other team's agent handles it
+If the target module is managed by a different service (different repo, different session):
+- Don't dispatch a subagent — the other service's agent handles it
 - Instead, use `/send-request` to create the Accord request
 - Continue with mock data / TODO markers
-- The other team will pick it up on their next session
+- The other service will pick it up on their next session

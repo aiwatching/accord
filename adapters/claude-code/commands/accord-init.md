@@ -8,7 +8,7 @@ One-click Accord project setup: scaffold directories, generate contracts from so
 
 Ask the user for:
 - **Project name** (e.g., `next-nac`)
-- **Team names** (comma-separated, e.g., `frontend,nac-engine,device-manager`)
+- **Service/module names** (comma-separated, e.g., `frontend,nac-engine,device-manager`)
 - **Repo model**: monorepo or multi-repo? (default: monorepo)
 - **Service with sub-modules?** If yes, ask for service name and module names
 - **Language** for internal contracts: java, python, typescript, go (default: java)
@@ -23,7 +23,7 @@ Run the Accord initialization script with the gathered information:
 /path/to/accord/init.sh \
   --project-name <name> \
   --repo-model <model> \
-  --teams "<csv>" \
+  --services "<csv>" \
   --service <name> \
   --modules "<csv>" \
   --language <lang> \
@@ -37,7 +37,7 @@ The path to `init.sh` is at the root of the Accord repository. If it's not avail
 
 Now scan the actual source code to generate real contracts (replacing the templates):
 
-**External contracts** — For each team/service directory that contains source code:
+**External contracts** — For each service directory that contains source code:
 1. Find all REST endpoint definitions (controllers, routes, handlers)
 2. Follow the detection rules in `protocol/scan/SCAN_INSTRUCTIONS.md` Section 3
 3. Extract: HTTP method, path, parameters, request/response types
@@ -78,12 +78,12 @@ Present a summary to the user:
 Accord setup complete!
 
   Project:    {name}
-  Teams:      {list}
+  Services:   {list}
   Adapter:    Claude Code
 
 Generated contracts:
-  - .accord/contracts/{team-a}.yaml  (draft — from source scan)
-  - .accord/contracts/{team-b}.yaml  (draft — template, no source found)
+  - .accord/contracts/{service-a}.yaml  (draft — from source scan)
+  - .accord/contracts/{service-b}.yaml  (draft — template, no source found)
   - .accord/contracts/internal/{module}.md  (draft — from source scan)
 
 Validation: all passed
@@ -92,7 +92,7 @@ Next steps:
   1. Review generated contracts and change status from 'draft' to 'stable'
   2. git add .accord && git commit -m "accord: init project"
   3. Use /check-inbox to see incoming requests
-  4. Use /send-request to coordinate with other teams
+  4. Use /send-request to coordinate with other modules
 ```
 
 ### Important

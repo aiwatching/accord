@@ -2,13 +2,13 @@
 
 **Git-based collaboration protocol for AI coding agents.**
 
-Accord enables multiple AI coding agents — across teams, sessions, and tools — to collaborate on large-scale software projects through a shared contract-based communication protocol.
+Accord enables multiple AI coding agents — across services, sessions, and tools — to collaborate on large-scale software projects through a shared contract-based communication protocol.
 
 ---
 
 ## The Problem
 
-AI coding agents work great within a single session. But real projects have multiple teams, multiple services, and multiple developers. When Team A needs Team B to add an API, today's options are:
+AI coding agents work great within a single session. But real projects have multiple services, multiple modules, and multiple developers. When Service A needs Service B to add an API, today's options are:
 
 - Slack message that gets lost
 - A Jira ticket that nobody checks
@@ -45,7 +45,7 @@ No servers. No message queues. No infrastructure. Just Git.
 
 - **Agent-agnostic**: Works with Claude Code, Cursor, GitHub Copilot, Codex, or any agent that can read files and run git
 - **Two-level contracts**: External contracts (OpenAPI) for service-level APIs + internal contracts (Java interface, Python Protocol, etc.) for module-level boundaries
-- **Fractal protocol**: Same state machine and workflow at every granularity — from cross-team REST APIs to intra-service Java interfaces
+- **Fractal protocol**: Same state machine and workflow at every granularity — from cross-service REST APIs to intra-service Java interfaces
 - **Monorepo and multi-repo**: Works with both — Hub-and-Spoke model for multi-repo with `accord sync`
 - **Zero infrastructure**: Git is the message bus, file system is the database
 - **Auto-scan contracts**: `accord scan` analyzes your code and generates contract files automatically — works with any AI agent
@@ -67,7 +67,7 @@ cd your-project
 ~/.accord/init.sh
 ```
 
-That's it — interactive prompts will guide you through project name, teams, and adapter selection.
+That's it — interactive prompts will guide you through project name, services, and adapter selection.
 
 ### What it creates
 
@@ -76,10 +76,10 @@ Everything under `.accord/`:
 ```
 .accord/
 ├── config.yaml              — Project configuration
-├── contracts/               — External OpenAPI specs for each team
+├── contracts/               — External OpenAPI specs for each service
 │   └── internal/            — Internal module-level contracts
-└── comms/                   — Inbox directories for each team/module
-    ├── inbox/{team}/
+└── comms/                   — Inbox directories for each service/module
+    ├── inbox/{service}/
     ├── archive/
     └── PROTOCOL.md / TEMPLATE.md
 
@@ -96,7 +96,7 @@ your-project/
 ├── .accord/
 │   ├── config.yaml                        # Project configuration
 │   ├── contracts/                         # External Contract Registry
-│   │   ├── frontend.yaml                  # OpenAPI spec per team
+│   │   ├── frontend.yaml                  # OpenAPI spec per service
 │   │   ├── backend-api.yaml
 │   │   ├── backend-engine.yaml
 │   │   └── internal/                      # Internal Contract Registry
@@ -104,7 +104,7 @@ your-project/
 │   │       └── discovery-service.md
 │   └── comms/                             # Communication Layer
 │       ├── inbox/
-│       │   ├── frontend/                  # Team-level inboxes
+│       │   ├── frontend/                  # Service-level inboxes
 │       │   ├── backend-api/
 │       │   ├── backend-engine/
 │       │   ├── plugin/                    # Module-level inboxes
@@ -149,7 +149,7 @@ The **generic adapter** works with any agent that can read a markdown instructio
 └─────────────────────────────────┘
 ```
 
-The protocol layer is the core — fully agent-agnostic, based on files and Git. The same state machine and message format apply at every level: from cross-team REST APIs to intra-service code interfaces. Adapters are thin translation layers that inject protocol rules into each agent's native config format.
+The protocol layer is the core — fully agent-agnostic, based on files and Git. The same state machine and message format apply at every level: from cross-service REST APIs to intra-service code interfaces. Adapters are thin translation layers that inject protocol rules into each agent's native config format.
 
 ## Contributing
 

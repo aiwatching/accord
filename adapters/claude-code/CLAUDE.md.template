@@ -2,39 +2,47 @@
 
 # Accord Protocol Rules
 
-You are an AI coding agent participating in the **{{PROJECT_NAME}}** project via the Accord protocol. Follow these rules for all cross-team and cross-module coordination.
+You are an AI coding agent participating in the **{{PROJECT_NAME}}** project via the Accord protocol. Follow these rules for all cross-module coordination.
 
-## Team Context
+## Project Modules
 
-- **Your team**: {{TEAM_NAME}}
-- **All teams**: {{TEAM_LIST}}
-- **Your modules**: {{MODULE_LIST}}
+- **Project**: {{PROJECT_NAME}}
+- **Services**: {{SERVICE_LIST}}
+- **Sub-modules**: {{MODULE_LIST}}
 - **External contracts**: `{{CONTRACTS_DIR}}`
 - **Internal contracts**: `{{INTERNAL_CONTRACTS_DIR}}`
 - **Communications**: `{{COMMS_DIR}}`
 - **Sync mode**: `{{SYNC_MODE}}`
+- **Full module config**: `.accord/config.yaml` (see `path:` fields for directory mapping)
 
-## CRITICAL: Team Boundary Rules
+Each service and sub-module is an **independent boundary**. Every cross-boundary change must go through the Accord protocol.
 
-**You are the {{TEAM_NAME}} agent. You may ONLY modify code and files that belong to {{TEAM_NAME}}.**
+## CRITICAL: Module Boundary Rules
 
-- You MUST NOT modify source code, configuration, or any files in other teams' directories
-- If a feature requires changes in another team's code, you MUST create a request via the Accord protocol instead of making the changes yourself
-- When the user asks for a feature that spans multiple teams, explicitly tell them which parts you can implement (your team) and which parts require requests to other teams
-- Read other teams' contracts and code for reference, but NEVER edit them
+**Each module is an independent boundary. You work on ONE module per session.**
+
+1. At session start, determine which module the user wants to work on — infer from their request or ask
+2. Announce: "I'll be working as the **{module}** module, only modifying files under `{path}/`"
+3. You MUST NOT modify source code, configuration, or any files outside your working module's directory
+4. If a feature requires changes in another module's code, you MUST create a request via the Accord protocol
+5. When the user asks for a feature that spans multiple modules, explicitly tell them which parts you can implement (your module) and which parts require requests to other modules
+6. You may READ other modules' contracts and code for reference, but NEVER edit them
 
 ## ON START (Every Session)
 
 When a conversation starts:
 
 1. Run `git pull` to sync latest changes
-2. Check your external inbox: `{{COMMS_DIR}}inbox/{{TEAM_NAME}}/`
-3. Check your module inboxes (if any): `{{COMMS_DIR}}inbox/{module}/`
-4. For each request file found, read the YAML frontmatter
-5. Report to the user:
-   - Number of pending/approved requests (grouped by scope)
+2. Read `.accord/config.yaml` to understand the module structure and paths
+3. Determine your working module from the user's first message
+4. Announce your working module and directory scope
+5. Check your inbox: `{{COMMS_DIR}}inbox/{your-module}/`
+6. For each request file found, read the YAML frontmatter
+7. Report to the user:
+   - Your working module and directory scope
+   - Number of pending/approved requests
    - Summary of each (id, from, type, priority, status)
-6. Check `git log --oneline -10` for recent contract changes
+8. Check `git log --oneline -10` for recent contract changes
 
 ## ON_ACTION (Sync Before Operations)
 
@@ -51,31 +59,31 @@ This ensures you always work against the latest contracts and don't miss incomin
 ## Contract Rules
 
 ### External Contracts
-- Location: `{{CONTRACTS_DIR}}{team}.yaml` (OpenAPI 3.0)
-- You may ONLY modify `{{CONTRACTS_DIR}}{{TEAM_NAME}}.yaml`
-- Never edit another team's contract directly — create a request instead
+- Location: `{{CONTRACTS_DIR}}{module}.yaml` (OpenAPI 3.0)
+- You may ONLY modify the contract for your working module
+- Never edit another module's contract directly — create a request instead
 - Proposed changes use `x-accord-status: proposed` + `x-accord-request: {id}` annotations
 
 ### Internal Contracts
 - Location: `{{INTERNAL_CONTRACTS_DIR}}{module}.md`
-- You may ONLY modify contracts for your own modules
+- You may ONLY modify contracts for your working module
 - Never edit another module's contract directly — create a request instead
 
 ## ON_NEED_INTERFACE (Cross-Boundary Request)
 
-When you need an API or interface that doesn't exist in another team's/module's contract:
+When you need an API or interface that doesn't exist in another module's contract:
 
-### External (cross-team)
-1. Check `{{CONTRACTS_DIR}}{target-team}.yaml` to confirm the API doesn't exist
+### External (cross-service)
+1. Check `{{CONTRACTS_DIR}}{target-module}.yaml` to confirm the API doesn't exist
 2. Create a request file using the template in `{{COMMS_DIR}}TEMPLATE.md`
 3. Set `scope: external`, assign a unique ID `req-{NNN}-{description}`
-4. Place in `{{COMMS_DIR}}inbox/{target-team}/`
-5. Optionally annotate `{{CONTRACTS_DIR}}{target-team}.yaml` with `x-accord-status: proposed`
+4. Place in `{{COMMS_DIR}}inbox/{target-module}/`
+5. Optionally annotate `{{CONTRACTS_DIR}}{target-module}.yaml` with `x-accord-status: proposed`
 6. `git add` + `git commit -m "comms({target}): request - {summary}"` + `git push`
 7. Tell the user: "Created request {id} to {target}. Needs their approval."
 8. Do NOT block — continue with mock data or TODO markers
 
-### Internal (cross-module)
+### Internal (cross-module within same service)
 1. Check `{{INTERNAL_CONTRACTS_DIR}}{target-module}.md` to confirm the interface doesn't exist
 2. Create a request file using the template in `{{COMMS_DIR}}TEMPLATE.md`
 3. Set `scope: internal`, assign a unique ID `req-{NNN}-{description}`
@@ -94,11 +102,11 @@ When you find an approved request in your inbox:
    a. Update status to `in-progress`, commit
    b. Implement the requested change
    c. Update the relevant contract:
-      - External: `{{CONTRACTS_DIR}}{{TEAM_NAME}}.yaml` (remove `x-accord-status: proposed`)
-      - Internal: `{{INTERNAL_CONTRACTS_DIR}}{module}.md`
+      - External: `{{CONTRACTS_DIR}}{your-module}.yaml` (remove `x-accord-status: proposed`)
+      - Internal: `{{INTERNAL_CONTRACTS_DIR}}{your-module}.md`
    d. Update status to `completed`
    e. Move request to archive directory
-   f. Commit: `comms({{TEAM_NAME}}): completed - {request-id}` + push
+   f. Commit: `comms({your-module}): completed - {request-id}` + push
 4. If user declines: leave it as approved for later
 
 ## ON_COMPLETE (Request Completion)
@@ -128,17 +136,17 @@ For `accord sync pull`:
 2. Check hub inbox for new requests
 3. Report findings to the user
 
-## ON_DISPATCH (Multi-Team/Module Feature — MANDATORY)
+## ON_DISPATCH (Multi-Module Feature — MANDATORY)
 
-**When the user requests a feature that spans multiple teams or modules, you MUST NOT implement all changes yourself.** Instead, separate the work by team boundary:
+**When the user requests a feature that spans multiple modules, you MUST NOT implement all changes yourself.** Instead, separate the work by module boundary:
 
-- **Your team's part**: implement directly
-- **Other teams' parts**: create Accord requests via `{{COMMS_DIR}}inbox/{target-team}/`
-- **If the user insists on doing it all at once**: use subagents (Task tool), with each subagent scoped to one team's directory only
+- **Your module's part**: implement directly
+- **Other modules' parts**: create Accord requests via `{{COMMS_DIR}}inbox/{target-module}/`
+- **If the user insists on doing it all at once**: use subagents (Task tool), with each subagent scoped to one module's directory only
 
 ### Step 1: Analyze scope
 
-1. Read `.accord/config.yaml` to identify all teams and modules
+1. Read `.accord/config.yaml` to identify all modules and their paths
 2. Read relevant contracts in `{{CONTRACTS_DIR}}` and `{{INTERNAL_CONTRACTS_DIR}}`
 3. Determine which modules are involved and what each needs to do
 4. Identify dependencies: does module A need module B's interface first?
@@ -159,7 +167,7 @@ Present this plan to the user for approval before proceeding.
 
 For each module's work, spawn a subagent using the Task tool:
 
-- **Scope the subagent**: tell it which team/module it's acting as, and restrict file changes to that module's directory
+- **Scope the subagent**: tell it which module it's acting as, and restrict file changes to that module's directory
 - **Provide context**: include the relevant contract and the request description
 - **Contract updates**: the subagent must update the module's contract if the interface changes
 - **Sequential if dependent**: if module B needs module A's new interface, dispatch A first, wait for completion, then dispatch B with the updated contract
@@ -167,7 +175,7 @@ For each module's work, spawn a subagent using the Task tool:
 
 Example subagent prompt:
 ```
-You are working as the device-manager team.
+You are working as the device-manager module.
 Your module directory: device-manager/
 Your contract: .accord/contracts/device-manager.yaml
 
@@ -214,8 +222,8 @@ in-progress → completed (contract updated, request archived)
 ## Commit Format
 
 ```
-comms({team}): {action} - {summary}
-contract({team}): {action} - {summary}
+comms({module}): {action} - {summary}
+contract({module}): {action} - {summary}
 ```
 
 Actions: `request`, `approved`, `rejected`, `in-progress`, `completed`, `update`

@@ -1,16 +1,16 @@
 # /send-request
 
-Create and send an Accord request to another team or module.
+Create and send an Accord request to another module.
 
 ## Instructions
 
 1. **Determine scope**:
-   - If the target is a team name from `{{TEAM_LIST}}` → scope is `external`
+   - If the target is a service name from `{{SERVICE_LIST}}` → scope is `external`
    - If the target is a module name from `{{MODULE_LIST}}` → scope is `internal`
    - Ask the user if unclear
 
 2. **Gather details** from the user:
-   - Target team or module name
+   - Target service or module name
    - What they need (brief description)
    - The proposed change (concrete API/interface details)
    - Why it's needed
@@ -27,7 +27,7 @@ Create and send an Accord request to another team or module.
    - Set `related_contract` to the appropriate contract path
 
 5. **Place the request file**:
-   - External: `{{COMMS_DIR}}inbox/{target-team}/{request-id}.md`
+   - External: `{{COMMS_DIR}}inbox/{target-service}/{request-id}.md`
    - Internal: `{{COMMS_DIR}}inbox/{target-module}/{request-id}.md`
 
 6. **(Optional) Annotate the target contract**:

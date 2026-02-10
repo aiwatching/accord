@@ -15,7 +15,7 @@ session was insufficient for complex multi-service development because:
 
 1. **Context window limits**: A single agent can't hold the full architecture of a large system
 2. **No cross-session communication**: Agent Teams work within one session, but there's no way for independent sessions to coordinate
-3. **No standard contract protocol**: When one agent needs another team to change an API, there's no mechanism to communicate that
+3. **No standard contract protocol**: When one agent needs another service to change an API, there's no mechanism to communicate that
 
 ## Key Design Decisions (and why)
 
@@ -37,14 +37,14 @@ session was insufficient for complex multi-service development because:
 
 ### Decision 5: Human-in-the-loop approval
 **Rejected alternative**: Fully autonomous agent-to-agent coordination
-**Rationale**: Cross-team API changes have real architectural consequences. An agent should create the request, but a human should review and approve it. This maps to how real engineering teams work — you don't let one team change another team's API without review.
+**Rationale**: Cross-service API changes have real architectural consequences. An agent should create the request, but a human should review and approve it. This maps to how real engineering works — you don't let one service change another service's API without review.
 
 ### Decision 6: Fractal protocol (same rules at every level)
-**Key insight**: The state machine (pending → approved → in-progress → completed) works identically whether you're coordinating between teams (REST API changes) or between modules (Java interface changes). This keeps the framework simple and the learning curve flat.
+**Key insight**: The state machine (pending → approved → in-progress → completed) works identically whether you're coordinating between services (REST API changes) or between modules (Java interface changes). This keeps the framework simple and the learning curve flat.
 
 ### Decision 7: Multi-repo via Hub-and-Spoke model
 **Rejected alternatives**: Git submodules (painful UX), cross-repo remotes (complex, no central view), monorepo-only (doesn't fit large orgs)
-**Rationale**: A dedicated Accord Hub repo centralizes contracts and cross-service communication while each team keeps its own service repo. Still zero infrastructure — just an extra Git repo. `accord sync` wraps hub pull/push. In multi-repo, `accord sync push` copies `.accord/contracts/` and `.accord/contracts/internal/` to the hub for backup. Module-level communication stays within the service repo via normal git operations.
+**Rationale**: A dedicated Accord Hub repo centralizes contracts and cross-service communication while each service keeps its own repo. Still zero infrastructure — just an extra Git repo. `accord sync` wraps hub pull/push. In multi-repo, `accord sync push` copies `.accord/contracts/` and `.accord/contracts/internal/` to the hub for backup. Module-level communication stays within the service repo via normal git operations.
 
 ### Decision 8: Centralized contract structure
 **Key insight**: All contracts live under `.accord/contracts/` (external) and `.accord/contracts/internal/` (internal). In monorepo, there's a single copy — no collection step needed. In multi-repo, each service repo has its own `.accord/contracts/internal/` for module contracts, and `accord sync push` backs them up to the hub at `accord-hub/.accord/contracts/internal/{service}/`. This keeps the directory structure simple and predictable.
@@ -54,12 +54,12 @@ session was insufficient for complex multi-service development because:
 ```
 Level 0: Project Lead (human orchestrator)
 │
-├── Level 1: Cross-Team (Agent Teams or independent sessions)
-│   ├── Frontend Team
-│   ├── Backend Teams ──── Accord External Contracts (OpenAPI)
-│   └── QA/Test Team
+├── Level 1: Cross-Service (Agent Teams or independent sessions)
+│   ├── Frontend Service
+│   ├── Backend Services ──── Accord External Contracts (OpenAPI)
+│   └── QA/Test Service
 │
-├── Level 1.5: Backend Sub-Teams (independent sessions)
+├── Level 1.5: Backend Sub-Services (independent sessions)
 │   ├── nac-admin
 │   ├── nac-engine ──── Accord External Contracts (OpenAPI)
 │   └── device-manager
@@ -85,14 +85,14 @@ Accord operates at Levels 1, 1.5, and 2. It does NOT manage Level 3 (that's agen
 | CLAUDE.md | Adapter artifact — injects protocol rules for Claude Code | Used in Claude Code adapter |
 | Skill | Not part of Accord core — agent-internal knowledge module | Out of scope |
 | Subagent | Not part of Accord core — agent-internal delegation | Out of scope |
-| Agent Teams | Not part of Accord core — used within a single team session | Out of scope |
+| Agent Teams | Not part of Accord core — used within a single service session | Out of scope |
 | Slash Commands | Adapter artifact — shortcuts for protocol operations | Used in Claude Code adapter |
 | Hooks | Adapter artifact — auto-trigger inbox check on session start | Used in Claude Code adapter |
 | MCP | Potential future adapter — richer integration option | Future extension |
 | OpenAPI Spec | Core protocol — external contract format | Core |
 | Git | Core protocol — transport and versioning layer | Core |
 | ADR | Recommended practice — document architecture decisions | Recommended, not enforced |
-| Bounded Context (DDD) | Design principle — each team/module has clear boundaries | Informs contract design |
+| Bounded Context (DDD) | Design principle — each service/module has clear boundaries | Informs contract design |
 | Contract Scanner | Protocol-layer tool — agent-agnostic scan instructions + validators. Adapters wrap it (Claude Code: Skill + slash command, Cursor: .cursorrules, Generic: markdown) | Core (protocol layer) |
 
 ## What the MVP Should Include
@@ -101,7 +101,7 @@ Priority order:
 1. **PROTOCOL.md** — Finalize the protocol specification
 2. **Templates** — request.md.template, contract.yaml.template, internal-contract.md.template
 3. **Contract Scanner** — `protocol/scan/SCAN_INSTRUCTIONS.md` + `scan.sh` + validators (agent-agnostic scanning)
-4. **init.sh** — Interactive script: `accord init --adapter claude-code --teams "..."`
+4. **init.sh** — Interactive script: `accord init --adapter claude-code --services "..."`
 5. **Claude Code adapter** — CLAUDE.md.template + slash commands + contract-scanner skill
 6. **Generic adapter** — Plain markdown instructions for any agent
 7. **Example project** — Realistic multi-service setup showing external + internal contracts

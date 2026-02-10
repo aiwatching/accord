@@ -175,8 +175,8 @@ PROJECT_NAME="$(sed -n 's/^  name: //p' "$CONFIG_FILE" | head -1)"
 SYNC_MODE="$(sed -n 's/^  sync_mode: //p' "$CONFIG_FILE" | head -1)"
 SYNC_MODE="${SYNC_MODE:-on-action}"
 
-# Parse teams
-TEAMS="$(sed -n 's/^  - name: //p' "$CONFIG_FILE" | tr '\n' ',' | sed 's/,$//')"
+# Parse services
+SERVICES="$(sed -n 's/^  - name: //p' "$CONFIG_FILE" | tr '\n' ',' | sed 's/,$//')"
 
 # Detect adapter from existing files
 ADAPTER="none"
@@ -189,12 +189,12 @@ fi
 # Detect modules from config
 MODULES=""
 SERVICE=""
-IFS=',' read -ra team_arr <<< "$TEAMS"
-for team in "${team_arr[@]}"; do
-    team="$(echo "$team" | xargs)"
-    if sed -n "/- name: ${team}/,/- name: /p" "$CONFIG_FILE" | grep -q "modules:"; then
-        SERVICE="$team"
-        MODULES="$(sed -n "/- name: ${team}/,/^  - name: /{ /modules:/,/^  - name: /{ s/^      - name: //p; }; }" "$CONFIG_FILE" | tr '\n' ',' | sed 's/,$//')"
+IFS=',' read -ra svc_arr <<< "$SERVICES"
+for svc in "${svc_arr[@]}"; do
+    svc="$(echo "$svc" | xargs)"
+    if sed -n "/- name: ${svc}/,/- name: /p" "$CONFIG_FILE" | grep -q "modules:"; then
+        SERVICE="$svc"
+        MODULES="$(sed -n "/- name: ${svc}/,/^  - name: /{ /modules:/,/^  - name: /{ s/^      - name: //p; }; }" "$CONFIG_FILE" | tr '\n' ',' | sed 's/,$//')"
         break
     fi
 done
@@ -209,7 +209,7 @@ fi
 # ── Display current state ───────────────────────────────────────────────────
 
 echo -e "  Project:       ${GREEN}$PROJECT_NAME${NC}"
-echo -e "  Teams:         ${GREEN}$TEAMS${NC}"
+echo -e "  Services:      ${GREEN}$SERVICES${NC}"
 [[ -n "$SERVICE" ]] && echo -e "  Modules:       ${GREEN}$SERVICE/ → $MODULES${NC}"
 echo -e "  Adapter:       ${GREEN}$ADAPTER${NC}"
 echo -e "  Sync mode:     ${GREEN}$SYNC_MODE${NC}"
@@ -248,7 +248,6 @@ upgrade_claude_code() {
         return
     fi
 
-    local team_name="${SERVICE:-$(echo "$TEAMS" | cut -d',' -f1 | xargs)}"
     local modules_arg=""
     [[ -n "$MODULES" ]] && modules_arg="--module-list $MODULES"
 
@@ -260,8 +259,7 @@ upgrade_claude_code() {
     bash "$install_script" \
         --project-dir "$TARGET_DIR" \
         --project-name "$PROJECT_NAME" \
-        --team-name "$team_name" \
-        --team-list "$TEAMS" \
+        --service-list "$SERVICES" \
         --contracts-dir ".accord/contracts/" \
         --comms-dir ".accord/comms/" \
         --sync-mode "$SYNC_MODE" \
@@ -285,11 +283,9 @@ upgrade_generic() {
     mkdir -p "$TARGET_DIR/.accord/adapter"
     cp "$src" "$dest"
 
-    local team_name="${SERVICE:-$(echo "$TEAMS" | cut -d',' -f1 | xargs)}"
     replace_vars "$dest" \
         "PROJECT_NAME" "$PROJECT_NAME" \
-        "TEAM_NAME" "$team_name" \
-        "TEAM_LIST" "$TEAMS" \
+        "SERVICE_LIST" "$SERVICES" \
         "MODULE_LIST" "${MODULES:-}" \
         "CONTRACTS_DIR" ".accord/contracts/" \
         "INTERNAL_CONTRACTS_DIR" ".accord/contracts/internal/" \

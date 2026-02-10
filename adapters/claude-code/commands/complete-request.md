@@ -5,13 +5,12 @@ Mark an Accord request as completed and archive it.
 ## Instructions
 
 1. **Identify the request** to complete:
-   - Check `{{COMMS_DIR}}inbox/{{TEAM_NAME}}/` for in-progress requests
-   - Also check `{{COMMS_DIR}}inbox/{module}/` for internal requests
+   - Check `{{COMMS_DIR}}inbox/{your-module}/` for in-progress requests
    - If multiple in-progress requests exist, ask the user which one
 
 2. **Verify the contract is updated**:
-   - External: confirm `{{CONTRACTS_DIR}}{{TEAM_NAME}}.yaml` includes the requested change and any `x-accord-status: proposed` annotations have been removed
-   - Internal: confirm `{{INTERNAL_CONTRACTS_DIR}}{module}.md` is updated
+   - External: confirm `{{CONTRACTS_DIR}}{your-module}.yaml` includes the requested change and any `x-accord-status: proposed` annotations have been removed
+   - Internal: confirm `{{INTERNAL_CONTRACTS_DIR}}{your-module}.md` is updated
 
 3. **Update the request file**:
    - Set `status: completed`
@@ -19,12 +18,12 @@ Mark an Accord request as completed and archive it.
    - Add a `## Resolution` section with a brief summary of what was implemented
 
 4. **Archive the request**:
-   - Move from `{{COMMS_DIR}}inbox/{team-or-module}/` to `{{COMMS_DIR}}archive/`
+   - Move from `{{COMMS_DIR}}inbox/{your-module}/` to `{{COMMS_DIR}}archive/`
 
 5. **Commit and push**:
    ```
    git add .accord/
-   git commit -m "comms({{TEAM_NAME}}): completed - {request-id}"
+   git commit -m "comms({your-module}): completed - {request-id}"
    git push
    ```
 

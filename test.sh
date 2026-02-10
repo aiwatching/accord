@@ -59,7 +59,7 @@ mkdir -p "$TEST1_DIR"
 bash "$ACCORD_DIR/init.sh" \
     --project-name "test-basic" \
     --repo-model monorepo \
-    --teams "alpha,beta" \
+    --services "alpha,beta" \
     --adapter none \
     --target-dir "$TEST1_DIR" \
     --no-interactive > /dev/null 2>&1
@@ -91,7 +91,7 @@ mkdir -p "$TEST2_DIR"
 bash "$ACCORD_DIR/init.sh" \
     --project-name "test-modules" \
     --repo-model monorepo \
-    --teams "svc-a,svc-b" \
+    --services "svc-a,svc-b" \
     --service svc-a \
     --modules "mod-x,mod-y" \
     --language java \
@@ -120,7 +120,7 @@ echo -e "\n${BOLD}[Test 3] Idempotency${NC}"
 bash "$ACCORD_DIR/init.sh" \
     --project-name "test-modules" \
     --repo-model monorepo \
-    --teams "svc-a,svc-b" \
+    --services "svc-a,svc-b" \
     --service svc-a \
     --modules "mod-x,mod-y" \
     --language java \
@@ -145,7 +145,7 @@ mkdir -p "$TEST4_DIR"
 bash "$ACCORD_DIR/init.sh" \
     --project-name "test-adapter" \
     --repo-model monorepo \
-    --teams "team-a,team-b" \
+    --services "svc-a,svc-b" \
     --adapter claude-code \
     --target-dir "$TEST4_DIR" \
     --no-interactive > /dev/null 2>&1
@@ -160,7 +160,7 @@ assert_file "$TEST4_DIR/.claude/skills/contract-scanner/SKILL.md"  "Scanner skil
 
 # Check variable substitution
 assert_contains "$TEST4_DIR/CLAUDE.md" "test-adapter"    "CLAUDE.md has project name"
-assert_contains "$TEST4_DIR/CLAUDE.md" "team-a"          "CLAUDE.md has team name"
+assert_contains "$TEST4_DIR/CLAUDE.md" "svc-a"          "CLAUDE.md has service name"
 assert_not_contains "$TEST4_DIR/CLAUDE.md" "{{PROJECT_NAME}}" "No unresolved vars in CLAUDE.md"
 assert_contains "$TEST4_DIR/CLAUDE.md" "ACCORD START"    "Has ACCORD START marker"
 assert_contains "$TEST4_DIR/CLAUDE.md" "ACCORD END"      "Has ACCORD END marker"
@@ -173,8 +173,8 @@ assert_contains "$TEST4_DIR/CLAUDE.md" ".accord/comms/"     "CLAUDE.md uses cent
 bash "$ACCORD_DIR/adapters/claude-code/install.sh" \
     --project-dir "$TEST4_DIR" \
     --project-name "test-adapter" \
-    --team-name "team-a" \
-    --team-list "team-a,team-b" > /dev/null 2>&1
+    --service-name "svc-a" \
+    --service-list "svc-a,svc-b" > /dev/null 2>&1
 
 accord_blocks=$(grep -c "ACCORD START" "$TEST4_DIR/CLAUDE.md" 2>/dev/null || echo 0)
 if [[ "$accord_blocks" -eq 1 ]]; then
@@ -194,7 +194,7 @@ mkdir -p "$TEST5_DIR"
 bash "$ACCORD_DIR/init.sh" \
     --project-name "test-generic" \
     --repo-model monorepo \
-    --teams "alpha,beta" \
+    --services "alpha,beta" \
     --adapter generic \
     --target-dir "$TEST5_DIR" \
     --no-interactive > /dev/null 2>&1
@@ -215,7 +215,7 @@ mkdir -p "$TEST6_DIR"
 bash "$ACCORD_DIR/init.sh" \
     --project-name "test-lifecycle" \
     --repo-model monorepo \
-    --teams "frontend,backend" \
+    --services "frontend,backend" \
     --adapter none \
     --target-dir "$TEST6_DIR" \
     --no-interactive > /dev/null 2>&1
@@ -421,7 +421,7 @@ mkdir -p "$TEST9_DIR"
 bash "$ACCORD_DIR/init.sh" \
     --project-name "test-multirepo" \
     --repo-model multi-repo \
-    --teams "svc-a,svc-b" \
+    --services "svc-a,svc-b" \
     --hub "git@github.com:org/accord-hub.git" \
     --adapter none \
     --target-dir "$TEST9_DIR" \
@@ -441,7 +441,7 @@ mkdir -p "$TEST10_DIR"
 bash "$ACCORD_DIR/init.sh" \
     --project-name "test-poll" \
     --repo-model monorepo \
-    --teams "alpha" \
+    --services "alpha" \
     --adapter none \
     --sync-mode auto-poll \
     --target-dir "$TEST10_DIR" \

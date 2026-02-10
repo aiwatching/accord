@@ -201,7 +201,7 @@ After scanning:
 2. Developer reviews the generated contracts
 3. Developer changes status to `stable` (or edits and then marks stable)
 4. Commit: `contract({service}): scan - initial contract generation`
-5. Other teams/modules can now reference these contracts
+5. Other services/modules can now reference these contracts
 
 ---
 

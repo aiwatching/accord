@@ -4,12 +4,12 @@
 
 AI coding agents (Claude Code, Cursor, GitHub Copilot, etc.) are effective within a single session for individual tasks. However, large-scale software projects require coordination across:
 
-- **Multiple teams** (frontend, backend services, QA)
+- **Multiple services** (frontend, backend, QA)
 - **Multiple services/modules** (each with its own bounded context)
 - **Multiple sessions** (async work across time, not just parallel)
 - **Multiple people** (different developers using different agents)
 
-There is no standard protocol for AI coding agents to collaborate asynchronously across these boundaries. Existing solutions (Claude Code's Agent Teams, claude-flow, Superpowers) focus on **intra-session orchestration** — coordinating agents within a single session. The **inter-session, cross-team coordination** problem remains unsolved.
+There is no standard protocol for AI coding agents to collaborate asynchronously across these boundaries. Existing solutions (Claude Code's Agent Teams, claude-flow, Superpowers) focus on **intra-session orchestration** — coordinating agents within a single session. The **inter-session, cross-service coordination** problem remains unsolved.
 
 ## 2. Design Goals
 
@@ -17,7 +17,7 @@ There is no standard protocol for AI coding agents to collaborate asynchronously
 2. **Zero infrastructure**: No servers, databases, or message queues required
 3. **Git-native**: Use Git as the communication transport — developers already know it
 4. **Contract-first**: OpenAPI specs as the source of truth for all inter-service APIs
-5. **Async by nature**: Teams work at their own pace, coordination happens through file-based messages
+5. **Async by nature**: Services work at their own pace, coordination happens through file-based messages
 6. **Minimal onboarding**: A single init command should scaffold everything needed
 7. **Progressive complexity**: Simple projects use basic features, complex projects layer on more
 
@@ -60,9 +60,9 @@ There is no standard protocol for AI coding agents to collaborate asynchronously
 Accord supports contracts at two granularities, unified under the same protocol:
 
 **External Contracts (Service-Level)**:
-- Location: `.accord/contracts/{team}.yaml`
+- Location: `.accord/contracts/{module}.yaml`
 - Format: OpenAPI 3.0+ YAML (also supports gRPC Proto, GraphQL Schema)
-- One file per service/team
+- One file per service/module
 - Defines the HTTP/RPC API boundary between services
 - Can auto-generate mock servers and client SDKs
 
@@ -77,7 +77,7 @@ Accord supports contracts at two granularities, unified under the same protocol:
 Both levels use the same state machine, message protocol, and Git operations. The only differences are the contract format and the granularity of the inbox directories.
 
 #### Message Protocol
-- Location: `.accord/comms/inbox/{team-or-module}/` directories
+- Location: `.accord/comms/inbox/{service-or-module}/` directories
 - Format: Markdown files with YAML frontmatter
 - Each request is a single file with structured metadata
 - Git operations are the transport: commit + push = send, pull = receive
@@ -129,8 +129,8 @@ Required behaviors (injected by adapter):
 | Behavior     | Trigger                                           |
 |-------------|---------------------------------------------------|
 | ON_START    | Session start → git pull + check inbox             |
-| ON_NEED_API | Need another team's API → create request file      |
-| ON_COMPLETE | Finished cross-team task → archive + update contract |
+| ON_NEED_API | Need another module's API → create request file     |
+| ON_COMPLETE | Finished cross-boundary task → archive + update contract |
 | ON_CONFLICT | Contract conflict detected → notify user           |
 
 ## 4. Repository Models
@@ -185,20 +185,20 @@ accord-hub/.accord/contracts/internal/device-manager/plugin.md → hub backup
 ### 4.4 Scope Hierarchy
 
 ```
-Project (Accord manages cross-team + cross-module coordination)
+Project (Accord manages cross-service + cross-module coordination)
 │
-├── Team A ←──── External Contract (OpenAPI) ────→ Team B
-│   │            (via hub in multi-repo)
+├── Service A ←──── External Contract (OpenAPI) ────→ Service B
+│   │               (via hub in multi-repo)
 │   │
 │   ├── Module X ←── Internal Contract (Java interface) ──→ Module Y
 │   │                 (within same service repo)
 │   │
 │   └── Module Z
 │
-└── Team C
+└── Service C
 ```
 
-The same protocol (request → approve → implement → complete) applies at both levels. An agent working on Module X that needs a new method from Module Y follows the exact same workflow as Team A requesting a new API from Team B.
+The same protocol (request → approve → implement → complete) applies at both levels. An agent working on Module X that needs a new method from Module Y follows the exact same workflow as Service A requesting a new API from Service B.
 
 ## 5. Request File Format
 
@@ -272,7 +272,7 @@ When multiple plugins handle the same device type, need to select by priority.
 
 ```
                     ┌──────────┐
-                    │ pending  │ ← Created by requesting team
+                    │ pending  │ ← Created by requesting module
                     └────┬─────┘
                          │
               ┌──────────┴──────────┐
@@ -283,7 +283,7 @@ When multiple plugins handle the same device type, need to select by priority.
              │
              ▼
       ┌─────────────┐
-      │ in-progress │ ← Receiving team starts work
+      │ in-progress │ ← Receiving module starts work
       └──────┬──────┘
              │
              ▼
@@ -293,9 +293,9 @@ When multiple plugins handle the same device type, need to select by priority.
 ```
 
 Rules:
-- Only the **receiving team** (or their human) can transition pending → approved/rejected
-- Only the **receiving team's agent** can transition approved → in-progress → completed
-- The **requesting team** can withdraw (delete) a pending request
+- Only the **receiving module** (or their human) can transition pending → approved/rejected
+- Only the **receiving module's agent** can transition approved → in-progress → completed
+- The **requesting module** can withdraw (delete) a pending request
 - completed requests are moved to `.accord/comms/archive/`
 - rejected requests are moved to `.accord/comms/archive/` with rejection reason
 
@@ -303,7 +303,7 @@ Rules:
 
 ### Commit Messages
 ```
-comms({target-team}): {action} - {summary}
+comms({target-module}): {action} - {summary}
 ```
 Examples:
 - `comms(nac-engine): request - add policy-by-type API`
@@ -312,9 +312,9 @@ Examples:
 - `contract(nac-engine): update v2 - add policy-by-type endpoint`
 
 ### Branch Strategy
-- Each team can work on their own branch
+- Each module can work on its own branch
 - Contract changes should be on a shared branch (e.g., main or develop)
-- Request files should be committed to the shared branch so all teams can see them
+- Request files should be committed to the shared branch so all modules can see them
 
 ## 8. Workflow Example
 
@@ -356,18 +356,18 @@ Examples:
 ## 9. Relationship to Existing Tools
 
 ### What Accord replaces
-- Ad-hoc Slack/Teams messages about API changes between teams
+- Ad-hoc Slack messages about API changes between services
 - Manual tracking of "who needs what from whom"
 - Verbal agreements about interface contracts
 
 ### What Accord does NOT replace
-- Agent-internal orchestration (Claude Code's subagents, skills, agent teams)
+- Agent-internal orchestration (Claude Code's Agent Teams, subagents, skills)
 - IDE-specific features
 - CI/CD pipelines
 - Code review processes
 
 ### How Accord works WITH existing tools
-- **Claude Code Agent Teams**: Use within a single team for parallel development. Accord coordinates BETWEEN teams.
+- **Claude Code Agent Teams**: Use within a single service for parallel development. Accord coordinates BETWEEN services.
 - **OpenAPI tooling**: Accord uses standard OpenAPI specs, so all existing tools (Swagger UI, mock generators, SDK generators) work out of the box.
 - **Git workflows**: Accord piggybacks on your existing Git workflow. It doesn't impose a branching strategy.
 
@@ -376,13 +376,13 @@ Examples:
 The most important architectural decision in Accord is that **the same protocol applies at every granularity level**:
 
 ```
-Organization level:  Team A ←→ Team B        (External contracts, OpenAPI)
+Organization level:  Service A ←→ Service B   (External contracts, OpenAPI)
 Service level:       Module X ←→ Module Y    (Internal contracts, Java interface)
 ```
 
 The state machine is identical. The request format is identical (with a `scope` field). The Git operations are identical. The only things that change are:
 - The contract format (OpenAPI vs code-level interface)
-- The inbox granularity (team-level vs module-level)
+- The inbox granularity (service-level vs module-level)
 
 This means:
 1. Developers learn one protocol, apply it everywhere
@@ -391,11 +391,11 @@ This means:
 
 ## 11. Future Extensions (Not in MVP)
 
-- **MCP Server adapter**: For teams that want richer integration than file-based
-- **Dashboard**: Web UI to visualize cross-team request status
+- **MCP Server adapter**: For services that want richer integration than file-based
+- **Dashboard**: Web UI to visualize cross-service request status
 - **Auto-validation**: CI hook that validates contracts and request format
 - **Conflict detection**: Automatic detection of breaking contract changes
-- **Metrics**: Track request turnaround time, team responsiveness
+- **Metrics**: Track request turnaround time, service responsiveness
 - **Skill packs**: Pre-built skills for common patterns (REST CRUD, event-driven, etc.)
 - **Mock generation**: Auto-generate mock servers from OpenAPI contracts (can chain with `accord scan` — scan generates the contract, mock generator creates a server from it)
 - **Contract diff**: Visual diff tool for contract changes across versions

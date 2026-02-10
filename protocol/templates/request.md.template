@@ -5,15 +5,15 @@
 id: req-{{REQUEST_NUMBER}}-{{SHORT_DESCRIPTION}}
   # Format: req-{NNN}-{short-description}
 
-from: {{FROM_TEAM_OR_MODULE}}
-  # Requesting team name (external) or module name (internal)
+from: {{FROM_MODULE}}
+  # Requesting module/service name
 
-to: {{TO_TEAM_OR_MODULE}}
-  # Target team name (external) or module name (internal)
+to: {{TO_MODULE}}
+  # Target module/service name
 
 scope: {{SCOPE}}
   # One of: external, internal
-  # external = cross-service request (targets a team's OpenAPI contract)
+  # external = cross-service request (targets a module's OpenAPI contract)
   # internal = cross-module request (targets a module's interface contract)
 
 type: {{REQUEST_TYPE}}
@@ -36,7 +36,7 @@ updated: {{CREATED_TIMESTAMP}}
 
 related_contract: {{RELATED_CONTRACT_PATH}}
   # Optional. Path to the related contract file.
-  # External: .accord/contracts/{team-name}.yaml
+  # External: .accord/contracts/{service-name}.yaml
   # Internal: .accord/contracts/internal/{module-name}.md
 ---
 
@@ -66,5 +66,5 @@ related_contract: {{RELATED_CONTRACT_PATH}}
 
 {{IMPACT_DESCRIPTION}}
 
-<!-- What the receiving team/module needs to implement.
+<!-- What the receiving module needs to implement.
      Include: effort estimate, breaking changes, dependencies, migration steps. -->

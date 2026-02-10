@@ -1,17 +1,17 @@
 # Accord External Contract Template
 # See PROTOCOL.md Section 2.1 for full specification.
 #
-# This file defines the API boundary for a service/team.
-# Other teams interact with this service exclusively through this contract.
-# Only the owning team may modify this file directly.
+# This file defines the API boundary for a service/module.
+# Other modules interact with this service exclusively through this contract.
+# Only the owning module may modify this file directly.
 # To propose changes, use the Message Protocol (request files).
 
 openapi: "3.0.3"
 
 info:
-  title: "{{TEAM_NAME}} API"
+  title: "{{SERVICE_NAME}} API"
   version: "0.1.0"
-  description: "API contract for the {{TEAM_NAME}} service."
+  description: "API contract for the {{SERVICE_NAME}} service."
 
   # Accord-specific annotations:
   #   x-accord-status: Lifecycle status of this contract.
