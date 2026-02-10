@@ -39,7 +39,7 @@ Create and send an Accord request to another module.
    git add .accord/
    git commit -m "comms({target}): request - {summary}"
    ```
-   - Multi-repo only: `git push`
+   - Multi-repo: `bash ~/.accord/accord-sync.sh push --target-dir .` (syncs request to hub inbox)
    - Monorepo: no push needed — the request file is immediately visible locally
 
 8. **Report**: "Created request {id} to {target}. Status: pending. Needs their approval."

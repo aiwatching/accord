@@ -14,6 +14,7 @@ Ask the user (if not already clear):
 
 Read project configuration:
 - `.accord/config.yaml` — services, modules, and their contracts
+- `.accord/registry/` — module responsibilities and data ownership
 - External contracts in `{{CONTRACTS_DIR}}` — existing APIs per module
 - Internal contracts in `{{INTERNAL_CONTRACTS_DIR}}` — existing interfaces per module
 
@@ -81,7 +82,12 @@ Dispatch complete:
   - New requests: none (same-session dispatch, no async handoff needed)
 ```
 
-### 6. When a cross-service request IS needed
+### 6. Sync to hub
+
+After all subagents complete and reconciliation is done:
+- Multi-repo: run `bash ~/.accord/accord-sync.sh push --target-dir .` to sync all changes to hub
+
+### 7. When a cross-service request IS needed
 
 If the target module is managed by a different service (different repo, different session):
 - Don't dispatch a subagent — the other service's agent handles it

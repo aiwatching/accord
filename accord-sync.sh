@@ -307,7 +307,27 @@ do_push() {
     if (cd "$HUB_DIR" && git diff --cached --quiet); then
         log "No changes to push"
     else
-        (cd "$HUB_DIR" && git commit -m "accord-sync($SERVICE_NAME): push" && git push)
+        (cd "$HUB_DIR" && git commit -m "accord-sync($SERVICE_NAME): push")
+
+        # Auto-retry with rebase on push conflict
+        local max_retries=3
+        local attempt=0
+        while [[ $attempt -lt $max_retries ]]; do
+            if (cd "$HUB_DIR" && git push 2>/dev/null); then
+                break
+            fi
+            attempt=$((attempt + 1))
+            log "Push conflict, pulling with rebase (attempt $attempt/$max_retries)..."
+            if ! (cd "$HUB_DIR" && git pull --rebase 2>/dev/null); then
+                log "ERROR: Rebase failed, manual resolution needed"
+                return 1
+            fi
+        done
+        if [[ $attempt -eq $max_retries ]]; then
+            log "ERROR: Push failed after $max_retries attempts"
+            return 1
+        fi
+
         log "Pushed changes to hub"
     fi
 

@@ -31,12 +31,25 @@ Each service and sub-module is an **independent boundary**. Every cross-boundary
 
 ---
 
+## Hub Write Rules (Multi-Repo Only)
+
+**The local `.accord/` is the write target. NEVER directly edit files inside `.accord/hub/`.**
+
+- Create/edit requests in `.accord/comms/inbox/{target}/`
+- Update contracts in `.accord/contracts/`
+- Use `accord-sync.sh push --target-dir .` to sync changes to hub
+- Use `accord-sync.sh pull --target-dir .` to get updates from hub
+- `.accord/hub/` is a git clone for exchange — treated as read-only by agents
+
+---
+
 ## 1. Session Start
 
 At the beginning of every session, the agent should:
 
 1. Read `.accord/config.yaml` to understand the module structure, paths, and repo model.
-2. If multi-repo: run `git pull` to sync the latest changes. (Monorepo: comms are already local.)
+1b. Read `.accord/registry/` files to understand module responsibilities and data ownership.
+2. If multi-repo AND current directory is a git repo: run `git pull` to sync the latest code changes. (Monorepo: comms are already local.)
 3. Determine the working module from the user's first message.
 4. Announce the working module and directory scope.
 5. Check the inbox at `{{COMMS_DIR}}inbox/{your-module}/` for request files (`.md` files).
@@ -126,7 +139,7 @@ When the agent needs an API or interface from another module that doesn't exist:
 5. Place the file at `{{COMMS_DIR}}inbox/{target-module}/{request-id}.md`.
 6. Optionally annotate the target contract with `x-accord-status: proposed`.
 7. Run: `git add .accord/ && git commit -m "comms({target}): request - {summary}"`
-8. Multi-repo only: `git push` (monorepo: request is already visible locally).
+8. Multi-repo: `accord-sync.sh push --target-dir .` (syncs request + contract to hub). Monorepo: no push needed.
 9. Inform the user. Do **not** block — continue with mock data or TODO markers.
 
 ### Internal Request (cross-module within same service)
@@ -136,7 +149,7 @@ When the agent needs an API or interface from another module that doesn't exist:
 3. Set `scope: internal` and appropriate `type`.
 4. Place at `{{COMMS_DIR}}inbox/{target-module}/{request-id}.md`.
 5. Run: `git add .accord/ && git commit -m "comms({target-module}): request - {summary}"`
-6. Monorepo: no push needed. Multi-repo: `git push`.
+6. Monorepo: no push needed. Multi-repo: `accord-sync.sh push --target-dir .`.
 7. Inform the user. Do **not** block.
 
 ---
@@ -173,7 +186,7 @@ When an approved request is found in the inbox:
       - Internal: `{{INTERNAL_CONTRACTS_DIR}}{your-module}.md`
    d. Update the request status to `completed`.
    e. Move the request to the archive directory.
-   f. Commit: `comms({your-module}): completed - {request-id}`. Multi-repo only: push.
+   f. Commit: `comms({your-module}): completed - {request-id}`. Multi-repo: `accord-sync.sh push --target-dir .`.
 4. If the user declines: leave the request as approved.
 
 ---
@@ -188,7 +201,7 @@ Before marking a request as `completed`:
 4. Add a `## Resolution` section to the request file.
 5. Move the request from inbox to archive:
    - `{{COMMS_DIR}}inbox/{module}/` → `{{COMMS_DIR}}archive/`
-6. Commit: `comms({your-module}): completed - {request-id}`. Multi-repo only: push.
+6. Commit: `comms({your-module}): completed - {request-id}`. Multi-repo: `accord-sync.sh push --target-dir .` to sync contract and archived request to hub.
 7. Inform the user.
 
 ---
@@ -201,6 +214,37 @@ Before marking a request as `completed`:
 - **Other modules' parts**: create Accord requests via `{{COMMS_DIR}}inbox/{target-module}/`
 
 If the user insists on doing it all at once: use separate agent sessions, each scoped to one module only.
+
+---
+
+## 8b. Task Routing Rules
+
+When the agent receives a task that may involve multiple modules/services:
+
+1. **Read `.accord/registry/` to understand module responsibilities**
+   - Which module OWNS the data involved?
+   - Which module is the CALLER vs PROVIDER?
+
+2. **Check contracts to see if required APIs already exist**
+   - Read `{{CONTRACTS_DIR}}{provider}.yaml`
+   - If the API exists: implement caller side only
+   - If the API doesn't exist: need to request or create it
+
+3. **Decide execution strategy**
+
+   If the agent can access the provider's code (same repo / monorepo):
+   a. Spawn a separate agent session for the provider module
+   b. That session reads the provider's registry + existing contract
+   c. That session implements the API + updates contract
+   d. Original session continues implementing the caller side
+
+   If the agent cannot access the provider's code (different repo):
+   a. Create a request to the provider via the Accord protocol
+   b. Continue implementing caller side with mock/TODO
+   c. Provider fulfills the request asynchronously
+
+4. **Always update contracts and sync to hub after implementation**
+   - Multi-repo: `accord-sync.sh push --target-dir .`
 
 ---
 

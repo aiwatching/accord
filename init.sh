@@ -28,6 +28,7 @@ INTERACTIVE=true
 SCAN=false
 SYNC_MODE=""
 HUB_SYNC_OK=false
+FORCE=false
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -49,6 +50,7 @@ Options:
   --language <lang>           java | python | typescript | go (default: java)
   --scan                      After scaffolding, run contract scan
   --target-dir <path>         Target directory (default: current directory)
+  --force                     Re-initialize even if .accord/config.yaml exists
   --no-interactive            Use auto-detected defaults without prompts
   --help                      Show this help message
 
@@ -184,6 +186,7 @@ parse_args() {
             --language)       LANGUAGE="$2"; shift 2 ;;
             --target-dir)     TARGET_DIR="$2"; shift 2 ;;
             --scan)           SCAN=true; shift ;;
+            --force)          FORCE=true; shift ;;
             --no-interactive) INTERACTIVE=false; shift ;;
             --help)           usage; exit 0 ;;
             *)                err "Unknown option: $1. Use --help for usage." ;;
@@ -795,18 +798,22 @@ hub_sync_on_init() {
     fi
 
     # b. Pull: copy other services' contracts from hub → local
+    #    Only copy if local file doesn't exist OR is still a template
     for f in "$hub_dir/contracts"/*.yaml; do
         [[ ! -f "$f" ]] && continue
         local fname
         fname="$(basename "$f")"
         local svc_name="${fname%.yaml}"
         [[ "$svc_name" == "$own_svc" ]] && continue
-        cp "$f" "$TARGET_DIR/.accord/contracts/$fname"
+        local local_contract="$TARGET_DIR/.accord/contracts/$fname"
+        if [[ ! -f "$local_contract" ]] || grep -q "^# Accord External Contract Template" "$local_contract" 2>/dev/null; then
+            cp "$f" "$local_contract"
+        fi
     done
 
-    # c. Push: copy own contract → hub
+    # c. Push: copy own contract → hub (skip if still a template)
     local own_contract="$TARGET_DIR/.accord/contracts/${own_svc}.yaml"
-    if [[ -f "$own_contract" ]]; then
+    if [[ -f "$own_contract" ]] && ! grep -q "^# Accord External Contract Template" "$own_contract" 2>/dev/null; then
         mkdir -p "$hub_dir/contracts"
         cp "$own_contract" "$hub_dir/contracts/${own_svc}.yaml"
     fi
@@ -872,6 +879,54 @@ NOTIFY
     fi
 }
 
+# ── Registry Generation ──────────────────────────────────────────────────
+
+generate_registry() {
+    local registry_dir="$TARGET_DIR/.accord/registry"
+    mkdir -p "$registry_dir"
+
+    IFS=',' read -ra svc_arr <<< "$SERVICES"
+    for svc in "${svc_arr[@]}"; do
+        svc="$(echo "$svc" | xargs)"
+        local registry_file="$registry_dir/${svc}.md"
+        if [[ ! -f "$registry_file" ]]; then
+            cp "$ACCORD_DIR/protocol/templates/registry.md.template" "$registry_file"
+            local contract_path=".accord/contracts/${svc}.yaml"
+            local module_type="service"
+            local module_dir="${svc}/"
+            replace_vars "$registry_file" \
+                "MODULE_NAME" "$svc" \
+                "MODULE_TYPE" "$module_type" \
+                "LANGUAGE" "$LANGUAGE" \
+                "MODULE_DIR" "$module_dir" \
+                "CONTRACT_PATH" "$contract_path"
+            log "Created .accord/registry/${svc}.md"
+        fi
+    done
+
+    # Generate registry files for sub-modules
+    if [[ -n "$SERVICE" && -n "$MODULES" ]]; then
+        IFS=',' read -ra mod_arr <<< "$MODULES"
+        for mod in "${mod_arr[@]}"; do
+            mod="$(echo "$mod" | xargs)"
+            local registry_file="$registry_dir/${mod}.md"
+            if [[ ! -f "$registry_file" ]]; then
+                cp "$ACCORD_DIR/protocol/templates/registry.md.template" "$registry_file"
+                local contract_path=".accord/contracts/internal/${mod}.md"
+                local module_type="module"
+                local module_dir="${SERVICE}/${mod}/"
+                replace_vars "$registry_file" \
+                    "MODULE_NAME" "$mod" \
+                    "MODULE_TYPE" "$module_type" \
+                    "LANGUAGE" "$LANGUAGE" \
+                    "MODULE_DIR" "$module_dir" \
+                    "CONTRACT_PATH" "$contract_path"
+                log "Created .accord/registry/${mod}.md"
+            fi
+        done
+    fi
+}
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 
 print_summary() {
@@ -892,6 +947,7 @@ print_summary() {
     echo "    ├── contracts/{service}.yaml     — External contracts"
     [[ -n "$MODULES" ]] && \
     echo "    ├── contracts/internal/{mod}.md — Internal contracts"
+    echo "    ├── registry/{name}.md          — Module registry"
     echo "    └── comms/"
     echo "        ├── inbox/{service}/        — Service inboxes"
     [[ -n "$MODULES" ]] && \
@@ -937,6 +993,12 @@ main() {
 
     TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
 
+    # Idempotency: skip if already initialized (unless --force)
+    if [[ -f "$TARGET_DIR/.accord/config.yaml" ]] && [[ "$FORCE" != "true" ]]; then
+        log "Already initialized ($TARGET_DIR/.accord/config.yaml exists). Use --force to re-initialize."
+        exit 0
+    fi
+
     if [[ "$INTERACTIVE" == false ]]; then
         [[ -z "$PROJECT_NAME" ]] && PROJECT_NAME="$(detect_project_name "$TARGET_DIR")"
         [[ -z "$ADAPTER" ]] && ADAPTER="$(detect_adapter "$TARGET_DIR")"
@@ -968,6 +1030,7 @@ main() {
     validate_inputs
 
     scaffold_project
+    generate_registry
     hub_sync_on_init
     generate_watch_script
     install_adapter

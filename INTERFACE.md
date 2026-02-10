@@ -162,7 +162,17 @@ Adapters must inject these behaviors into the agent's instruction set:
 3. Show both versions if possible
 4. Wait for user instruction
 
-### 2.8 ON_LOG (Debug Logging)
+### 2.8 ON_ROUTE (Task Routing)
+
+**Trigger**: Before implementing a feature that references data or functionality from another module.
+
+**Actions**:
+1. Read `.accord/registry/` to identify the data owner
+2. Check the owner's contract for existing APIs
+3. If API exists: implement caller side only
+4. If API missing: create request (cross-service) or dispatch subagent (same repo)
+
+### 2.9 ON_LOG (Debug Logging)
 
 **Trigger**: Every protocol action, when `settings.debug` is `true` in `.accord/config.yaml`.
 

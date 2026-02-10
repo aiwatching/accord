@@ -114,10 +114,10 @@ assert_validator "$ACCORD_DIR/protocol/scan/validators/validate-internal.sh" \
 # ══════════════════════════════════════════════════════════════════════════════
 # TEST 3: Idempotency — running init twice doesn't break things
 # ══════════════════════════════════════════════════════════════════════════════
-echo -e "\n${BOLD}[Test 3] Idempotency${NC}"
+echo -e "\n${BOLD}[Test 3] Idempotency (early exit)${NC}"
 
-# Run init.sh again on test2
-bash "$ACCORD_DIR/init.sh" \
+# Run init.sh again on test2 — should exit early with "Already initialized"
+reinit_output=$(bash "$ACCORD_DIR/init.sh" \
     --project-name "test-modules" \
     --repo-model monorepo \
     --services "svc-a,svc-b" \
@@ -126,9 +126,15 @@ bash "$ACCORD_DIR/init.sh" \
     --language java \
     --adapter none \
     --target-dir "$TEST2_DIR" \
-    --no-interactive > /dev/null 2>&1
+    --no-interactive 2>&1)
 
-# Verify nothing duplicated
+if echo "$reinit_output" | grep -q "Already initialized"; then
+    pass "Second init exits with 'Already initialized' message"
+else
+    fail "Second init should show 'Already initialized' message"
+fi
+
+# Verify nothing changed
 config_count=$(grep -c "^  name: test-modules" "$TEST2_DIR/.accord/config.yaml" 2>/dev/null || echo 0)
 if [[ "$config_count" -le 1 ]]; then pass "Config not duplicated"; else fail "Config duplicated"; fi
 
@@ -510,8 +516,16 @@ bash "$ACCORD_DIR/init.sh" \
 # Verify auto-clone
 assert_dir "$TEST9_SVCA/.accord/hub/.git" "Init auto-clones hub"
 
-# Verify own contract pushed to hub
-assert_file "$TEST9_SVCA/.accord/hub/contracts/svc-a.yaml" "Own contract pushed to hub"
+# Own contract is a template — NOT pushed to hub (template protection)
+if [[ ! -f "$TEST9_SVCA/.accord/hub/contracts/svc-a.yaml" ]]; then
+    pass "Template contract not pushed to hub (expected)"
+else
+    if grep -q "^# Accord External Contract Template" "$TEST9_SVCA/.accord/hub/contracts/svc-a.yaml" 2>/dev/null; then
+        fail "Template contract should not be pushed to hub"
+    else
+        pass "Real contract pushed to hub"
+    fi
+fi
 
 # Verify service-joined notification in svc-b's inbox on hub
 assert_file "$TEST9_SVCA/.accord/hub/comms/inbox/svc-b/req-000-service-joined-svc-a.md" \
@@ -539,11 +553,17 @@ bash "$ACCORD_DIR/init.sh" \
     --target-dir "$TEST9_SVCB" \
     --no-interactive > /dev/null 2>&1
 
-# Verify svc-b pulled svc-a's contract from hub
-assert_file "$TEST9_SVCB/.accord/contracts/svc-a.yaml" "svc-b pulled svc-a contract from hub"
-
-# Verify svc-b's own contract pushed to hub
-assert_file "$TEST9_SVCB/.accord/hub/contracts/svc-b.yaml" "svc-b contract pushed to hub"
+# svc-a only had a template contract, so nothing real to pull for svc-b
+# Just verify svc-b's own template contract is also NOT pushed to hub (template protection)
+if [[ ! -f "$TEST9_SVCB/.accord/hub/contracts/svc-b.yaml" ]]; then
+    pass "svc-b template contract not pushed to hub (expected)"
+else
+    if grep -q "^# Accord External Contract Template" "$TEST9_SVCB/.accord/hub/contracts/svc-b.yaml" 2>/dev/null; then
+        fail "svc-b template contract should not be pushed to hub"
+    else
+        pass "svc-b real contract pushed to hub"
+    fi
+fi
 
 # Manual push/pull still works after auto-sync
 (cd "$TEST9_SVCA" && git add -A && git commit -m "init" > /dev/null 2>&1) || true
@@ -709,6 +729,259 @@ fi
 
 # Clean up sample log (it would be gitignored anyway)
 rm -f "$SAMPLE_LOG"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 12: Init --force re-initializes but protects existing contracts
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 12] Init --force re-initializes${NC}"
+
+TEST12_DIR="$TMPDIR/test12"
+mkdir -p "$TEST12_DIR"
+
+# First init
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-force" \
+    --repo-model monorepo \
+    --services "alpha,beta" \
+    --adapter none \
+    --target-dir "$TEST12_DIR" \
+    --no-interactive > /dev/null 2>&1
+
+# Modify the alpha contract (simulate real usage)
+cat > "$TEST12_DIR/.accord/contracts/alpha.yaml" <<'EOF'
+openapi: "3.0.3"
+info:
+  title: "alpha API"
+  version: "0.1.0"
+  x-accord-status: stable
+paths:
+  /api/custom:
+    get:
+      summary: "Custom endpoint"
+      responses:
+        '200':
+          description: "OK"
+EOF
+
+# Re-init with --force
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-force" \
+    --repo-model monorepo \
+    --services "alpha,beta" \
+    --adapter none \
+    --target-dir "$TEST12_DIR" \
+    --force \
+    --no-interactive > /dev/null 2>&1
+
+# Contract should NOT be overwritten (file-exists check protects it)
+assert_contains "$TEST12_DIR/.accord/contracts/alpha.yaml" "/api/custom" \
+    "Contract preserved after --force re-init"
+assert_file "$TEST12_DIR/.accord/config.yaml" "Config still exists after --force"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 13: Registry generation
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 13] Registry generation${NC}"
+
+TEST13_DIR="$TMPDIR/test13"
+mkdir -p "$TEST13_DIR"
+
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-registry" \
+    --repo-model monorepo \
+    --services "svc-a,svc-b" \
+    --service svc-a \
+    --modules "mod-x,mod-y" \
+    --language java \
+    --adapter none \
+    --target-dir "$TEST13_DIR" \
+    --no-interactive > /dev/null 2>&1
+
+# Registry files created for services
+assert_file "$TEST13_DIR/.accord/registry/svc-a.md" "svc-a registry created"
+assert_file "$TEST13_DIR/.accord/registry/svc-b.md" "svc-b registry created"
+
+# Registry files created for modules
+assert_file "$TEST13_DIR/.accord/registry/mod-x.md" "mod-x registry created"
+assert_file "$TEST13_DIR/.accord/registry/mod-y.md" "mod-y registry created"
+
+# Registry has correct content
+assert_contains "$TEST13_DIR/.accord/registry/svc-a.md" "name: svc-a" "svc-a registry has name"
+assert_contains "$TEST13_DIR/.accord/registry/svc-a.md" "type: service" "svc-a registry has type service"
+assert_contains "$TEST13_DIR/.accord/registry/mod-x.md" "type: module" "mod-x registry has type module"
+assert_contains "$TEST13_DIR/.accord/registry/mod-x.md" "directory: svc-a/mod-x/" "mod-x registry has correct directory"
+assert_contains "$TEST13_DIR/.accord/registry/mod-x.md" "language: java" "mod-x registry has language"
+
+# No unresolved template variables
+unresolved_reg=0
+for reg_file in "$TEST13_DIR"/.accord/registry/*.md; do
+    if grep -q '{{' "$reg_file" 2>/dev/null; then
+        unresolved_reg=$((unresolved_reg + 1))
+    fi
+done
+if [[ "$unresolved_reg" -eq 0 ]]; then
+    pass "No unresolved {{VAR}} in registry files"
+else
+    fail "$unresolved_reg registry file(s) have unresolved {{VAR}}"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 14: Template protection on hub sync
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 14] Template protection on hub sync${NC}"
+
+# Create a hub with a real contract
+TEST14_HUB="$TMPDIR/test14-hub.git"
+git init --bare "$TEST14_HUB" > /dev/null 2>&1
+
+TEST14_SVC="$TMPDIR/test14-svc"
+mkdir -p "$TEST14_SVC"
+(cd "$TEST14_SVC" && git init > /dev/null 2>&1 && git config user.email "test@accord.dev" && git config user.name "Accord Test")
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-templateprot" \
+    --repo-model multi-repo \
+    --services "svc-a,svc-b" \
+    --hub "$TEST14_HUB" \
+    --adapter none \
+    --target-dir "$TEST14_SVC" \
+    --no-interactive > /dev/null 2>&1
+
+# svc-a's contract is a template — verify it was NOT pushed to hub
+# (The template has "# Accord External Contract Template" as first line)
+if [[ -f "$TEST14_SVC/.accord/hub/contracts/svc-a.yaml" ]]; then
+    if grep -q "^# Accord External Contract Template" "$TEST14_SVC/.accord/hub/contracts/svc-a.yaml" 2>/dev/null; then
+        fail "Template contract should not be pushed to hub"
+    else
+        pass "Real contract pushed to hub (not a template)"
+    fi
+else
+    pass "Template contract not pushed to hub (file absent)"
+fi
+
+# Now simulate svc-b having a real contract on hub and verify it's NOT overwritten by a template
+# Write a real contract to hub
+TEST14_CLONE="$TMPDIR/test14-clone"
+git clone "$TEST14_HUB" "$TEST14_CLONE" > /dev/null 2>&1
+(cd "$TEST14_CLONE" && git config user.email "test@accord.dev" && git config user.name "Accord Test")
+mkdir -p "$TEST14_CLONE/contracts"
+cat > "$TEST14_CLONE/contracts/svc-b.yaml" <<'EOF'
+openapi: "3.0.3"
+info:
+  title: "svc-b API"
+  version: "0.1.0"
+  x-accord-status: stable
+paths:
+  /api/real-endpoint:
+    get:
+      summary: "Real endpoint from svc-b"
+      responses:
+        '200':
+          description: "OK"
+EOF
+(cd "$TEST14_CLONE" && git add -A && git commit -m "add svc-b contract" && git push) > /dev/null 2>&1
+
+# Re-init svc-a (with --force) — should pull svc-b's real contract, not overwrite with template
+TEST14_SVC2="$TMPDIR/test14-svc2"
+mkdir -p "$TEST14_SVC2"
+(cd "$TEST14_SVC2" && git init > /dev/null 2>&1 && git config user.email "test@accord.dev" && git config user.name "Accord Test")
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-templateprot" \
+    --repo-model multi-repo \
+    --services "svc-a,svc-b" \
+    --hub "$TEST14_HUB" \
+    --adapter none \
+    --target-dir "$TEST14_SVC2" \
+    --no-interactive > /dev/null 2>&1
+
+# svc-b's real contract should have been pulled from hub
+assert_file "$TEST14_SVC2/.accord/contracts/svc-b.yaml" "svc-b contract pulled from hub"
+assert_contains "$TEST14_SVC2/.accord/contracts/svc-b.yaml" "/api/real-endpoint" \
+    "svc-b contract has real endpoint (not template)"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 15: Push retry on conflict
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 15] Push retry on conflict${NC}"
+
+# Create hub
+TEST15_HUB="$TMPDIR/test15-hub.git"
+git init --bare "$TEST15_HUB" > /dev/null 2>&1
+
+# Init svc-a
+TEST15_SVCA="$TMPDIR/test15-svc-a"
+mkdir -p "$TEST15_SVCA"
+(cd "$TEST15_SVCA" && git init > /dev/null 2>&1 && git config user.email "test@accord.dev" && git config user.name "Accord Test")
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-retry" \
+    --repo-model multi-repo \
+    --services "svc-a,svc-b" \
+    --hub "$TEST15_HUB" \
+    --adapter none \
+    --target-dir "$TEST15_SVCA" \
+    --no-interactive > /dev/null 2>&1
+
+# Make a conflicting commit in hub directly (simulate another service pushing)
+TEST15_CLONE="$TMPDIR/test15-clone"
+git clone "$TEST15_HUB" "$TEST15_CLONE" > /dev/null 2>&1
+(cd "$TEST15_CLONE" && git config user.email "test@accord.dev" && git config user.name "Accord Test")
+mkdir -p "$TEST15_CLONE/contracts"
+echo "# concurrent change" > "$TEST15_CLONE/contracts/concurrent.txt"
+(cd "$TEST15_CLONE" && git add -A && git commit -m "concurrent change" && git push) > /dev/null 2>&1
+
+# svc-a creates a request and pushes — should auto-retry with rebase
+mkdir -p "$TEST15_SVCA/.accord/comms/inbox/svc-b"
+cat > "$TEST15_SVCA/.accord/comms/inbox/svc-b/req-001-retry-test.md" <<'EOF'
+---
+id: req-001-retry-test
+from: svc-a
+to: svc-b
+scope: external
+type: api-addition
+priority: low
+status: pending
+created: 2026-02-10T12:00:00Z
+updated: 2026-02-10T12:00:00Z
+---
+
+## What
+
+Test push retry.
+
+## Proposed Change
+
+None.
+
+## Why
+
+Testing.
+
+## Impact
+
+None.
+EOF
+
+if bash "$ACCORD_DIR/accord-sync.sh" push --target-dir "$TEST15_SVCA" --service-name svc-a > /dev/null 2>&1; then
+    pass "Push with retry succeeded despite concurrent change"
+else
+    fail "Push with retry failed"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 16: Example project registry files exist
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 16] Example project registry files${NC}"
+
+EXAMPLE_DIR="$ACCORD_DIR/examples/microservice-project"
+assert_dir "$EXAMPLE_DIR/.accord/registry" "Example project has registry dir"
+assert_file "$EXAMPLE_DIR/.accord/registry/frontend.md" "frontend registry exists"
+assert_file "$EXAMPLE_DIR/.accord/registry/nac-engine.md" "nac-engine registry exists"
+assert_file "$EXAMPLE_DIR/.accord/registry/device-manager.md" "device-manager registry exists"
+assert_file "$EXAMPLE_DIR/.accord/registry/nac-admin.md" "nac-admin registry exists"
+
+# Registry files have proper content
+assert_contains "$EXAMPLE_DIR/.accord/registry/frontend.md" "type: service" "frontend registry has type"
+assert_contains "$EXAMPLE_DIR/.accord/registry/device-manager.md" "## Owns" "device-manager has Owns section"
+assert_contains "$EXAMPLE_DIR/.accord/registry/nac-admin.md" "## Does NOT Own" "nac-admin has Does NOT Own section"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Summary

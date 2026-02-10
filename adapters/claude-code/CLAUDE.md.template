@@ -28,12 +28,23 @@ Each service and sub-module is an **independent boundary**. Every cross-boundary
 5. When the user asks for a feature that spans multiple modules, explicitly tell them which parts you can implement (your module) and which parts require requests to other modules
 6. You may READ other modules' contracts and code for reference, but NEVER edit them
 
+## Hub Write Rules (Multi-Repo Only)
+
+**Your local `.accord/` is the write target. NEVER directly edit files inside `.accord/hub/`.**
+
+- Create/edit requests in `.accord/comms/inbox/{target}/`
+- Update contracts in `.accord/contracts/`
+- Use `bash ~/.accord/accord-sync.sh push --target-dir .` to sync changes to hub
+- Use `bash ~/.accord/accord-sync.sh pull --target-dir .` to get updates from hub
+- `.accord/hub/` is a git clone for exchange — treated as read-only by agents
+
 ## ON START (Every Session)
 
 When a conversation starts:
 
 1. Read `.accord/config.yaml` to understand the module structure, paths, and repo model
-2. If multi-repo: run `git pull` to sync latest changes
+1b. Read `.accord/registry/` files to understand module responsibilities and data ownership
+2. If multi-repo AND current directory is a git repo: run `git pull` to sync latest code changes
 3. If `.accord/hub/` exists: run `bash ~/.accord/accord-sync.sh pull --target-dir .` to sync from hub
 4. Determine your working module from the user's first message
 5. Announce your working module and directory scope
@@ -82,7 +93,7 @@ When you need an API or interface that doesn't exist in another module's contrac
 4. Place in `{{COMMS_DIR}}inbox/{target-module}/`
 5. Optionally annotate `{{CONTRACTS_DIR}}{target-module}.yaml` with `x-accord-status: proposed`
 6. `git add .accord/` + `git commit -m "comms({target}): request - {summary}"`
-7. Multi-repo only: `git push` (monorepo: request is already visible locally)
+7. Multi-repo: `bash ~/.accord/accord-sync.sh push --target-dir .` (syncs request + contract to hub)
 8. Tell the user: "Created request {id} to {target}. Needs their approval."
 9. Do NOT block — continue with mock data or TODO markers
 
@@ -111,7 +122,7 @@ When you find an approved request in your inbox:
    d. Update status to `completed`
    e. Move request to archive directory
    f. `git add .` + `git commit -m "comms({your-module}): completed - {request-id}"`
-   g. Multi-repo only: `git push`
+   g. Multi-repo only: `bash ~/.accord/accord-sync.sh push --target-dir .`
 4. If user declines: leave it as approved for later
 
 ## ON_COMPLETE (Request Completion)
@@ -120,7 +131,7 @@ Before marking a request as completed, verify:
 1. The contract file has been updated
 2. The implementation matches the contract
 3. Then: update status → move to archive → `git add . && git commit`
-4. Multi-repo only: `git push`
+4. Multi-repo only: `bash ~/.accord/accord-sync.sh push --target-dir .` to sync updated contract and archived request to hub
 5. Tell the user: "Completed request {id}. Contract updated."
 
 ## ON_SCAN (Contract Generation)
@@ -207,6 +218,35 @@ After all subagents complete:
 - Simple single-module changes — just implement directly
 - The user explicitly wants to handle coordination manually
 - The feature scope is unclear — ask the user to clarify first
+
+## Task Routing Rules
+
+When you receive a task that may involve multiple modules/services:
+
+1. **Read `.accord/registry/` to understand module responsibilities**
+   - Which module OWNS the data involved?
+   - Which module is the CALLER vs PROVIDER?
+
+2. **Check contracts to see if required APIs already exist**
+   - Read `{{CONTRACTS_DIR}}{provider}.yaml`
+   - If the API exists: implement caller side only
+   - If the API doesn't exist: need to request or create it
+
+3. **Decide execution strategy**
+
+   If you can access the provider's code (same repo / monorepo):
+   a. Use `/accord-dispatch` to spawn a subagent for the provider module
+   b. Subagent reads the provider's registry + existing contract
+   c. Subagent implements the API + updates contract
+   d. You continue implementing the caller side
+
+   If you cannot access the provider's code (different repo):
+   a. Create a request via `/accord-send-request` to the provider
+   b. Continue implementing caller side with mock/TODO
+   c. Provider fulfills the request asynchronously
+
+4. **Always update contracts and sync to hub after implementation**
+   - Multi-repo: `bash ~/.accord/accord-sync.sh push --target-dir .`
 
 ## ON_CONFLICT
 

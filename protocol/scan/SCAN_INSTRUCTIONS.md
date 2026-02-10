@@ -76,8 +76,9 @@ paths:
 
 ### 3.4 Rules
 
-- If a contract file already exists, **do not overwrite**. Instead, output a diff or append `x-accord-status: proposed` to new endpoints only.
+- If a contract file already exists, **do not overwrite**. Instead, output a diff or append `x-accord-status: draft` to new endpoints only.
 - Mark all generated content with `x-accord-status: draft`.
+- Do NOT add `x-accord-status: proposed` or `x-accord-request` annotations during scanning. These annotations are ONLY added manually when a request file exists. For unimplemented endpoints (TODO/WIP in source), add a YAML comment instead: `# TODO: not yet implemented — see source code`
 - Include a `components/schemas` section for all referenced DTOs/models.
 - Preserve any existing manually-written content in the contract file.
 

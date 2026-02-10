@@ -104,7 +104,15 @@ accord-hub/contracts/device-manager.yaml  (hub copy)
 accord-hub/contracts/internal/device-manager/plugin.md  (hub backup)
 ```
 
-### 1.4 Naming Conventions
+### 1.4 Hub Write Direction
+
+In multi-repo mode, the local `.accord/` directory is the authoritative write target:
+- Agents edit files in `.accord/contracts/` and `.accord/comms/`
+- `accord sync push` copies local → hub
+- `accord sync pull` copies hub → local
+- `.accord/hub/` is a local clone used for exchange — agents never edit it directly
+
+### 1.5 Naming Conventions
 - Service/module names: lowercase, hyphenated (e.g., `device-manager`, `nac-engine`)
 - Module names: lowercase, hyphenated (e.g., `plugin`, `discovery`, `lifecycle`)
 - Request IDs: `req-{NNN}-{short-description}` (e.g., `req-001-add-policy-api`)
@@ -321,7 +329,8 @@ in-progress → pending   (by: either module, if requirements changed)
 1. **Human approval required**: `pending → approved` MUST involve a human decision. Agents should NOT auto-approve requests.
 2. **Rejection requires reason**: When rejecting, add a `## Rejection Reason` section to the request file.
 3. **Completion requires contract update**: A request cannot be marked `completed` unless the related contract file has been updated accordingly.
-4. **Archive on terminal states**: When a request reaches `completed` or `rejected`, move it to `.accord/comms/archive/`.
+4. **Completion requires hub sync (multi-repo)**: Completing a request in multi-repo mode MUST include syncing the updated contract to the hub via `accord sync push`.
+5. **Archive on terminal states**: When a request reaches `completed` or `rejected`, move it to `.accord/comms/archive/`.
 
 ---
 
@@ -504,7 +513,21 @@ See `protocol/debug/LOG_FORMAT.md` for the full specification including all acti
 
 ---
 
-## 8. Protocol Compliance
+## 8. Module Registry
+
+Each service/module has a registry file at `.accord/registry/{name}.md` describing:
+- **Responsibility**: Core purpose of the module
+- **Data ownership**: Which entities/domains this module is source of truth for
+- **Capabilities**: What the module can do
+- **Dependencies**: Other modules it depends on
+
+Agents use the registry for **task routing**: determining which module owns the data involved in a task, and whether to implement directly or create a cross-boundary request.
+
+See `protocol/registry-format.md` for the full format specification.
+
+---
+
+## 9. Protocol Compliance
 
 An agent or human is considered "Accord-compliant" if it:
 
