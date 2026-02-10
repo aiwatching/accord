@@ -462,10 +462,11 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TEST 9: Multi-repo config + sync lifecycle
+# TEST 9: Multi-repo config + auto hub sync on init
 # ══════════════════════════════════════════════════════════════════════════════
-echo -e "\n${BOLD}[Test 9] Multi-repo config + sync lifecycle${NC}"
+echo -e "\n${BOLD}[Test 9] Multi-repo auto hub sync on init${NC}"
 
+# 9a. Config-only test (unreachable hub URL — graceful degradation)
 TEST9_DIR="$TMPDIR/test9"
 mkdir -p "$TEST9_DIR"
 
@@ -481,25 +482,19 @@ bash "$ACCORD_DIR/init.sh" \
 assert_contains "$TEST9_DIR/.accord/config.yaml" "multi-repo" "Config has multi-repo model"
 assert_contains "$TEST9_DIR/.accord/config.yaml" "git@github.com:org/accord-hub.git" "Config has hub URL"
 
-# Multi-repo sync lifecycle (local bare repo)
+# Multi-repo: only own service contract created (not svc-b)
+assert_file "$TEST9_DIR/.accord/contracts/svc-a.yaml" "Own service contract created"
+if [[ ! -f "$TEST9_DIR/.accord/contracts/svc-b.yaml" ]]; then
+    pass "Other service contract NOT created (will come from hub)"
+else
+    fail "Other service contract should not be created in multi-repo"
+fi
+
+# 9b. Full auto-sync lifecycle with local bare hub
 TEST9_HUB="$TMPDIR/test9-hub.git"
 git init --bare "$TEST9_HUB" > /dev/null 2>&1
 
-# Initialize hub structure via temp clone
-TEST9_HUBINIT="$TMPDIR/test9-hubinit"
-git clone "$TEST9_HUB" "$TEST9_HUBINIT" > /dev/null 2>&1
-(
-    cd "$TEST9_HUBINIT"
-    git config user.email "test@accord.dev"
-    git config user.name "Accord Test"
-    mkdir -p .accord/contracts .accord/comms/inbox/svc-a .accord/comms/inbox/svc-b .accord/comms/archive
-    touch .accord/comms/inbox/svc-a/.gitkeep .accord/comms/inbox/svc-b/.gitkeep
-    git add -A && git commit -m "init hub" > /dev/null 2>&1
-    git push > /dev/null 2>&1
-)
-rm -rf "$TEST9_HUBINIT"
-
-# Create svc-a repo with local hub URL
+# Create svc-a repo — init should auto-clone hub + push contract + notify
 TEST9_SVCA="$TMPDIR/test9-svc-a"
 mkdir -p "$TEST9_SVCA"
 (cd "$TEST9_SVCA" && git init > /dev/null 2>&1 && git config user.email "test@accord.dev" && git config user.name "Accord Test")
@@ -511,13 +506,27 @@ bash "$ACCORD_DIR/init.sh" \
     --adapter none \
     --target-dir "$TEST9_SVCA" \
     --no-interactive > /dev/null 2>&1
-(cd "$TEST9_SVCA" && git add -A && git commit -m "init" > /dev/null 2>&1)
 
-# Init hub clone
-bash "$ACCORD_DIR/accord-sync.sh" init --target-dir "$TEST9_SVCA" --service-name svc-a > /dev/null 2>&1
-assert_dir "$TEST9_SVCA/.accord/hub/.git" "Sync init clones hub"
+# Verify auto-clone
+assert_dir "$TEST9_SVCA/.accord/hub/.git" "Init auto-clones hub"
 
-# Create svc-b repo
+# Verify own contract pushed to hub
+assert_file "$TEST9_SVCA/.accord/hub/.accord/contracts/svc-a.yaml" "Own contract pushed to hub"
+
+# Verify service-joined notification in svc-b's inbox on hub
+assert_file "$TEST9_SVCA/.accord/hub/.accord/comms/inbox/svc-b/req-000-service-joined-svc-a.md" \
+    "Service-joined notification created for svc-b"
+assert_contains "$TEST9_SVCA/.accord/hub/.accord/comms/inbox/svc-b/req-000-service-joined-svc-a.md" \
+    "status: pending" "Notification has pending status"
+assert_contains "$TEST9_SVCA/.accord/hub/.accord/comms/inbox/svc-b/req-000-service-joined-svc-a.md" \
+    "type: other" "Notification has type other"
+
+# Validate notification passes request validator
+assert_validator "$ACCORD_DIR/protocol/scan/validators/validate-request.sh" \
+    "$TEST9_SVCA/.accord/hub/.accord/comms/inbox/svc-b/req-000-service-joined-svc-a.md" \
+    "Service-joined notification validates"
+
+# Create svc-b repo — should auto-pull svc-a's contract from hub
 TEST9_SVCB="$TMPDIR/test9-svc-b"
 mkdir -p "$TEST9_SVCB"
 (cd "$TEST9_SVCB" && git init > /dev/null 2>&1 && git config user.email "test@accord.dev" && git config user.name "Accord Test")
@@ -529,10 +538,17 @@ bash "$ACCORD_DIR/init.sh" \
     --adapter none \
     --target-dir "$TEST9_SVCB" \
     --no-interactive > /dev/null 2>&1
-(cd "$TEST9_SVCB" && git add -A && git commit -m "init" > /dev/null 2>&1)
-bash "$ACCORD_DIR/accord-sync.sh" init --target-dir "$TEST9_SVCB" --service-name svc-b > /dev/null 2>&1
 
-# svc-a creates a request for svc-b and pushes
+# Verify svc-b pulled svc-a's contract from hub
+assert_file "$TEST9_SVCB/.accord/contracts/svc-a.yaml" "svc-b pulled svc-a contract from hub"
+
+# Verify svc-b's own contract pushed to hub
+assert_file "$TEST9_SVCB/.accord/hub/.accord/contracts/svc-b.yaml" "svc-b contract pushed to hub"
+
+# Manual push/pull still works after auto-sync
+(cd "$TEST9_SVCA" && git add -A && git commit -m "init" > /dev/null 2>&1) || true
+
+# svc-a creates a request for svc-b and pushes manually
 mkdir -p "$TEST9_SVCA/.accord/comms/inbox/svc-b"
 cat > "$TEST9_SVCA/.accord/comms/inbox/svc-b/req-001-test-sync.md" <<'EOF'
 ---

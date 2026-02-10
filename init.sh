@@ -27,6 +27,7 @@ TARGET_DIR="."
 INTERACTIVE=true
 SCAN=false
 SYNC_MODE=""
+HUB_SYNC_OK=false
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -437,8 +438,15 @@ scaffold_project() {
     # .accord/contracts/
     mkdir -p "$accord_dir/contracts"
     IFS=',' read -ra svc_arr <<< "$SERVICES"
+
+    # Multi-repo: only create own service's contract (first in list);
+    # other services' contracts come via hub pull.
+    # Monorepo: create all service contracts.
     for svc in "${svc_arr[@]}"; do
         svc="$(echo "$svc" | xargs)"
+        if [[ "$REPO_MODEL" == "multi-repo" && "$svc" != "${svc_arr[0]// /}" ]]; then
+            continue
+        fi
         local contract_file="$accord_dir/contracts/${svc}.yaml"
         if [[ ! -f "$contract_file" ]]; then
             cp "$ACCORD_DIR/protocol/templates/contract.yaml.template" "$contract_file"
@@ -719,6 +727,128 @@ run_scan() {
     done
 }
 
+# ── Hub Sync on Init (multi-repo) ─────────────────────────────────────────────
+
+hub_sync_on_init() {
+    [[ "$REPO_MODEL" != "multi-repo" ]] && return
+    [[ -z "$HUB" ]] && return
+
+    # Determine own service name (first in SERVICES list)
+    IFS=',' read -ra svc_arr <<< "$SERVICES"
+    local own_svc="${svc_arr[0]}"
+    own_svc="$(echo "$own_svc" | xargs)"
+
+    local hub_dir="$TARGET_DIR/.accord/hub"
+
+    # a. Clone hub (or pull if already cloned)
+    if [[ -d "$hub_dir/.git" ]]; then
+        log "Hub already cloned, pulling latest..."
+        (cd "$hub_dir" && git pull --quiet) || { warn "Hub pull failed (network issue?). Skipping hub sync."; return; }
+    else
+        log "Cloning hub: $HUB"
+        if ! git clone "$HUB" "$hub_dir" 2>/dev/null; then
+            warn "Hub clone failed (network issue or bad URL?). Skipping hub sync."
+            return
+        fi
+    fi
+
+    # Configure git user in hub clone (needed for commits)
+    (cd "$hub_dir" && git config user.email "accord-init@local" && git config user.name "Accord Init") 2>/dev/null || true
+
+    # If hub is empty (no .accord/ structure), initialize it
+    if [[ ! -d "$hub_dir/.accord" ]]; then
+        log "Hub is empty — initializing .accord/ structure"
+        mkdir -p "$hub_dir/.accord/contracts"
+        mkdir -p "$hub_dir/.accord/comms/archive"
+        for svc in "${svc_arr[@]}"; do
+            svc="$(echo "$svc" | xargs)"
+            mkdir -p "$hub_dir/.accord/comms/inbox/$svc"
+            touch "$hub_dir/.accord/comms/inbox/$svc/.gitkeep"
+        done
+        if ! (cd "$hub_dir" && git add -A && git commit -m "accord: init hub structure" && git push) 2>/dev/null; then
+            warn "Failed to push hub init. Skipping hub sync."
+            return
+        fi
+    fi
+
+    # b. Pull: copy other services' contracts from hub → local
+    for f in "$hub_dir/.accord/contracts"/*.yaml; do
+        [[ ! -f "$f" ]] && continue
+        local fname
+        fname="$(basename "$f")"
+        local svc_name="${fname%.yaml}"
+        [[ "$svc_name" == "$own_svc" ]] && continue
+        cp "$f" "$TARGET_DIR/.accord/contracts/$fname"
+    done
+
+    # c. Push: copy own contract → hub
+    local own_contract="$TARGET_DIR/.accord/contracts/${own_svc}.yaml"
+    if [[ -f "$own_contract" ]]; then
+        mkdir -p "$hub_dir/.accord/contracts"
+        cp "$own_contract" "$hub_dir/.accord/contracts/${own_svc}.yaml"
+    fi
+
+    # Ensure own inbox exists on hub
+    mkdir -p "$hub_dir/.accord/comms/inbox/$own_svc"
+    touch "$hub_dir/.accord/comms/inbox/$own_svc/.gitkeep"
+
+    # d. Notify: place service-joined notification in other services' inboxes
+    local ts
+    ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+    for svc in "${svc_arr[@]}"; do
+        svc="$(echo "$svc" | xargs)"
+        [[ "$svc" == "$own_svc" ]] && continue
+        mkdir -p "$hub_dir/.accord/comms/inbox/$svc"
+        local notify_file="$hub_dir/.accord/comms/inbox/$svc/req-000-service-joined-${own_svc}.md"
+        # Idempotent: only write if not already present
+        if [[ ! -f "$notify_file" ]]; then
+            cat > "$notify_file" <<NOTIFY
+---
+id: req-000-service-joined-${own_svc}
+from: ${own_svc}
+to: ${svc}
+scope: external
+type: other
+priority: low
+status: pending
+created: ${ts}
+updated: ${ts}
+---
+
+## What
+
+Service **${own_svc}** has joined the project. Run \`accord-sync.sh pull\` to fetch the latest contracts.
+
+## Proposed Change
+
+No contract changes. This is an informational notification.
+
+## Why
+
+New service registered in the Accord hub. Other services should pull to get the updated contract list.
+
+## Impact
+
+None — informational only. Pull when convenient.
+NOTIFY
+        fi
+    done
+
+    # Commit + push hub (only if there are changes)
+    (cd "$hub_dir" && git add -A)
+    if ! (cd "$hub_dir" && git diff --cached --quiet); then
+        if (cd "$hub_dir" && git commit -m "accord-sync($own_svc): init — joined project" && git push) 2>/dev/null; then
+            log "Hub synced: contract pushed, other services notified"
+            HUB_SYNC_OK=true
+        else
+            warn "Failed to push to hub. Local init is complete but hub is not synced."
+        fi
+    else
+        log "Hub already up to date"
+        HUB_SYNC_OK=true
+    fi
+}
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 
 print_summary() {
@@ -760,9 +890,15 @@ print_summary() {
     [[ "$SYNC_MODE" == "auto-poll" ]] && echo "    4. Run: .accord/accord-watch.sh &"
     if [[ "$REPO_MODEL" == "multi-repo" ]]; then
         echo ""
-        echo "  Multi-repo setup detected. To connect to the hub:"
-        echo "    accord-sync.sh init --target-dir ."
-        echo "  Then use 'accord-sync.sh pull' and 'accord-sync.sh push' to sync."
+        if [[ "$HUB_SYNC_OK" == true ]]; then
+            echo "  Hub synced automatically. Other services have been notified."
+            echo "  Use 'accord-sync.sh pull' to check for updates, 'accord-sync.sh push' to publish changes."
+        else
+            echo "  Multi-repo setup detected. Hub sync was not completed."
+            echo "  To connect to the hub manually:"
+            echo "    accord-sync.sh init --target-dir ."
+            echo "  Then use 'accord-sync.sh pull' and 'accord-sync.sh push' to sync."
+        fi
     fi
     echo ""
 }
@@ -809,6 +945,7 @@ main() {
     validate_inputs
 
     scaffold_project
+    hub_sync_on_init
     generate_watch_script
     install_adapter
     run_scan
