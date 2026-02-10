@@ -23,23 +23,21 @@ Device-Manager Agent                    NAC-Engine Agent
         │                                      │
         │  1. "I need a policy-by-type API"     │
         │  → creates request file               │
-        │  → git push                           │
+        │  → git commit (monorepo: done!)       │
         │                                       │
-        │                              2. git pull
-        │                              → sees request in inbox
+        │                              2. sees request in inbox
         │                              → developer approves
         │                                       │
         │                              3. implements API
         │                              → updates contract
-        │                              → git push
+        │                              → git commit
         │                                       │
-        │  4. git pull                          │
-        │  → sees updated contract              │
+        │  4. sees updated contract             │
         │  → codes against new API              │
         ▼                                       ▼
 ```
 
-No servers. No message queues. No infrastructure. Just Git.
+No servers. No message queues. No infrastructure. Just files and Git.
 
 ## Key Features
 
