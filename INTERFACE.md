@@ -37,9 +37,10 @@ Adapters must inject these behaviors into the agent's instruction set:
 **Trigger**: Agent session begins or conversation starts.
 
 **Actions**:
-1. Run `git pull` to sync latest changes in the service repo
-2. If multi-repo: run `accord sync pull` to pull from the hub repo
-3. Check inbox: `.accord/comms/inbox/{own-module}/`
+1. Read `.accord/config.yaml` to determine repo model
+2. Multi-repo: run `git pull` to sync latest changes (monorepo: comms are already local)
+3. If multi-repo: run `accord sync pull` to pull from the hub repo
+4. Check inbox: `.accord/comms/inbox/{own-module}/`
 4. If service has sub-modules, also check: `.accord/comms/inbox/{sub-module-name}/`
 5. For each request file, read the YAML frontmatter
 6. Report to user:
@@ -63,7 +64,7 @@ Adapters must inject these behaviors into the agent's instruction set:
 7. Place request in `.accord/comms/inbox/{target-module}/`
 8. `git add` the request file and any contract annotations
 9. `git commit -m "comms({target-module}): request - {summary}"`
-10. `git push`
+10. Multi-repo only: `git push` (monorepo: request is already visible locally)
 11. Inform user: "Created cross-service request {id} to {target-module}. Needs their approval."
 
 **For internal requests (scope: internal)**:
@@ -75,7 +76,7 @@ Adapters must inject these behaviors into the agent's instruction set:
 6. Place request in `.accord/comms/inbox/{target-module}/`
 7. `git add` the request file
 8. `git commit -m "comms({target-module}): request - {summary}"`
-9. `git push`
+9. Monorepo: no push needed. Multi-repo: `git push`.
 10. Inform user: "Created internal request {id} to module {target-module}. Needs approval."
 
 **Important**: The agent should NOT block on this request. It should continue with other work, using mock data or TODO markers for the pending API/interface.
@@ -94,7 +95,7 @@ Adapters must inject these behaviors into the agent's instruction set:
       - External: `.accord/contracts/{own-module}.yaml` (finalize proposed changes)
       - Internal: `.accord/contracts/internal/{own-module}.md` (update interface)
    d. Move request to `.accord/comms/archive/`
-   e. Commit and push
+   e. Commit. Multi-repo only: push.
 4. If user declines:
    a. No status change; inform user the request remains approved for later
 
@@ -108,7 +109,7 @@ Adapters must inject these behaviors into the agent's instruction set:
 3. Update request status to `completed`
 4. Move request file from inbox to archive
 5. Commit with message: `comms({own-module}): completed - {request-id}`
-6. Push
+6. Multi-repo only: push
 7. Inform user: "Completed request {id}. Contract updated."
 
 ### 2.5 ON_SCAN (Contract Generation)

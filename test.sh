@@ -183,6 +183,57 @@ else
     fail "Adapter not idempotent ($accord_blocks ACCORD blocks)"
 fi
 
+# Check all command files present
+assert_file "$TEST4_DIR/.claude/commands/accord-dispatch.md"          "accord-dispatch command installed"
+assert_file "$TEST4_DIR/.claude/commands/accord-status.md"            "accord-status command installed"
+assert_file "$TEST4_DIR/.claude/commands/accord-validate.md"          "accord-validate command installed"
+
+# Check no unresolved template variables in command files
+unresolved_cmds=0
+for cmd_file in "$TEST4_DIR"/.claude/commands/accord-*.md; do
+    if grep -q '{{' "$cmd_file" 2>/dev/null; then
+        unresolved_cmds=$((unresolved_cmds + 1))
+    fi
+done
+if [[ "$unresolved_cmds" -eq 0 ]]; then
+    pass "No unresolved {{VAR}} in command files"
+else
+    fail "$unresolved_cmds command file(s) have unresolved {{VAR}}"
+fi
+
+# Check command headings match filenames (# /accord-{name})
+heading_ok=true
+for cmd_file in "$TEST4_DIR"/.claude/commands/accord-*.md; do
+    fname="$(basename "$cmd_file" .md)"
+    expected_heading="# /$fname"
+    actual_heading="$(head -1 "$cmd_file")"
+    if [[ "$actual_heading" != "$expected_heading" ]]; then
+        heading_ok=false
+        fail "Heading mismatch in $fname: expected '$expected_heading', got '$actual_heading'"
+    fi
+done
+if [[ "$heading_ok" == true ]]; then
+    pass "All command headings match filenames"
+fi
+
+# Check old command files cleaned up on upgrade
+touch "$TEST4_DIR/.claude/commands/check-inbox.md"
+touch "$TEST4_DIR/.claude/commands/send-request.md"
+touch "$TEST4_DIR/.claude/commands/complete-request.md"
+
+bash "$ACCORD_DIR/adapters/claude-code/install.sh" \
+    --project-dir "$TEST4_DIR" \
+    --project-name "test-adapter" \
+    --service-list "svc-a,svc-b" > /dev/null 2>&1
+
+if [[ ! -f "$TEST4_DIR/.claude/commands/check-inbox.md" && \
+      ! -f "$TEST4_DIR/.claude/commands/send-request.md" && \
+      ! -f "$TEST4_DIR/.claude/commands/complete-request.md" ]]; then
+    pass "Old command files cleaned up on re-install"
+else
+    fail "Old command files still present after re-install"
+fi
+
 # ══════════════════════════════════════════════════════════════════════════════
 # TEST 5: Generic adapter installation
 # ══════════════════════════════════════════════════════════════════════════════

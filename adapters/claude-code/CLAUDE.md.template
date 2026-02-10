@@ -32,8 +32,8 @@ Each service and sub-module is an **independent boundary**. Every cross-boundary
 
 When a conversation starts:
 
-1. Run `git pull` to sync latest changes
-2. Read `.accord/config.yaml` to understand the module structure and paths
+1. Read `.accord/config.yaml` to understand the module structure, paths, and repo model
+2. If multi-repo: run `git pull` to sync latest changes
 3. Determine your working module from the user's first message
 4. Announce your working module and directory scope
 5. Check your inbox: `{{COMMS_DIR}}inbox/{your-module}/`
@@ -46,13 +46,13 @@ When a conversation starts:
 
 ## ON_ACTION (Sync Before Operations)
 
-**If sync mode is `on-action`:** Before starting any implementation task (coding, contract update, request handling), run a quick sync:
+**If sync mode is `on-action` AND repo model is `multi-repo`:** Before starting any implementation task, run a quick sync:
 
 1. `git pull` to get latest changes
 2. Check inbox for any new requests that might affect the current task
 3. If new relevant requests exist, inform the user before proceeding
 
-This ensures you always work against the latest contracts and don't miss incoming requests between session start and implementation.
+**If monorepo:** Comms are local — just re-check the inbox directory for new files. No `git pull` needed for comms (though pulling for code sync is fine).
 
 **If sync mode is `manual` or `auto-poll`:** Skip this — the user handles sync themselves.
 
@@ -79,18 +79,20 @@ When you need an API or interface that doesn't exist in another module's contrac
 3. Set `scope: external`, assign a unique ID `req-{NNN}-{description}`
 4. Place in `{{COMMS_DIR}}inbox/{target-module}/`
 5. Optionally annotate `{{CONTRACTS_DIR}}{target-module}.yaml` with `x-accord-status: proposed`
-6. `git add` + `git commit -m "comms({target}): request - {summary}"` + `git push`
-7. Tell the user: "Created request {id} to {target}. Needs their approval."
-8. Do NOT block — continue with mock data or TODO markers
+6. `git add .accord/` + `git commit -m "comms({target}): request - {summary}"`
+7. Multi-repo only: `git push` (monorepo: request is already visible locally)
+8. Tell the user: "Created request {id} to {target}. Needs their approval."
+9. Do NOT block — continue with mock data or TODO markers
 
 ### Internal (cross-module within same service)
 1. Check `{{INTERNAL_CONTRACTS_DIR}}{target-module}.md` to confirm the interface doesn't exist
 2. Create a request file using the template in `{{COMMS_DIR}}TEMPLATE.md`
 3. Set `scope: internal`, assign a unique ID `req-{NNN}-{description}`
 4. Place in `{{COMMS_DIR}}inbox/{target-module}/`
-5. `git add` + `git commit -m "comms({target-module}): request - {summary}"` + `git push`
-6. Tell the user: "Created internal request {id} to module {target-module}."
-7. Do NOT block — continue with mock data or TODO markers
+5. `git add .accord/` + `git commit -m "comms({target-module}): request - {summary}"`
+6. Monorepo: no push needed — request is immediately visible locally
+7. Tell the user: "Created internal request {id} to module {target-module}."
+8. Do NOT block — continue with mock data or TODO markers
 
 ## ON_APPROVED_REQUEST (Processing Requests)
 
@@ -106,7 +108,8 @@ When you find an approved request in your inbox:
       - Internal: `{{INTERNAL_CONTRACTS_DIR}}{your-module}.md`
    d. Update status to `completed`
    e. Move request to archive directory
-   f. Commit: `comms({your-module}): completed - {request-id}` + push
+   f. `git add .` + `git commit -m "comms({your-module}): completed - {request-id}"`
+   g. Multi-repo only: `git push`
 4. If user declines: leave it as approved for later
 
 ## ON_COMPLETE (Request Completion)
@@ -114,8 +117,9 @@ When you find an approved request in your inbox:
 Before marking a request as completed, verify:
 1. The contract file has been updated
 2. The implementation matches the contract
-3. Then: update status → move to archive → commit + push
-4. Tell the user: "Completed request {id}. Contract updated."
+3. Then: update status → move to archive → `git add . && git commit`
+4. Multi-repo only: `git push`
+5. Tell the user: "Completed request {id}. Contract updated."
 
 ## ON_SCAN (Contract Generation)
 

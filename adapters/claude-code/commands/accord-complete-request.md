@@ -20,12 +20,13 @@ Mark an Accord request as completed and archive it.
 4. **Archive the request**:
    - Move from `{{COMMS_DIR}}inbox/{your-module}/` to `{{COMMS_DIR}}archive/`
 
-5. **Commit and push**:
+5. **Commit**:
    ```
    git add .accord/
    git commit -m "comms({your-module}): completed - {request-id}"
-   git push
    ```
+   - Multi-repo only: `git push`
+   - Monorepo: no push needed
 
 6. **Report**: "Completed request {id}. Contract updated and request archived."
 

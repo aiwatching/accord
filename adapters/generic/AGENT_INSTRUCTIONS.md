@@ -35,8 +35,8 @@ Each service and sub-module is an **independent boundary**. Every cross-boundary
 
 At the beginning of every session, the agent should:
 
-1. Run `git pull` to sync the latest changes.
-2. Read `.accord/config.yaml` to understand the module structure and paths.
+1. Read `.accord/config.yaml` to understand the module structure, paths, and repo model.
+2. If multi-repo: run `git pull` to sync the latest changes. (Monorepo: comms are already local.)
 3. Determine the working module from the user's first message.
 4. Announce the working module and directory scope.
 5. Check the inbox at `{{COMMS_DIR}}inbox/{your-module}/` for request files (`.md` files).
@@ -125,8 +125,9 @@ When the agent needs an API or interface from another module that doesn't exist:
 4. Assign a unique ID: check existing requests, use next sequential number.
 5. Place the file at `{{COMMS_DIR}}inbox/{target-module}/{request-id}.md`.
 6. Optionally annotate the target contract with `x-accord-status: proposed`.
-7. Run: `git add .accord/ && git commit -m "comms({target}): request - {summary}" && git push`
-8. Inform the user. Do **not** block — continue with mock data or TODO markers.
+7. Run: `git add .accord/ && git commit -m "comms({target}): request - {summary}"`
+8. Multi-repo only: `git push` (monorepo: request is already visible locally).
+9. Inform the user. Do **not** block — continue with mock data or TODO markers.
 
 ### Internal Request (cross-module within same service)
 
@@ -134,8 +135,9 @@ When the agent needs an API or interface from another module that doesn't exist:
 2. Create a request file from `{{COMMS_DIR}}TEMPLATE.md`.
 3. Set `scope: internal` and appropriate `type`.
 4. Place at `{{COMMS_DIR}}inbox/{target-module}/{request-id}.md`.
-5. Run: `git add .accord/ && git commit -m "comms({target-module}): request - {summary}" && git push`
-6. Inform the user. Do **not** block.
+5. Run: `git add .accord/ && git commit -m "comms({target-module}): request - {summary}"`
+6. Monorepo: no push needed. Multi-repo: `git push`.
+7. Inform the user. Do **not** block.
 
 ---
 
@@ -164,14 +166,14 @@ When an approved request is found in the inbox:
 1. Read the full request file.
 2. Present it to the user and ask for confirmation before starting.
 3. If the user confirms:
-   a. Update the request status to `in-progress`, commit and push.
+   a. Update the request status to `in-progress`, commit.
    b. Implement the requested change.
    c. Update the relevant contract:
       - External: `{{CONTRACTS_DIR}}{your-module}.yaml` (finalize proposed changes, remove annotations)
       - Internal: `{{INTERNAL_CONTRACTS_DIR}}{your-module}.md`
    d. Update the request status to `completed`.
    e. Move the request to the archive directory.
-   f. Commit: `comms({your-module}): completed - {request-id}` and push.
+   f. Commit: `comms({your-module}): completed - {request-id}`. Multi-repo only: push.
 4. If the user declines: leave the request as approved.
 
 ---
@@ -186,7 +188,7 @@ Before marking a request as `completed`:
 4. Add a `## Resolution` section to the request file.
 5. Move the request from inbox to archive:
    - `{{COMMS_DIR}}inbox/{module}/` → `{{COMMS_DIR}}archive/`
-6. Commit and push: `comms({your-module}): completed - {request-id}`
+6. Commit: `comms({your-module}): completed - {request-id}`. Multi-repo only: push.
 7. Inform the user.
 
 ---

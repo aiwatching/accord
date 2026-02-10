@@ -325,13 +325,13 @@ Examples:
 # Agent creates: .accord/comms/inbox/nac-engine/req-001-policy-by-type.md
 # Agent updates: .accord/contracts/nac-engine.yaml (marks new endpoint as PROPOSED)
 # Agent commits: "comms(nac-engine): request - add policy-by-type API"
-# Agent pushes
+# Monorepo: done — request is immediately visible to other sessions
+# Multi-repo: agent pushes
 ```
 
 **Step 2: nac-engine developer gets notified**
 ```bash
-# On next session start, agent runs: git pull
-# Agent checks: .accord/comms/inbox/nac-engine/
+# On next session start, agent checks: .accord/comms/inbox/nac-engine/
 # Agent reports: "You have 1 pending request from device-manager"
 # Developer reviews and approves (changes status to 'approved')
 ```
@@ -343,13 +343,14 @@ Examples:
 # Agent updates .accord/contracts/nac-engine.yaml (removes PROPOSED marker)
 # Agent moves request to .accord/comms/archive/
 # Agent commits: "comms(nac-engine): completed - req-001, contract updated"
-# Agent pushes
+# Multi-repo only: agent pushes
 ```
 
 **Step 4: device-manager picks up the change**
 ```bash
-# On next session start, agent runs: git pull
-# Agent sees contract update in git log
+# On next session start, agent checks contract files
+# Monorepo: changes are already local
+# Multi-repo: agent runs git pull first
 # Agent can now code against the new API
 ```
 

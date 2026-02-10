@@ -34,11 +34,12 @@ Create and send an Accord request to another module.
    - External: add `x-accord-status: proposed` and `x-accord-request: {id}` to the relevant path in `{{CONTRACTS_DIR}}{target}.yaml`
    - Only if the proposed change is concrete enough
 
-7. **Commit and push**:
+7. **Commit**:
    ```
    git add .accord/
    git commit -m "comms({target}): request - {summary}"
-   git push
    ```
+   - Multi-repo only: `git push`
+   - Monorepo: no push needed — the request file is immediately visible locally
 
 8. **Report**: "Created request {id} to {target}. Status: pending. Needs their approval."

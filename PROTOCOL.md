@@ -328,18 +328,29 @@ in-progress → pending   (by: either module, if requirements changed)
 
 ## 5. Git Operations
 
+### 5.0 Push Policy
+
+The push behavior depends on the repository model:
+
+| Repo Model | Comms Transport | git commit | git push |
+|-----------|----------------|------------|----------|
+| **Monorepo** | Local filesystem — request files are immediately visible to other sessions | Recommended (audit trail) | **Not required** — push at your discretion |
+| **Multi-repo** | Git push/pull via hub | Required | Required (to deliver requests cross-repo) |
+
+**Monorepo rationale**: In a monorepo, all modules share the same working tree. Writing a request file to `.accord/comms/inbox/{target}/` makes it immediately visible to any other session on the same checkout. Forcing `git push` would mix Accord comms with unfinished code changes and disrupt the project's normal git workflow.
+
 ### 5.1 Sending a Request (requesting module)
 ```
 1. Create request file in .accord/comms/inbox/{target-module}/
 2. (Optional) Annotate proposed changes in .accord/contracts/{target}.yaml
 3. git add .accord/
 4. git commit -m "comms({target}): request - {summary}"
-5. git push
+5. (Multi-repo only) git push
 ```
 
 ### 5.2 Receiving Requests (target module)
 ```
-1. git pull
+1. (Multi-repo) git pull  |  (Monorepo) requests are already local
 2. Check .accord/comms/inbox/{own-module}/ for new or updated files
 3. Report findings to user
 ```
@@ -350,7 +361,7 @@ in-progress → pending   (by: either module, if requirements changed)
 2. (If rejected) Add rejection reason
 3. git add .accord/
 4. git commit -m "comms({own-module}): {approved|rejected} - {request-id}"
-5. git push
+5. (Multi-repo only) git push
 ```
 
 ### 5.4 Completing a Request (target module)
@@ -361,12 +372,12 @@ in-progress → pending   (by: either module, if requirements changed)
 4. Move request to .accord/comms/archive/
 5. git add .
 6. git commit -m "comms({own-module}): completed - {request-id}"
-7. git push
+7. (Multi-repo only) git push
 ```
 
 ### 5.5 Multi-Repo: `accord sync` Operations
 
-In the multi-repo model, `accord sync` manages communication between the service repo and the hub repo.
+In the multi-repo model, `accord sync` manages communication between the service repo and the hub repo. Push is always required here since requests must cross repository boundaries.
 
 **`accord sync pull`** (receive from hub):
 ```
@@ -386,8 +397,8 @@ In the multi-repo model, `accord sync` manages communication between the service
 
 **Internal communication** (module ↔ module within same service repo):
 ```
-Uses normal git pull/push — no hub involved.
-Requests go to .accord/comms/inbox/{module}/ in the service repo.
+Uses local filesystem — requests go to .accord/comms/inbox/{module}/.
+Commit for traceability. Push is not required.
 ```
 
 ### 5.6 Commit Message Convention
