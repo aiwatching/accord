@@ -79,7 +79,7 @@ fi
 # Claude Code adapter files
 ACCORD_COMMANDS=(
     "accord-dispatch.md" "accord-init.md" "accord-scan.md"
-    "accord-status.md" "accord-validate.md"
+    "accord-status.md" "accord-validate.md" "accord-log.md"
     "accord-check-inbox.md" "accord-send-request.md" "accord-complete-request.md"
     "check-inbox.md" "send-request.md" "complete-request.md"
 )

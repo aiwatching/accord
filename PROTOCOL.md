@@ -466,7 +466,46 @@ services:
 
 ---
 
-## 7. Protocol Compliance
+## 7. Debug Logging
+
+Accord supports optional structured debug logging to help trace and debug protocol operations across agent sessions.
+
+### 7.1 Enabling
+
+Set `debug: true` under `settings:` in `.accord/config.yaml`. When disabled (default), agents must not write log entries.
+
+### 7.2 Log Location
+
+- **Directory**: `.accord/log/`
+- **Format**: JSONL (one JSON object per line)
+- **File naming**: `{YYYY-MM-DD}T{HH-MM-SS}_{module}.jsonl` — one file per session
+- **Git exclusion**: `.accord/log/.gitignore` excludes `*.jsonl` — logs are local-only
+
+### 7.3 Log Entry Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `ts` | Yes | ISO 8601 timestamp |
+| `session` | Yes | Session ID (matches filename) |
+| `module` | Yes | Working module name |
+| `action` | Yes | Action type (e.g., `inbox_check`, `request_create`) |
+| `category` | Yes | One of: `lifecycle`, `comms`, `contract`, `git`, `scan`, `config` |
+| `detail` | Yes | Human-readable description |
+| `files` | No | Array of affected file paths |
+| `request_id` | No | Related request ID |
+| `status_from` / `status_to` | No | State transition |
+
+### 7.4 Viewing
+
+- **CLI**: Check `.accord/log/` directly or use the `/accord-log` command
+- **Web viewer**: Run `accord-log.sh` to serve a timeline visualization at `http://localhost:8420`
+- **Drag-drop**: Open `protocol/debug/viewer.html` and drag `.jsonl` files onto it
+
+See `protocol/debug/LOG_FORMAT.md` for the full specification including all action types and logging rules.
+
+---
+
+## 8. Protocol Compliance
 
 An agent or human is considered "Accord-compliant" if it:
 

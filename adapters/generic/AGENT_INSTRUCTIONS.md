@@ -266,7 +266,43 @@ contract(nac-engine): update - add policy-by-type endpoint
 
 ---
 
-## 13. Key Rules Summary
+## 13. Debug Logging
+
+**If `settings.debug` is `true` in `.accord/config.yaml`**, the agent should write structured log entries for every protocol action it performs. Logs enable tracing and debugging of cross-boundary coordination.
+
+### Setup
+
+At session start, if debug is enabled:
+1. Generate a session ID: `{YYYY-MM-DD}T{HH-MM-SS}_{module}` (current time + working module)
+2. Create log file: `.accord/log/{session-id}.jsonl`
+3. Write a `session_start` entry
+
+### Log Format
+
+Each log entry is one JSON object on a single line (JSONL). Required fields: `ts` (ISO 8601), `session`, `module`, `action`, `category`, `detail`. Optional: `files` (array), `request_id`, `status_from`, `status_to`.
+
+Example:
+```json
+{"ts":"2026-02-10T14:30:00Z","session":"2026-02-10T14-30-00_device-manager","module":"device-manager","action":"inbox_check","category":"comms","detail":"Found 2 pending requests"}
+```
+
+### When to Log
+
+Log after performing any of these actions:
+
+- **lifecycle**: `session_start`, `session_end`, `module_selected`, `config_read`
+- **comms**: `inbox_check`, `request_create`, `request_approve`, `request_reject`, `request_start`, `request_complete`, `request_archive`
+- **contract**: `contract_read`, `contract_update`, `contract_annotate`, `contract_scan`, `contract_validate`
+- **git**: `git_pull`, `git_push`, `git_commit`, `git_conflict`
+- **scan**: `scan_start`, `scan_complete`, `scan_validate`
+
+For state transitions, include `request_id`, `status_from`, and `status_to`.
+
+See `protocol/debug/LOG_FORMAT.md` for the full specification.
+
+---
+
+## 14. Key Rules Summary
 
 1. **Never** modify another module's contract directly — always use a request.
 2. **Never** auto-approve requests — human review is always required.

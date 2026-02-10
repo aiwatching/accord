@@ -502,6 +502,106 @@ assert_file "$TEST10_DIR/.accord/accord-watch.sh" "Watch script created for auto
 assert_contains "$TEST10_DIR/.accord/config.yaml" "auto-poll" "Config has auto-poll sync mode"
 
 # ══════════════════════════════════════════════════════════════════════════════
+# TEST 11: Debug logging setup
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 11] Debug logging setup${NC}"
+
+TEST11_DIR="$TMPDIR/test11"
+mkdir -p "$TEST11_DIR"
+
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-debug" \
+    --repo-model monorepo \
+    --services "alpha,beta" \
+    --adapter none \
+    --target-dir "$TEST11_DIR" \
+    --no-interactive > /dev/null 2>&1
+
+# Log directory created
+assert_dir "$TEST11_DIR/.accord/log" "Log directory created"
+
+# .gitignore excludes JSONL files
+assert_file "$TEST11_DIR/.accord/log/.gitignore" "Log .gitignore created"
+assert_contains "$TEST11_DIR/.accord/log/.gitignore" "*.jsonl" ".gitignore excludes JSONL"
+
+# Config has debug setting
+assert_contains "$TEST11_DIR/.accord/config.yaml" "debug: false" "Config has debug setting"
+
+# JSONL format validation — write a sample log entry and validate it
+SAMPLE_LOG="$TEST11_DIR/.accord/log/2026-02-10T14-30-00_alpha.jsonl"
+cat > "$SAMPLE_LOG" <<'EOF'
+{"ts":"2026-02-10T14:30:00Z","session":"2026-02-10T14-30-00_alpha","module":"alpha","action":"session_start","category":"lifecycle","detail":"Session started for module alpha"}
+{"ts":"2026-02-10T14:30:01Z","session":"2026-02-10T14-30-00_alpha","module":"alpha","action":"config_read","category":"lifecycle","detail":"Read .accord/config.yaml"}
+{"ts":"2026-02-10T14:30:02Z","session":"2026-02-10T14-30-00_alpha","module":"alpha","action":"inbox_check","category":"comms","detail":"Found 0 pending requests","files":[]}
+{"ts":"2026-02-10T14:30:10Z","session":"2026-02-10T14-30-00_alpha","module":"alpha","action":"request_create","category":"comms","detail":"Created request req-001-test","request_id":"req-001-test","files":[".accord/comms/inbox/beta/req-001-test.md"]}
+{"ts":"2026-02-10T14:31:00Z","session":"2026-02-10T14-30-00_alpha","module":"alpha","action":"request_start","category":"comms","detail":"Started work on req-002","request_id":"req-002","status_from":"approved","status_to":"in-progress"}
+EOF
+
+# Validate each line is valid JSON with required fields
+jsonl_valid=true
+line_num=0
+while IFS= read -r line; do
+    line_num=$((line_num + 1))
+    [[ -z "$line" ]] && continue
+
+    # Check it's valid JSON (python available on macOS/Linux)
+    if ! echo "$line" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+        jsonl_valid=false
+        fail "JSONL line $line_num is not valid JSON"
+        break
+    fi
+
+    # Check required fields
+    for field in ts session module action category detail; do
+        if ! echo "$line" | python3 -c "import sys,json; d=json.load(sys.stdin); assert '$field' in d" 2>/dev/null; then
+            jsonl_valid=false
+            fail "JSONL line $line_num missing required field: $field"
+            break 2
+        fi
+    done
+done < "$SAMPLE_LOG"
+
+if [[ "$jsonl_valid" == true ]]; then
+    pass "JSONL log entries are valid (5 entries, all required fields present)"
+fi
+
+# Validate category values
+categories_valid=true
+while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    cat_val=$(echo "$line" | python3 -c "import sys,json; print(json.load(sys.stdin)['category'])" 2>/dev/null)
+    case "$cat_val" in
+        lifecycle|comms|contract|git|scan|config) ;;
+        *) categories_valid=false; break ;;
+    esac
+done < "$SAMPLE_LOG"
+
+if [[ "$categories_valid" == true ]]; then
+    pass "All log entry categories are valid"
+else
+    fail "Invalid category found in log entries"
+fi
+
+# Validate state transition entries have status_from and status_to
+transition_entry=$(grep "status_from" "$SAMPLE_LOG" | head -1)
+if echo "$transition_entry" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d['status_from']=='approved' and d['status_to']=='in-progress'" 2>/dev/null; then
+    pass "State transition entry has valid status_from/status_to"
+else
+    fail "State transition entry missing or invalid status_from/status_to"
+fi
+
+# Verify .gitignore actually excludes the JSONL (log file should not be gitignored by itself, but would be by .accord/log/.gitignore)
+# Just verify the .gitignore content is correct
+if grep -q '^\*\.jsonl$' "$TEST11_DIR/.accord/log/.gitignore" 2>/dev/null; then
+    pass ".gitignore pattern correctly excludes JSONL files"
+else
+    fail ".gitignore pattern incorrect"
+fi
+
+# Clean up sample log (it would be gitignored anyway)
+rm -f "$SAMPLE_LOG"
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Summary
 # ══════════════════════════════════════════════════════════════════════════════
 echo -e "\n${BOLD}=== Test Results ===${NC}"

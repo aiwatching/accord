@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Accord Debug Log Viewer</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-muted: #8b949e;
+    --text-bright: #f0f6fc;
+    --lifecycle: #58a6ff;
+    --comms: #3fb950;
+    --contract: #bc8cff;
+    --git: #d29922;
+    --scan: #39d2c0;
+    --config: #8b949e;
+    --accent: #58a6ff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  header h1 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-bright);
+  }
+
+  header h1 span { color: var(--text-muted); font-weight: 400; }
+
+  .header-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .header-actions label {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+  }
+
+  .header-actions input[type="checkbox"] { cursor: pointer; }
+
+  .stats {
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 0 12px;
+  }
+
+  .container {
+    display: flex;
+    height: calc(100vh - 49px);
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 260px;
+    min-width: 260px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 12px;
+  }
+
+  .sidebar h3 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    padding: 0 4px;
+  }
+
+  .filter-group { margin-bottom: 16px; }
+
+  .filter-chip {
+    display: inline-block;
+    padding: 3px 10px;
+    margin: 2px;
+    border-radius: 12px;
+    font-size: 12px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    transition: all 0.15s;
+  }
+
+  .filter-chip:hover { border-color: var(--text-muted); }
+  .filter-chip.active { border-color: var(--accent); color: var(--accent); background: rgba(88,166,255,0.1); }
+
+  .filter-chip[data-category="lifecycle"].active { border-color: var(--lifecycle); color: var(--lifecycle); background: rgba(88,166,255,0.1); }
+  .filter-chip[data-category="comms"].active { border-color: var(--comms); color: var(--comms); background: rgba(63,185,80,0.1); }
+  .filter-chip[data-category="contract"].active { border-color: var(--contract); color: var(--contract); background: rgba(188,140,255,0.1); }
+  .filter-chip[data-category="git"].active { border-color: var(--git); color: var(--git); background: rgba(210,153,34,0.1); }
+  .filter-chip[data-category="scan"].active { border-color: var(--scan); color: var(--scan); background: rgba(57,210,192,0.1); }
+  .filter-chip[data-category="config"].active { border-color: var(--config); color: var(--config); background: rgba(139,148,158,0.1); }
+
+  .search-box {
+    width: 100%;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+  }
+
+  .search-box:focus { border-color: var(--accent); }
+  .search-box::placeholder { color: var(--text-muted); }
+
+  .session-list { list-style: none; }
+
+  .session-item {
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    margin-bottom: 2px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .session-item:hover { background: rgba(255,255,255,0.04); }
+  .session-item.active { background: rgba(88,166,255,0.1); color: var(--accent); }
+  .session-item .count { color: var(--text-muted); font-size: 11px; }
+
+  /* Main content */
+  .main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 24px;
+  }
+
+  /* Drop zone */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 60px 40px;
+    text-align: center;
+    margin: 40px auto;
+    max-width: 500px;
+    transition: all 0.2s;
+  }
+
+  .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(88,166,255,0.05);
+  }
+
+  .drop-zone h2 {
+    font-size: 18px;
+    color: var(--text-bright);
+    margin-bottom: 8px;
+  }
+
+  .drop-zone p { color: var(--text-muted); font-size: 14px; margin-bottom: 16px; }
+
+  .drop-zone .btn {
+    display: inline-block;
+    padding: 8px 20px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .drop-zone .btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  #file-input { display: none; }
+
+  /* Timeline */
+  .timeline { position: relative; padding-left: 20px; }
+
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--border);
+  }
+
+  .log-entry {
+    position: relative;
+    margin-bottom: 4px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+    font-size: 13px;
+  }
+
+  .log-entry:hover { background: rgba(255,255,255,0.03); }
+  .log-entry.expanded { background: rgba(255,255,255,0.03); }
+
+  .log-entry::before {
+    content: '';
+    position: absolute;
+    left: -17px;
+    top: 14px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background: var(--bg);
+  }
+
+  .log-entry[data-category="lifecycle"]::before { border-color: var(--lifecycle); }
+  .log-entry[data-category="comms"]::before { border-color: var(--comms); }
+  .log-entry[data-category="contract"]::before { border-color: var(--contract); }
+  .log-entry[data-category="git"]::before { border-color: var(--git); }
+  .log-entry[data-category="scan"]::before { border-color: var(--scan); }
+  .log-entry[data-category="config"]::before { border-color: var(--config); }
+
+  .entry-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .entry-time {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: 'SF Mono', SFMono-Regular, Consolas, monospace;
+    min-width: 80px;
+  }
+
+  .entry-badge {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .entry-badge[data-category="lifecycle"] { background: rgba(88,166,255,0.15); color: var(--lifecycle); }
+  .entry-badge[data-category="comms"] { background: rgba(63,185,80,0.15); color: var(--comms); }
+  .entry-badge[data-category="contract"] { background: rgba(188,140,255,0.15); color: var(--contract); }
+  .entry-badge[data-category="git"] { background: rgba(210,153,34,0.15); color: var(--git); }
+  .entry-badge[data-category="scan"] { background: rgba(57,210,192,0.15); color: var(--scan); }
+  .entry-badge[data-category="config"] { background: rgba(139,148,158,0.15); color: var(--config); }
+
+  .entry-action {
+    font-family: 'SF Mono', SFMono-Regular, Consolas, monospace;
+    font-size: 12px;
+    color: var(--text-bright);
+  }
+
+  .entry-detail { color: var(--text); margin-left: auto; text-align: right; flex-shrink: 1; }
+
+  .entry-details {
+    display: none;
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: var(--bg);
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: 'SF Mono', SFMono-Regular, Consolas, monospace;
+  }
+
+  .log-entry.expanded .entry-details { display: block; }
+
+  .entry-details .detail-row {
+    display: flex;
+    gap: 12px;
+    padding: 2px 0;
+  }
+
+  .detail-row .label {
+    color: var(--text-muted);
+    min-width: 80px;
+    flex-shrink: 0;
+  }
+
+  .detail-row .value { color: var(--text); word-break: break-all; }
+  .detail-row .value.file { color: var(--accent); }
+
+  .status-transition {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-left: 8px;
+  }
+
+  .status-transition .arrow { color: var(--text-muted); }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-muted);
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Accord <span>Debug Log Viewer</span></h1>
+  <div class="stats" id="stats"></div>
+  <div class="header-actions">
+    <label>
+      <input type="checkbox" id="auto-refresh" />
+      Auto-refresh
+    </label>
+  </div>
+</header>
+
+<div class="container">
+  <div class="sidebar">
+    <div class="filter-group">
+      <h3>Search</h3>
+      <input type="text" class="search-box" id="search" placeholder="Filter entries..." />
+    </div>
+
+    <div class="filter-group">
+      <h3>Category</h3>
+      <div id="category-filters">
+        <span class="filter-chip active" data-category="lifecycle">lifecycle</span>
+        <span class="filter-chip active" data-category="comms">comms</span>
+        <span class="filter-chip active" data-category="contract">contract</span>
+        <span class="filter-chip active" data-category="git">git</span>
+        <span class="filter-chip active" data-category="scan">scan</span>
+        <span class="filter-chip active" data-category="config">config</span>
+      </div>
+    </div>
+
+    <div class="filter-group">
+      <h3>Module</h3>
+      <div id="module-filters"></div>
+    </div>
+
+    <div class="filter-group">
+      <h3>Sessions</h3>
+      <ul class="session-list" id="session-list"></ul>
+    </div>
+  </div>
+
+  <div class="main" id="main">
+    <div class="drop-zone" id="drop-zone">
+      <h2>Load Log Files</h2>
+      <p>Drag and drop .jsonl files here, or click to browse</p>
+      <button class="btn" onclick="document.getElementById('file-input').click()">Choose Files</button>
+      <input type="file" id="file-input" accept=".jsonl" multiple />
+      <p id="http-status" style="margin-top: 16px; font-size: 12px;"></p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  let allEntries = [];
+  let sessions = {};
+  let activeCategories = new Set(['lifecycle', 'comms', 'contract', 'git', 'scan', 'config']);
+  let activeModules = new Set();
+  let activeSessions = new Set();
+  let searchText = '';
+  let autoRefreshInterval = null;
+  let httpMode = false;
+
+  // DOM refs
+  const mainEl = document.getElementById('main');
+  const dropZone = document.getElementById('drop-zone');
+  const fileInput = document.getElementById('file-input');
+  const searchInput = document.getElementById('search');
+  const statsEl = document.getElementById('stats');
+  const sessionListEl = document.getElementById('session-list');
+  const moduleFiltersEl = document.getElementById('module-filters');
+  const autoRefreshEl = document.getElementById('auto-refresh');
+  const httpStatusEl = document.getElementById('http-status');
+
+  // Try HTTP mode on load
+  tryHttpMode();
+
+  // File drop
+  dropZone.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    dropZone.classList.add('drag-over');
+  });
+  dropZone.addEventListener('dragleave', function() {
+    dropZone.classList.remove('drag-over');
+  });
+  dropZone.addEventListener('drop', function(e) {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    handleFiles(e.dataTransfer.files);
+  });
+  fileInput.addEventListener('change', function() {
+    handleFiles(fileInput.files);
+  });
+
+  // Search
+  searchInput.addEventListener('input', function() {
+    searchText = searchInput.value.toLowerCase();
+    render();
+  });
+
+  // Category filters
+  document.getElementById('category-filters').addEventListener('click', function(e) {
+    if (!e.target.classList.contains('filter-chip')) return;
+    e.target.classList.toggle('active');
+    var cat = e.target.dataset.category;
+    if (activeCategories.has(cat)) activeCategories.delete(cat);
+    else activeCategories.add(cat);
+    render();
+  });
+
+  // Auto-refresh
+  autoRefreshEl.addEventListener('change', function() {
+    if (autoRefreshEl.checked && httpMode) {
+      autoRefreshInterval = setInterval(function() { fetchManifest(); }, 3000);
+    } else {
+      clearInterval(autoRefreshInterval);
+    }
+  });
+
+  function handleFiles(files) {
+    var pending = files.length;
+    for (var i = 0; i < files.length; i++) {
+      (function(file) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+          parseJSONL(e.target.result, file.name);
+          pending--;
+          if (pending === 0) onDataLoaded();
+        };
+        reader.readAsText(file);
+      })(files[i]);
+    }
+  }
+
+  function parseJSONL(text, filename) {
+    var lines = text.trim().split('\n');
+    var sessionId = filename.replace('.jsonl', '');
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim();
+      if (!line) continue;
+      try {
+        var entry = JSON.parse(line);
+        entry._source = filename;
+        if (!entry.session) entry.session = sessionId;
+        allEntries.push(entry);
+
+        if (!sessions[entry.session]) {
+          sessions[entry.session] = { count: 0, module: entry.module || 'unknown' };
+        }
+        sessions[entry.session].count++;
+      } catch (e) {
+        console.warn('Failed to parse line in ' + filename + ':', line);
+      }
+    }
+  }
+
+  function onDataLoaded() {
+    // Sort by timestamp
+    allEntries.sort(function(a, b) {
+      return (a.ts || '').localeCompare(b.ts || '');
+    });
+
+    // Collect modules
+    var modules = new Set();
+    for (var i = 0; i < allEntries.length; i++) {
+      if (allEntries[i].module) modules.add(allEntries[i].module);
+    }
+
+    // Activate all modules and sessions
+    activeModules = new Set(modules);
+    activeSessions = new Set(Object.keys(sessions));
+
+    // Render module filters
+    moduleFiltersEl.innerHTML = '';
+    modules.forEach(function(mod) {
+      var chip = document.createElement('span');
+      chip.className = 'filter-chip active';
+      chip.textContent = mod;
+      chip.dataset.module = mod;
+      chip.addEventListener('click', function() {
+        chip.classList.toggle('active');
+        if (activeModules.has(mod)) activeModules.delete(mod);
+        else activeModules.add(mod);
+        render();
+      });
+      moduleFiltersEl.appendChild(chip);
+    });
+
+    // Render session list
+    renderSessionList();
+    render();
+  }
+
+  function renderSessionList() {
+    sessionListEl.innerHTML = '';
+    var keys = Object.keys(sessions).sort().reverse();
+    for (var i = 0; i < keys.length; i++) {
+      var sid = keys[i];
+      var info = sessions[sid];
+      var li = document.createElement('li');
+      li.className = 'session-item' + (activeSessions.has(sid) ? ' active' : '');
+      li.innerHTML = '<span>' + escapeHtml(info.module) + '</span><span class="count">' + info.count + '</span>';
+      li.title = sid;
+      li.dataset.session = sid;
+      li.addEventListener('click', function() {
+        var s = this.dataset.session;
+        if (activeSessions.has(s)) {
+          activeSessions.delete(s);
+          this.classList.remove('active');
+        } else {
+          activeSessions.add(s);
+          this.classList.add('active');
+        }
+        render();
+      });
+      sessionListEl.appendChild(li);
+    }
+  }
+
+  function render() {
+    var filtered = allEntries.filter(function(entry) {
+      if (!activeCategories.has(entry.category)) return false;
+      if (!activeModules.has(entry.module)) return false;
+      if (!activeSessions.has(entry.session)) return false;
+      if (searchText) {
+        var text = (entry.action + ' ' + entry.detail + ' ' + (entry.request_id || '') + ' ' + (entry.files || []).join(' ')).toLowerCase();
+        if (text.indexOf(searchText) === -1) return false;
+      }
+      return true;
+    });
+
+    statsEl.textContent = filtered.length + ' / ' + allEntries.length + ' entries';
+
+    if (allEntries.length === 0) return;
+
+    var html = '<div class="timeline">';
+    for (var i = 0; i < filtered.length; i++) {
+      html += renderEntry(filtered[i], i);
+    }
+    html += '</div>';
+
+    if (filtered.length === 0) {
+      html = '<div class="empty-state">No entries match the current filters</div>';
+    }
+
+    mainEl.innerHTML = html;
+
+    // Attach expand handlers
+    var entries = mainEl.querySelectorAll('.log-entry');
+    for (var j = 0; j < entries.length; j++) {
+      entries[j].addEventListener('click', function() {
+        this.classList.toggle('expanded');
+      });
+    }
+  }
+
+  function renderEntry(entry, idx) {
+    var time = formatTime(entry.ts);
+    var transition = '';
+    if (entry.status_from && entry.status_to) {
+      transition = '<span class="status-transition">' +
+        escapeHtml(entry.status_from) +
+        ' <span class="arrow">&rarr;</span> ' +
+        escapeHtml(entry.status_to) +
+        '</span>';
+    }
+
+    var details = '';
+    details += '<div class="detail-row"><span class="label">timestamp</span><span class="value">' + escapeHtml(entry.ts || '') + '</span></div>';
+    details += '<div class="detail-row"><span class="label">session</span><span class="value">' + escapeHtml(entry.session || '') + '</span></div>';
+    details += '<div class="detail-row"><span class="label">module</span><span class="value">' + escapeHtml(entry.module || '') + '</span></div>';
+    details += '<div class="detail-row"><span class="label">action</span><span class="value">' + escapeHtml(entry.action || '') + '</span></div>';
+    details += '<div class="detail-row"><span class="label">category</span><span class="value">' + escapeHtml(entry.category || '') + '</span></div>';
+    details += '<div class="detail-row"><span class="label">detail</span><span class="value">' + escapeHtml(entry.detail || '') + '</span></div>';
+
+    if (entry.request_id) {
+      details += '<div class="detail-row"><span class="label">request</span><span class="value">' + escapeHtml(entry.request_id) + '</span></div>';
+    }
+    if (entry.status_from) {
+      details += '<div class="detail-row"><span class="label">from</span><span class="value">' + escapeHtml(entry.status_from) + '</span></div>';
+    }
+    if (entry.status_to) {
+      details += '<div class="detail-row"><span class="label">to</span><span class="value">' + escapeHtml(entry.status_to) + '</span></div>';
+    }
+    if (entry.files && entry.files.length > 0) {
+      for (var f = 0; f < entry.files.length; f++) {
+        details += '<div class="detail-row"><span class="label">' + (f === 0 ? 'files' : '') + '</span><span class="value file">' + escapeHtml(entry.files[f]) + '</span></div>';
+      }
+    }
+
+    return '<div class="log-entry" data-category="' + escapeHtml(entry.category || '') + '">' +
+      '<div class="entry-header">' +
+        '<span class="entry-time">' + time + '</span>' +
+        '<span class="entry-badge" data-category="' + escapeHtml(entry.category || '') + '">' + escapeHtml(entry.category || '') + '</span>' +
+        '<span class="entry-action">' + escapeHtml(entry.action || '') + '</span>' +
+        transition +
+        '<span class="entry-detail">' + escapeHtml(truncate(entry.detail || '', 80)) + '</span>' +
+      '</div>' +
+      '<div class="entry-details">' + details + '</div>' +
+    '</div>';
+  }
+
+  function formatTime(ts) {
+    if (!ts) return '--:--:--';
+    try {
+      var d = new Date(ts);
+      return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+    } catch (e) {
+      return ts.substring(11, 19) || '--:--:--';
+    }
+  }
+
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+
+  function truncate(s, max) {
+    return s.length > max ? s.substring(0, max) + '...' : s;
+  }
+
+  function escapeHtml(s) {
+    var div = document.createElement('div');
+    div.appendChild(document.createTextNode(s));
+    return div.innerHTML;
+  }
+
+  // HTTP mode: try to fetch manifest.json
+  function tryHttpMode() {
+    fetch('manifest.json')
+      .then(function(r) {
+        if (!r.ok) throw new Error('No manifest');
+        return r.json();
+      })
+      .then(function(manifest) {
+        httpMode = true;
+        httpStatusEl.textContent = 'Connected via HTTP — ' + manifest.files.length + ' log file(s) found';
+        httpStatusEl.style.color = 'var(--comms)';
+        loadManifestFiles(manifest);
+      })
+      .catch(function() {
+        httpMode = false;
+        httpStatusEl.textContent = 'Not served via HTTP — use drag-and-drop to load files';
+      });
+  }
+
+  function fetchManifest() {
+    fetch('manifest.json?t=' + Date.now())
+      .then(function(r) { return r.json(); })
+      .then(function(manifest) {
+        // Reload all files (simple approach for auto-refresh)
+        allEntries = [];
+        sessions = {};
+        loadManifestFiles(manifest);
+      })
+      .catch(function() {});
+  }
+
+  function loadManifestFiles(manifest) {
+    var pending = manifest.files.length;
+    if (pending === 0) { onDataLoaded(); return; }
+    for (var i = 0; i < manifest.files.length; i++) {
+      (function(fname) {
+        fetch(fname + '?t=' + Date.now())
+          .then(function(r) { return r.text(); })
+          .then(function(text) {
+            parseJSONL(text, fname);
+            pending--;
+            if (pending === 0) onDataLoaded();
+          })
+          .catch(function() {
+            pending--;
+            if (pending === 0) onDataLoaded();
+          });
+      })(manifest.files[i]);
+    }
+  }
+
+})();
+</script>
+</body>
+</html>

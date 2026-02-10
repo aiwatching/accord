@@ -365,12 +365,48 @@ WATCH
     fi
 }
 
+# ── Upgrade debug viewer ───────────────────────────────────────────────────
+
+upgrade_debug_viewer() {
+    local viewer_src="$ACCORD_DIR/protocol/debug/viewer.html"
+    local log_dir="$TARGET_DIR/.accord/log"
+
+    # Ensure log directory and .gitignore exist
+    if [[ ! -d "$log_dir" ]]; then
+        mkdir -p "$log_dir"
+        log "Created .accord/log/"
+    fi
+    if [[ ! -f "$log_dir/.gitignore" ]]; then
+        echo "*.jsonl" > "$log_dir/.gitignore"
+        log "Created .accord/log/.gitignore"
+    fi
+
+    # Copy viewer if source exists
+    if [[ -f "$viewer_src" ]]; then
+        if [[ ! -f "$log_dir/index.html" ]] || ! diff -q "$viewer_src" "$log_dir/index.html" >/dev/null 2>&1; then
+            cp "$viewer_src" "$log_dir/index.html"
+            log "Upgraded .accord/log/index.html (debug viewer)"
+            UPDATED=$((UPDATED + 1))
+        else
+            log ".accord/log/index.html — already up to date"
+        fi
+    fi
+
+    # Ensure debug setting exists in config
+    if [[ -f "$TARGET_DIR/.accord/config.yaml" ]] && ! grep -q "debug:" "$TARGET_DIR/.accord/config.yaml"; then
+        echo "  debug: false" >> "$TARGET_DIR/.accord/config.yaml"
+        log "Added debug: false to config.yaml"
+        UPDATED=$((UPDATED + 1))
+    fi
+}
+
 # ── Execute ──────────────────────────────────────────────────────────────────
 
 upgrade_protocol_files
 upgrade_claude_code
 upgrade_generic
 upgrade_watch_script
+upgrade_debug_viewer
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 

@@ -214,6 +214,43 @@ If `git pull` results in a merge conflict on any contract or request file:
 3. Show both versions if possible
 4. Wait for user instruction
 
+## Debug Logging
+
+**If `settings.debug` is `true` in `.accord/config.yaml`**, write structured log entries for every protocol action you perform. This enables tracing and debugging of cross-boundary coordination.
+
+### Setup
+
+At session start, if debug is enabled:
+1. Generate a session ID: `{YYYY-MM-DD}T{HH-MM-SS}_{your-module}` (using current time)
+2. Create log file: `.accord/log/{session-id}.jsonl`
+3. Write a `session_start` entry
+
+### Log Format
+
+Append one JSON object per line (JSONL). Required fields: `ts`, `session`, `module`, `action`, `category`, `detail`. Optional: `files`, `request_id`, `status_from`, `status_to`.
+
+```json
+{"ts":"2026-02-10T14:30:00Z","session":"2026-02-10T14-30-00_device-manager","module":"device-manager","action":"inbox_check","category":"comms","detail":"Found 2 pending requests"}
+```
+
+### When to Log
+
+| Category | Actions |
+|----------|---------|
+| `lifecycle` | `session_start`, `session_end`, `module_selected`, `config_read` |
+| `comms` | `inbox_check`, `request_create`, `request_approve`, `request_reject`, `request_start`, `request_complete`, `request_archive` |
+| `contract` | `contract_read`, `contract_update`, `contract_annotate`, `contract_scan`, `contract_validate` |
+| `git` | `git_pull`, `git_push`, `git_commit`, `git_conflict` |
+| `scan` | `scan_start`, `scan_complete`, `scan_validate` |
+
+For state transitions (approve/reject/start/complete), include `request_id`, `status_from`, and `status_to`.
+
+### Viewing Logs
+
+Use `/accord-log` to check debug status, list log files, and show summaries. Use `accord-log.sh` to launch the web-based timeline viewer.
+
+See `protocol/debug/LOG_FORMAT.md` for the full specification.
+
 ## State Machine Reference
 
 ```

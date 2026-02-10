@@ -162,6 +162,31 @@ Adapters must inject these behaviors into the agent's instruction set:
 3. Show both versions if possible
 4. Wait for user instruction
 
+### 2.8 ON_LOG (Debug Logging)
+
+**Trigger**: Every protocol action, when `settings.debug` is `true` in `.accord/config.yaml`.
+
+**Setup** (at session start, if debug enabled):
+1. Generate session ID: `{YYYY-MM-DD}T{HH-MM-SS}_{module}` (current time + working module)
+2. Create log file: `.accord/log/{session-id}.jsonl`
+3. Write a `session_start` entry
+
+**Actions** (after each protocol operation):
+1. Construct a JSON object with required fields: `ts`, `session`, `module`, `action`, `category`, `detail`
+2. Add optional fields if relevant: `files`, `request_id`, `status_from`, `status_to`
+3. Append the JSON object as a single line to the session's log file
+
+**Categories and actions to log**:
+- `lifecycle`: `session_start`, `session_end`, `module_selected`, `config_read`
+- `comms`: `inbox_check`, `request_create`, `request_approve`, `request_reject`, `request_start`, `request_complete`, `request_archive`
+- `contract`: `contract_read`, `contract_update`, `contract_annotate`, `contract_scan`, `contract_validate`
+- `git`: `git_pull`, `git_push`, `git_commit`, `git_conflict`
+- `scan`: `scan_start`, `scan_complete`, `scan_validate`
+
+**What NOT to log**: source code content, user conversations, internal reasoning, secrets.
+
+See `protocol/debug/LOG_FORMAT.md` for the complete specification.
+
 ---
 
 ## 3. Adapter Implementation Guide
@@ -201,6 +226,7 @@ An adapter is considered complete when:
 - [ ] ON_APPROVED_REQUEST behavior is implemented (processing for both contract types)
 - [ ] ON_COMPLETE behavior is implemented (archival + contract update)
 - [ ] ON_CONFLICT behavior is implemented (conflict notification)
+- [ ] ON_LOG behavior is implemented (debug logging when `settings.debug` is `true`)
 - [ ] Install script works on macOS and Linux
 - [ ] Templates use all relevant variables (including `{{MODULE_LIST}}`, `{{INTERNAL_CONTRACTS_DIR}}`)
 - [ ] External test scenario (send request → approve → complete) works end-to-end

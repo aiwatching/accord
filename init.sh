@@ -404,6 +404,7 @@ settings:
   auto_pull_on_start: true
   require_human_approval: true
   archive_completed: true
+  debug: false
 EOF
 
     log "Created $config_file"
@@ -475,6 +476,13 @@ scaffold_project() {
     if [[ ! -f "$accord_dir/comms/TEMPLATE.md" ]]; then
         cp "$ACCORD_DIR/protocol/templates/request.md.template" "$accord_dir/comms/TEMPLATE.md"
         log "Created .accord/comms/TEMPLATE.md"
+    fi
+
+    # .accord/log/ (debug logging)
+    mkdir -p "$accord_dir/log"
+    if [[ ! -f "$accord_dir/log/.gitignore" ]]; then
+        echo "*.jsonl" > "$accord_dir/log/.gitignore"
+        log "Created .accord/log/ with .gitignore"
     fi
 
     # Config (merged project + service)
