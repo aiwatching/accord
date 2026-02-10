@@ -68,7 +68,7 @@ Accord supports contracts at two granularities, unified under the same protocol:
 
 **Internal Contracts (Module-Level)**:
 - Location: `.accord/contracts/internal/{module}.md` (single copy, no collection needed in monorepo)
-- Multi-repo backup: `accord-hub/.accord/contracts/internal/{service}/{module}.md`
+- Multi-repo backup: `accord-hub/contracts/internal/{service}/{module}.md`
 - Format: Markdown with embedded code-level interface signatures (Java interface, Python Protocol, TypeScript interface, etc.)
 - One contract per module within a service
 - Defines the class/method boundary between sub-modules
@@ -150,8 +150,8 @@ Each service has its own repo. A shared **Accord Hub** repo centralizes contract
 │                    Accord Hub                         │
 │    (shared repo: contracts + cross-service comms)     │
 │                                                       │
-│  .accord/contracts/   .accord/comms/                  │
-│  .accord/contracts/internal/{service}/  (backups)     │
+│  contracts/           comms/                           │
+│  contracts/internal/{service}/  (backups)              │
 └───────┬──────────────────┬────────────────┬───────────┘
         │                  │                │
    accord sync        accord sync      accord sync
@@ -175,11 +175,11 @@ In multi-repo mode, `accord sync` pushes contracts from service repos to the hub
 ```
 .accord/contracts/device-manager.yaml   → service's external contract
         ↓ accord sync push
-accord-hub/.accord/contracts/device-manager.yaml  → hub copy
+accord-hub/contracts/device-manager.yaml  → hub copy
 
 .accord/contracts/internal/plugin.md    → service's internal contract
         ↓ accord sync push
-accord-hub/.accord/contracts/internal/device-manager/plugin.md → hub backup
+accord-hub/contracts/internal/device-manager/plugin.md → hub backup
 ```
 
 ### 4.4 Scope Hierarchy

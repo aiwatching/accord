@@ -34,23 +34,25 @@ When a conversation starts:
 
 1. Read `.accord/config.yaml` to understand the module structure, paths, and repo model
 2. If multi-repo: run `git pull` to sync latest changes
-3. Determine your working module from the user's first message
-4. Announce your working module and directory scope
-5. Check your inbox: `{{COMMS_DIR}}inbox/{your-module}/`
-6. For each request file found, read the YAML frontmatter
-7. Report to the user:
+3. If `.accord/hub/` exists: run `bash ~/.accord/accord-sync.sh pull --target-dir .` to sync from hub
+4. Determine your working module from the user's first message
+5. Announce your working module and directory scope
+6. Check your inbox: `{{COMMS_DIR}}inbox/{your-module}/`
+7. For each request file found, read the YAML frontmatter
+8. Report to the user:
    - Your working module and directory scope
    - Number of pending/approved requests
    - Summary of each (id, from, type, priority, status)
-8. Check `git log --oneline -10` for recent contract changes
+9. Check `git log --oneline -10` for recent contract changes
 
 ## ON_ACTION (Sync Before Operations)
 
 **If sync mode is `on-action` AND repo model is `multi-repo`:** Before starting any implementation task, run a quick sync:
 
 1. `git pull` to get latest changes
-2. Check inbox for any new requests that might affect the current task
-3. If new relevant requests exist, inform the user before proceeding
+2. If `.accord/hub/` exists: run `bash ~/.accord/accord-sync.sh pull --target-dir .` to sync from hub
+3. Check inbox for any new requests that might affect the current task
+4. If new relevant requests exist, inform the user before proceeding
 
 **If monorepo:** Comms are local — just re-check the inbox directory for new files. No `git pull` needed for comms (though pulling for code sync is fine).
 

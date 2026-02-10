@@ -139,14 +139,14 @@ Adapters must inject these behaviors into the agent's instruction set:
 
 **`accord sync pull` actions**:
 1. `cd .accord/hub && git pull`
-2. Check hub's `.accord/comms/inbox/{own-service}/` for new external requests
+2. Check hub's `comms/inbox/{own-service}/` for new external requests
 3. Report findings to user
 
 **`accord sync push` actions**:
 1. Sync to hub:
-   - Copy `.accord/contracts/{own-service}.yaml` → `hub/.accord/contracts/`
-   - Copy `.accord/contracts/internal/*` → `hub/.accord/contracts/internal/{service}/`
-   - Copy outgoing request files → `hub/.accord/comms/inbox/{target}/`
+   - Copy `.accord/contracts/{own-service}.yaml` → `hub/contracts/`
+   - Copy `.accord/contracts/internal/*` → `hub/contracts/internal/{service}/`
+   - Copy outgoing request files → `hub/comms/inbox/{target}/`
 2. `cd .accord/hub && git add -A && git commit && git push`
 3. Inform user: "Synced to hub. {N} contracts synced, {M} requests sent."
 

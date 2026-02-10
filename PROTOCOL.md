@@ -45,22 +45,21 @@ All services share a single repository. All Accord files are centralized under `
 
 Each service has its own repository. A shared **Accord Hub** repository centralizes cross-service contracts and communication.
 
-**Hub Repository** (shared by all services):
+**Hub Repository** (shared by all services — flat structure, no `.accord/` prefix):
 
 ```
 accord-hub/
-├── .accord/
-│   ├── config.yaml                    # Project-level config
-│   ├── contracts/                     # All external contracts
-│   │   ├── device-manager.yaml
-│   │   ├── nac-engine.yaml
-│   │   └── nac-admin.yaml
-│   └── comms/                         # Cross-service communication
-│       ├── inbox/
-│       │   ├── device-manager/
-│       │   ├── nac-engine/
-│       │   └── nac-admin/
-│       └── archive/
+├── contracts/                         # All external contracts
+│   ├── device-manager.yaml
+│   ├── nac-engine.yaml
+│   └── nac-admin.yaml
+├── comms/                             # Cross-service communication
+│   ├── inbox/
+│   │   ├── device-manager/
+│   │   ├── nac-engine/
+│   │   └── nac-admin/
+│   └── archive/
+└── README.md
 ```
 
 **Service Repository** (per service):
@@ -97,12 +96,12 @@ In multi-repo mode, `accord sync` synchronizes between service repo and hub:
 .accord/contracts/device-manager.yaml     (service's external contract)
         │
         ▼  accord sync push
-accord-hub/.accord/contracts/device-manager.yaml  (hub copy)
+accord-hub/contracts/device-manager.yaml  (hub copy)
 
 .accord/contracts/internal/plugin.md      (internal contract)
         │
         ▼  accord sync push
-accord-hub/.accord/contracts/internal/device-manager/plugin.md  (hub backup)
+accord-hub/contracts/internal/device-manager/plugin.md  (hub backup)
 ```
 
 ### 1.4 Naming Conventions
@@ -382,16 +381,16 @@ In the multi-repo model, `accord sync` manages communication between the service
 **`accord sync pull`** (receive from hub):
 ```
 1. cd .accord/hub && git pull
-2. Agent checks hub .accord/comms/inbox/{own-service}/ for new requests
+2. Agent checks hub comms/inbox/{own-service}/ for new requests
 3. Report findings to user
 ```
 
 **`accord sync push`** (send to hub):
 ```
 1. Sync contracts and requests to hub:
-   - Copy .accord/contracts/{own-service}.yaml → hub/.accord/contracts/
-   - Copy .accord/contracts/internal/* → hub/.accord/contracts/internal/{service}/
-   - Copy request files → hub/.accord/comms/inbox/{target}/
+   - Copy .accord/contracts/{own-service}.yaml → hub/contracts/
+   - Copy .accord/contracts/internal/* → hub/contracts/internal/{service}/
+   - Copy request files → hub/comms/inbox/{target}/
 2. cd .accord/hub && git add -A && git commit -m "..." && git push
 ```
 

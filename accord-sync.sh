@@ -136,20 +136,20 @@ do_init() {
     git clone "$HUB_URL" "$HUB_DIR"
 
     # If hub is empty (fresh repo), create initial structure
-    if [[ ! -d "$HUB_DIR/.accord" ]]; then
-        log "Hub is empty — initializing .accord/ structure"
-        mkdir -p "$HUB_DIR/.accord/contracts"
-        mkdir -p "$HUB_DIR/.accord/contracts/internal"
-        mkdir -p "$HUB_DIR/.accord/comms/archive"
+    if [[ ! -d "$HUB_DIR/contracts" ]]; then
+        log "Hub is empty — initializing structure"
+        mkdir -p "$HUB_DIR/contracts"
+        mkdir -p "$HUB_DIR/contracts/internal"
+        mkdir -p "$HUB_DIR/comms/archive"
 
         # Create inboxes for all known services
         for svc in $ALL_SERVICES; do
-            mkdir -p "$HUB_DIR/.accord/comms/inbox/$svc"
-            touch "$HUB_DIR/.accord/comms/inbox/$svc/.gitkeep"
+            mkdir -p "$HUB_DIR/comms/inbox/$svc"
+            touch "$HUB_DIR/comms/inbox/$svc/.gitkeep"
         done
 
         (cd "$HUB_DIR" && git add -A && git commit -m "accord: init hub structure" && git push) || true
-        log "Hub initialized with .accord/ structure"
+        log "Hub initialized with hub structure"
     fi
 
     log "Hub cloned successfully"
@@ -166,7 +166,7 @@ do_pull() {
     (cd "$HUB_DIR" && git pull --quiet)
 
     # Copy incoming requests from hub inbox to local inbox
-    local hub_inbox="$HUB_DIR/.accord/comms/inbox/$SERVICE_NAME"
+    local hub_inbox="$HUB_DIR/comms/inbox/$SERVICE_NAME"
     local local_inbox="$TARGET_DIR/.accord/comms/inbox/$SERVICE_NAME"
     local new_count=0
 
@@ -185,7 +185,7 @@ do_pull() {
     fi
 
     # Copy other services' contracts from hub so we can see them locally
-    local hub_contracts="$HUB_DIR/.accord/contracts"
+    local hub_contracts="$HUB_DIR/contracts"
     local local_contracts="$TARGET_DIR/.accord/contracts"
 
     if [[ -d "$hub_contracts" ]]; then
@@ -202,7 +202,7 @@ do_pull() {
     fi
 
     # Copy internal contracts from hub (other services' internal contracts)
-    local hub_internal="$HUB_DIR/.accord/contracts/internal"
+    local hub_internal="$HUB_DIR/contracts/internal"
     local local_internal="$TARGET_DIR/.accord/contracts/internal"
 
     if [[ -d "$hub_internal" ]]; then
@@ -241,8 +241,8 @@ do_push() {
     # 1. Copy own contract → hub
     local own_contract="$TARGET_DIR/.accord/contracts/${SERVICE_NAME}.yaml"
     if [[ -f "$own_contract" ]]; then
-        mkdir -p "$HUB_DIR/.accord/contracts"
-        cp "$own_contract" "$HUB_DIR/.accord/contracts/${SERVICE_NAME}.yaml"
+        mkdir -p "$HUB_DIR/contracts"
+        cp "$own_contract" "$HUB_DIR/contracts/${SERVICE_NAME}.yaml"
         changes=$((changes + 1))
         log "  Synced contract: ${SERVICE_NAME}.yaml"
     fi
@@ -258,10 +258,10 @@ do_push() {
             break
         done
         if [[ "$has_internal" == true ]]; then
-            mkdir -p "$HUB_DIR/.accord/contracts/internal/$SERVICE_NAME"
+            mkdir -p "$HUB_DIR/contracts/internal/$SERVICE_NAME"
             for f in "$own_internal"/*.md; do
                 [[ ! -f "$f" ]] && continue
-                cp "$f" "$HUB_DIR/.accord/contracts/internal/$SERVICE_NAME/"
+                cp "$f" "$HUB_DIR/contracts/internal/$SERVICE_NAME/"
                 changes=$((changes + 1))
             done
             log "  Synced internal contracts to hub"
@@ -281,8 +281,8 @@ do_push() {
                 [[ ! -f "$req_file" ]] && continue
                 local fname
                 fname="$(basename "$req_file")"
-                mkdir -p "$HUB_DIR/.accord/comms/inbox/$target_svc"
-                cp "$req_file" "$HUB_DIR/.accord/comms/inbox/$target_svc/$fname"
+                mkdir -p "$HUB_DIR/comms/inbox/$target_svc"
+                cp "$req_file" "$HUB_DIR/comms/inbox/$target_svc/$fname"
                 changes=$((changes + 1))
                 log "  Pushed request $fname → $target_svc inbox"
             done
@@ -292,12 +292,12 @@ do_push() {
     # 4. Copy archived requests → hub archive
     local local_archive="$TARGET_DIR/.accord/comms/archive"
     if [[ -d "$local_archive" ]]; then
-        mkdir -p "$HUB_DIR/.accord/comms/archive"
+        mkdir -p "$HUB_DIR/comms/archive"
         for f in "$local_archive"/req-*.md; do
             [[ ! -f "$f" ]] && continue
             local fname
             fname="$(basename "$f")"
-            cp "$f" "$HUB_DIR/.accord/comms/archive/$fname"
+            cp "$f" "$HUB_DIR/comms/archive/$fname"
             changes=$((changes + 1))
         done
     fi

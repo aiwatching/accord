@@ -47,7 +47,7 @@ session was insufficient for complex multi-service development because:
 **Rationale**: A dedicated Accord Hub repo centralizes contracts and cross-service communication while each service keeps its own repo. Still zero infrastructure — just an extra Git repo. `accord sync` wraps hub pull/push. In multi-repo, `accord sync push` copies `.accord/contracts/` and `.accord/contracts/internal/` to the hub for backup. Module-level communication stays within the service repo via normal git operations.
 
 ### Decision 8: Centralized contract structure
-**Key insight**: All contracts live under `.accord/contracts/` (external) and `.accord/contracts/internal/` (internal). In monorepo, there's a single copy — no collection step needed. In multi-repo, each service repo has its own `.accord/contracts/internal/` for module contracts, and `accord sync push` backs them up to the hub at `accord-hub/.accord/contracts/internal/{service}/`. This keeps the directory structure simple and predictable.
+**Key insight**: All contracts live under `.accord/contracts/` (external) and `.accord/contracts/internal/` (internal). In monorepo, there's a single copy — no collection step needed. In multi-repo, each service repo has its own `.accord/contracts/internal/` for module contracts, and `accord sync push` backs them up to the hub at `accord-hub/contracts/internal/{service}/`. This keeps the directory structure simple and predictable.
 
 ## Architecture Hierarchy (from the developer's actual project)
 

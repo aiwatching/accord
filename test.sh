@@ -511,19 +511,19 @@ bash "$ACCORD_DIR/init.sh" \
 assert_dir "$TEST9_SVCA/.accord/hub/.git" "Init auto-clones hub"
 
 # Verify own contract pushed to hub
-assert_file "$TEST9_SVCA/.accord/hub/.accord/contracts/svc-a.yaml" "Own contract pushed to hub"
+assert_file "$TEST9_SVCA/.accord/hub/contracts/svc-a.yaml" "Own contract pushed to hub"
 
 # Verify service-joined notification in svc-b's inbox on hub
-assert_file "$TEST9_SVCA/.accord/hub/.accord/comms/inbox/svc-b/req-000-service-joined-svc-a.md" \
+assert_file "$TEST9_SVCA/.accord/hub/comms/inbox/svc-b/req-000-service-joined-svc-a.md" \
     "Service-joined notification created for svc-b"
-assert_contains "$TEST9_SVCA/.accord/hub/.accord/comms/inbox/svc-b/req-000-service-joined-svc-a.md" \
+assert_contains "$TEST9_SVCA/.accord/hub/comms/inbox/svc-b/req-000-service-joined-svc-a.md" \
     "status: pending" "Notification has pending status"
-assert_contains "$TEST9_SVCA/.accord/hub/.accord/comms/inbox/svc-b/req-000-service-joined-svc-a.md" \
+assert_contains "$TEST9_SVCA/.accord/hub/comms/inbox/svc-b/req-000-service-joined-svc-a.md" \
     "type: other" "Notification has type other"
 
 # Validate notification passes request validator
 assert_validator "$ACCORD_DIR/protocol/scan/validators/validate-request.sh" \
-    "$TEST9_SVCA/.accord/hub/.accord/comms/inbox/svc-b/req-000-service-joined-svc-a.md" \
+    "$TEST9_SVCA/.accord/hub/comms/inbox/svc-b/req-000-service-joined-svc-a.md" \
     "Service-joined notification validates"
 
 # Create svc-b repo — should auto-pull svc-a's contract from hub
@@ -543,7 +543,7 @@ bash "$ACCORD_DIR/init.sh" \
 assert_file "$TEST9_SVCB/.accord/contracts/svc-a.yaml" "svc-b pulled svc-a contract from hub"
 
 # Verify svc-b's own contract pushed to hub
-assert_file "$TEST9_SVCB/.accord/hub/.accord/contracts/svc-b.yaml" "svc-b contract pushed to hub"
+assert_file "$TEST9_SVCB/.accord/hub/contracts/svc-b.yaml" "svc-b contract pushed to hub"
 
 # Manual push/pull still works after auto-sync
 (cd "$TEST9_SVCA" && git add -A && git commit -m "init" > /dev/null 2>&1) || true

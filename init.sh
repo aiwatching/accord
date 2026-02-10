@@ -612,11 +612,34 @@ while [[ $# -gt 0 ]]; do
 done
 
 log() { echo "[accord-watch] $(date '+%H:%M:%S') $*"; }
+
+# Read own service name from config (first service in list)
+OWN_SVC=""
+if [[ -f ".accord/config.yaml" ]]; then
+    OWN_SVC="$(sed -n '/^services:/,/^[^ ]/{ s/^[[:space:]]*- name:[[:space:]]*//p; }' .accord/config.yaml | head -1 | xargs)"
+fi
+
 log "Started — polling every ${INTERVAL}s (pid $$)"
 
 while true; do
     sleep "$INTERVAL"
     if git pull --quiet 2>/dev/null; then
+        # Hub sync for multi-repo
+        if [[ -d ".accord/hub/.git" ]]; then
+            (cd ".accord/hub" && git pull --quiet 2>/dev/null) || log "Hub pull failed (offline?)"
+            # Copy new requests from hub inbox to local inbox
+            if [[ -n "$OWN_SVC" && -d ".accord/hub/comms/inbox/$OWN_SVC" ]]; then
+                for req_file in ".accord/hub/comms/inbox/$OWN_SVC"/req-*.md; do
+                    [[ -f "$req_file" ]] || continue
+                    fname=$(basename "$req_file")
+                    [[ -f "$COMMS_DIR/inbox/$OWN_SVC/$fname" ]] && continue
+                    mkdir -p "$COMMS_DIR/inbox/$OWN_SVC"
+                    cp "$req_file" "$COMMS_DIR/inbox/$OWN_SVC/$fname"
+                    log "New request from hub: $fname"
+                done
+            fi
+        fi
+
         count=0
         for inbox_dir in "$COMMS_DIR"/inbox/*/; do
             [[ ! -d "$inbox_dir" ]] && continue
@@ -755,15 +778,15 @@ hub_sync_on_init() {
     # Configure git user in hub clone (needed for commits)
     (cd "$hub_dir" && git config user.email "accord-init@local" && git config user.name "Accord Init") 2>/dev/null || true
 
-    # If hub is empty (no .accord/ structure), initialize it
-    if [[ ! -d "$hub_dir/.accord" ]]; then
-        log "Hub is empty — initializing .accord/ structure"
-        mkdir -p "$hub_dir/.accord/contracts"
-        mkdir -p "$hub_dir/.accord/comms/archive"
+    # If hub is empty (no structure), initialize it
+    if [[ ! -d "$hub_dir/contracts" ]]; then
+        log "Hub is empty — initializing structure"
+        mkdir -p "$hub_dir/contracts"
+        mkdir -p "$hub_dir/comms/archive"
         for svc in "${svc_arr[@]}"; do
             svc="$(echo "$svc" | xargs)"
-            mkdir -p "$hub_dir/.accord/comms/inbox/$svc"
-            touch "$hub_dir/.accord/comms/inbox/$svc/.gitkeep"
+            mkdir -p "$hub_dir/comms/inbox/$svc"
+            touch "$hub_dir/comms/inbox/$svc/.gitkeep"
         done
         if ! (cd "$hub_dir" && git add -A && git commit -m "accord: init hub structure" && git push) 2>/dev/null; then
             warn "Failed to push hub init. Skipping hub sync."
@@ -772,7 +795,7 @@ hub_sync_on_init() {
     fi
 
     # b. Pull: copy other services' contracts from hub → local
-    for f in "$hub_dir/.accord/contracts"/*.yaml; do
+    for f in "$hub_dir/contracts"/*.yaml; do
         [[ ! -f "$f" ]] && continue
         local fname
         fname="$(basename "$f")"
@@ -784,13 +807,13 @@ hub_sync_on_init() {
     # c. Push: copy own contract → hub
     local own_contract="$TARGET_DIR/.accord/contracts/${own_svc}.yaml"
     if [[ -f "$own_contract" ]]; then
-        mkdir -p "$hub_dir/.accord/contracts"
-        cp "$own_contract" "$hub_dir/.accord/contracts/${own_svc}.yaml"
+        mkdir -p "$hub_dir/contracts"
+        cp "$own_contract" "$hub_dir/contracts/${own_svc}.yaml"
     fi
 
     # Ensure own inbox exists on hub
-    mkdir -p "$hub_dir/.accord/comms/inbox/$own_svc"
-    touch "$hub_dir/.accord/comms/inbox/$own_svc/.gitkeep"
+    mkdir -p "$hub_dir/comms/inbox/$own_svc"
+    touch "$hub_dir/comms/inbox/$own_svc/.gitkeep"
 
     # d. Notify: place service-joined notification in other services' inboxes
     local ts
@@ -798,8 +821,8 @@ hub_sync_on_init() {
     for svc in "${svc_arr[@]}"; do
         svc="$(echo "$svc" | xargs)"
         [[ "$svc" == "$own_svc" ]] && continue
-        mkdir -p "$hub_dir/.accord/comms/inbox/$svc"
-        local notify_file="$hub_dir/.accord/comms/inbox/$svc/req-000-service-joined-${own_svc}.md"
+        mkdir -p "$hub_dir/comms/inbox/$svc"
+        local notify_file="$hub_dir/comms/inbox/$svc/req-000-service-joined-${own_svc}.md"
         # Idempotent: only write if not already present
         if [[ ! -f "$notify_file" ]]; then
             cat > "$notify_file" <<NOTIFY
