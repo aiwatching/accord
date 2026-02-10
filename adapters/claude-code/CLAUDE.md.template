@@ -1,0 +1,137 @@
+<!-- ACCORD START — do not edit this block manually. Managed by accord. -->
+
+# Accord Protocol Rules
+
+You are an AI coding agent participating in the **{{PROJECT_NAME}}** project via the Accord protocol. Follow these rules for all cross-team and cross-module coordination.
+
+## Team Context
+
+- **Your team**: {{TEAM_NAME}}
+- **All teams**: {{TEAM_LIST}}
+- **Your modules**: {{MODULE_LIST}}
+- **External contracts**: `{{CONTRACTS_DIR}}`
+- **Internal contracts**: `{{INTERNAL_CONTRACTS_DIR}}`
+- **Communications**: `{{COMMS_DIR}}`
+
+## ON START (Every Session)
+
+When a conversation starts:
+
+1. Run `git pull` to sync latest changes
+2. Check your external inbox: `{{COMMS_DIR}}inbox/{{TEAM_NAME}}/`
+3. Check your module inboxes (if any): `{{TEAM_NAME}}/.agent-comms/inbox/{module}/`
+4. For each request file found, read the YAML frontmatter
+5. Report to the user:
+   - Number of pending/approved requests (grouped by scope)
+   - Summary of each (id, from, type, priority, status)
+6. Check `git log --oneline -10` for recent contract changes
+
+## Contract Rules
+
+### External Contracts
+- Location: `{{CONTRACTS_DIR}}{team}.yaml` (OpenAPI 3.0)
+- You may ONLY modify `{{CONTRACTS_DIR}}{{TEAM_NAME}}.yaml`
+- Never edit another team's contract directly — create a request instead
+- Proposed changes use `x-accord-status: proposed` + `x-accord-request: {id}` annotations
+
+### Internal Contracts
+- Source of truth: `{{TEAM_NAME}}/{module}/.accord/contract.md`
+- Collected copies: `{{INTERNAL_CONTRACTS_DIR}}{module}.md`
+- You may ONLY modify contracts for your own modules
+- Never edit another module's contract directly — create a request instead
+
+## ON_NEED_INTERFACE (Cross-Boundary Request)
+
+When you need an API or interface that doesn't exist in another team's/module's contract:
+
+### External (cross-team)
+1. Check `{{CONTRACTS_DIR}}{target-team}.yaml` to confirm the API doesn't exist
+2. Create a request file using the template in `{{COMMS_DIR}}TEMPLATE.md`
+3. Set `scope: external`, assign a unique ID `req-{NNN}-{description}`
+4. Place in `{{COMMS_DIR}}inbox/{target-team}/`
+5. Optionally annotate `{{CONTRACTS_DIR}}{target-team}.yaml` with `x-accord-status: proposed`
+6. `git add` + `git commit -m "comms({target}): request - {summary}"` + `git push`
+7. Tell the user: "Created request {id} to {target}. Needs their approval."
+8. Do NOT block — continue with mock data or TODO markers
+
+### Internal (cross-module)
+1. Check `{{INTERNAL_CONTRACTS_DIR}}{target-module}.md` to confirm the interface doesn't exist
+2. Create a request file using the template in `{{COMMS_DIR}}TEMPLATE.md`
+3. Set `scope: internal`, assign a unique ID `req-{NNN}-{description}`
+4. Place in `{{TEAM_NAME}}/.agent-comms/inbox/{target-module}/`
+5. `git add` + `git commit -m "comms({target-module}): request - {summary}"` + `git push`
+6. Tell the user: "Created internal request {id} to module {target-module}."
+7. Do NOT block — continue with mock data or TODO markers
+
+## ON_APPROVED_REQUEST (Processing Requests)
+
+When you find an approved request in your inbox:
+
+1. Read the full request file
+2. Present it to the user for confirmation before starting
+3. If user confirms:
+   a. Update status to `in-progress`, commit
+   b. Implement the requested change
+   c. Update the relevant contract:
+      - External: `{{CONTRACTS_DIR}}{{TEAM_NAME}}.yaml` (remove `x-accord-status: proposed`)
+      - Internal: `{{INTERNAL_CONTRACTS_DIR}}{module}.md` + source at `{module}/.accord/contract.md`
+   d. Update status to `completed`
+   e. Move request to archive directory
+   f. Commit: `comms({{TEAM_NAME}}): completed - {request-id}` + push
+4. If user declines: leave it as approved for later
+
+## ON_COMPLETE (Request Completion)
+
+Before marking a request as completed, verify:
+1. The contract file has been updated
+2. The implementation matches the contract
+3. Then: update status → move to archive → commit + push
+4. Tell the user: "Completed request {id}. Contract updated."
+
+## ON_SCAN (Contract Generation)
+
+When the user asks to generate or update contracts:
+1. Use the `/accord-scan` command or follow `protocol/scan/SCAN_INSTRUCTIONS.md`
+2. All generated contracts start as `status: draft`
+3. Run validators after generation
+4. Do NOT auto-commit — let the user review first
+
+## ON_SYNC (Multi-Repo Only)
+
+For `accord sync push`:
+1. Collect module contracts: copy each `{module}/.accord/contract.md` → `.accord/internal-contracts/{module}.md`
+2. Sync collected contracts and requests to the hub repo
+3. Commit and push the hub
+
+For `accord sync pull`:
+1. Pull latest from the hub repo
+2. Check hub inbox for new requests
+3. Report findings to the user
+
+## ON_CONFLICT
+
+If `git pull` results in a merge conflict on any contract or request file:
+1. Do NOT auto-resolve
+2. Tell the user: "Contract conflict detected in {file}. Manual resolution required."
+3. Show both versions if possible
+4. Wait for user instruction
+
+## State Machine Reference
+
+```
+pending → approved      (human review required)
+pending → rejected      (with reason)
+approved → in-progress  (agent starts work)
+in-progress → completed (contract updated, request archived)
+```
+
+## Commit Format
+
+```
+comms({team}): {action} - {summary}
+contract({team}): {action} - {summary}
+```
+
+Actions: `request`, `approved`, `rejected`, `in-progress`, `completed`, `update`
+
+<!-- ACCORD END -->

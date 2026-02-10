@@ -1,0 +1,147 @@
+openapi: "3.0.3"
+
+info:
+  title: "nac-admin API"
+  version: "0.1.0"
+  description: "Administration, RBAC, and audit logging for the next-nac system."
+  x-accord-status: stable
+
+paths:
+  /api/admin/users:
+    get:
+      summary: "List all admin users"
+      operationId: listUsers
+      parameters:
+        - name: role
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [admin, operator, viewer]
+          description: "Filter by role"
+      responses:
+        '200':
+          description: "List of users"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+
+  /api/admin/audit-log:
+    get:
+      summary: "Query audit log entries"
+      operationId: getAuditLog
+      parameters:
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: "Filter entries after this timestamp"
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "Filter by action type"
+      responses:
+        '200':
+          description: "Audit log entries"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditEntry'
+
+  /api/admin/permissions/check:
+    x-accord-status: proposed
+    x-accord-request: req-002
+    post:
+      summary: "Check if a user has a specific permission"
+      operationId: checkPermission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PermissionCheckRequest'
+      responses:
+        '200':
+          description: "Permission check result"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionCheckResult'
+
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+          enum: [admin, operator, viewer]
+        active:
+          type: boolean
+      required:
+        - id
+        - username
+        - role
+
+    AuditEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        user_id:
+          type: string
+        action:
+          type: string
+        resource:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+      required:
+        - id
+        - timestamp
+        - action
+
+    PermissionCheckRequest:
+      type: object
+      properties:
+        user_id:
+          type: string
+        permission:
+          type: string
+          description: "Permission identifier (e.g., devices.write, policies.admin)"
+        resource_id:
+          type: string
+          description: "Optional resource ID for resource-level permissions"
+      required:
+        - user_id
+        - permission
+
+    PermissionCheckResult:
+      type: object
+      properties:
+        allowed:
+          type: boolean
+        reason:
+          type: string
+          description: "Explanation of the decision"
+      required:
+        - allowed

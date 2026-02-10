@@ -1,0 +1,180 @@
+openapi: "3.0.3"
+
+info:
+  title: "nac-engine API"
+  version: "0.1.0"
+  description: "Policy evaluation and enforcement engine for the next-nac system."
+  x-accord-status: stable
+
+paths:
+  /api/policies:
+    get:
+      summary: "List all policies"
+      operationId: listPolicies
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, inactive, draft]
+          description: "Filter by policy status"
+      responses:
+        '200':
+          description: "List of policies"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Policy'
+
+  /api/policies/{id}:
+    get:
+      summary: "Get policy by ID"
+      operationId: getPolicyById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Unique identifier of the policy"
+      responses:
+        '200':
+          description: "Policy details"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+        '404':
+          description: "Policy not found"
+
+  /api/policies/evaluate:
+    post:
+      summary: "Evaluate policies for a device"
+      operationId: evaluatePolicies
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvaluationRequest'
+      responses:
+        '200':
+          description: "Evaluation result"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvaluationResult'
+
+  /api/policies/by-device-type/{type}:
+    get:
+      summary: "Get policies by device type"
+      operationId: getPoliciesByDeviceType
+      parameters:
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Device type identifier"
+      responses:
+        '200':
+          description: "Policies matching the device type"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policies:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Policy'
+                  default_action:
+                    type: string
+                    enum: [allow, deny]
+
+components:
+  schemas:
+    Policy:
+      type: object
+      properties:
+        id:
+          type: string
+          description: "Unique policy identifier"
+        name:
+          type: string
+          description: "Human-readable policy name"
+        status:
+          type: string
+          enum: [active, inactive, draft]
+        device_types:
+          type: array
+          items:
+            type: string
+          description: "Device types this policy applies to"
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/PolicyRule'
+        default_action:
+          type: string
+          enum: [allow, deny]
+      required:
+        - id
+        - name
+        - status
+        - default_action
+
+    PolicyRule:
+      type: object
+      properties:
+        id:
+          type: string
+        condition:
+          type: string
+          description: "Rule condition expression"
+        action:
+          type: string
+          enum: [allow, deny, quarantine]
+      required:
+        - id
+        - condition
+        - action
+
+    EvaluationRequest:
+      type: object
+      properties:
+        device_id:
+          type: string
+        device_type:
+          type: string
+        context:
+          type: object
+          additionalProperties: true
+          description: "Additional context for policy evaluation"
+      required:
+        - device_id
+        - device_type
+
+    EvaluationResult:
+      type: object
+      properties:
+        device_id:
+          type: string
+        action:
+          type: string
+          enum: [allow, deny, quarantine]
+        matched_policies:
+          type: array
+          items:
+            type: string
+          description: "IDs of policies that matched"
+        reason:
+          type: string
+          description: "Human-readable explanation of the decision"
+      required:
+        - device_id
+        - action
+        - matched_policies

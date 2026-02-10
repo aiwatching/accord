@@ -1,0 +1,94 @@
+openapi: "3.0.3"
+
+info:
+  title: "frontend API"
+  version: "0.1.0"
+  description: "Backend-for-Frontend (BFF) API for the next-nac web management UI."
+  x-accord-status: stable
+
+paths:
+  /api/bff/dashboard:
+    get:
+      summary: "Get dashboard summary data"
+      operationId: getDashboard
+      responses:
+        '200':
+          description: "Dashboard summary"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardSummary'
+
+  /api/bff/devices:
+    get:
+      summary: "Get devices with aggregated status for UI display"
+      operationId: getDevicesForUI
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: "Paginated device list for UI"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedDevices'
+
+components:
+  schemas:
+    DashboardSummary:
+      type: object
+      properties:
+        total_devices:
+          type: integer
+        devices_online:
+          type: integer
+        active_policies:
+          type: integer
+        pending_requests:
+          type: integer
+      required:
+        - total_devices
+        - devices_online
+        - active_policies
+
+    PaginatedDevices:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              type:
+                type: string
+              status:
+                type: string
+              policy_status:
+                type: string
+                description: "Aggregated policy compliance status"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+      required:
+        - items
+        - total
+        - page
+        - pageSize
