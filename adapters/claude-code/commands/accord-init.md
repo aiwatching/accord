@@ -91,8 +91,8 @@ Validation: all passed
 Next steps:
   1. Review generated contracts and change status from 'draft' to 'stable'
   2. git add .accord && git commit -m "accord: init project"
-  3. Use /check-inbox to see incoming requests
-  4. Use /send-request to coordinate with other modules
+  3. Use /accord-check-inbox to see incoming requests
+  4. Use /accord-send-request to coordinate with other modules
 ```
 
 ### Important

@@ -84,7 +84,7 @@ Everything under `.accord/`:
     └── PROTOCOL.md / TEMPLATE.md
 
 CLAUDE.md                    — Protocol rules (Claude Code adapter)
-.claude/commands/            — Slash commands (/check-inbox, /send-request, etc.)
+.claude/commands/            — Slash commands (/accord-check-inbox, /accord-send-request, etc.)
 ```
 
 Then start your agent. It will automatically check for incoming requests on session start.

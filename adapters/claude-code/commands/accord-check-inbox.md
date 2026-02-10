@@ -1,4 +1,4 @@
-# /check-inbox
+# /accord-check-inbox
 
 Check for incoming Accord requests across all inboxes.
 

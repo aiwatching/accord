@@ -171,9 +171,9 @@ Adapters must inject these behaviors into the agent's instruction set:
 adapters/{agent-name}/
 ├── {config-file}.template    # Agent's native config with Accord rules injected
 ├── commands/                  # Shortcut commands (if agent supports them)
-│   ├── check-inbox.md
-│   ├── send-request.md
-│   └── complete-request.md
+│   ├── accord-check-inbox.md
+│   ├── accord-send-request.md
+│   └── accord-complete-request.md
 └── install.sh                 # Script to install adapter into a project
 ```
 

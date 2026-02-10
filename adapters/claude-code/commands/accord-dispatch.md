@@ -85,6 +85,6 @@ Dispatch complete:
 
 If the target module is managed by a different service (different repo, different session):
 - Don't dispatch a subagent — the other service's agent handles it
-- Instead, use `/send-request` to create the Accord request
+- Instead, use `/accord-send-request` to create the Accord request
 - Continue with mock data / TODO markers
 - The other service will pick it up on their next session

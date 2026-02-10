@@ -1,4 +1,4 @@
-# /send-request
+# /accord-send-request
 
 Create and send an Accord request to another module.
 

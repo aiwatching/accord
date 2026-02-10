@@ -1,4 +1,4 @@
-# /complete-request
+# /accord-complete-request
 
 Mark an Accord request as completed and archive it.
 

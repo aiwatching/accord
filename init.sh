@@ -292,7 +292,7 @@ interactive_prompt() {
         echo "  Sync mode — how agents check for incoming requests:"
         echo -e "    ${BOLD}1${NC}. on-action   — agent auto-checks before/after operations ${DIM}(recommended)${NC}"
         echo -e "    ${BOLD}2${NC}. auto-poll   — background script pulls every 5 minutes"
-        echo -e "    ${BOLD}3${NC}. manual      — you run /check-inbox explicitly"
+        echo -e "    ${BOLD}3${NC}. manual      — you run /accord-check-inbox explicitly"
         read -r -p "  Choice [1]: " sync_choice
         case "${sync_choice:-1}" in
             1|on-action)  SYNC_MODE="on-action" ;;

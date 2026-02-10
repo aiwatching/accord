@@ -76,10 +76,10 @@ accord/
 │   ├── claude-code/
 │   │   ├── CLAUDE.md.template
 │   │   ├── commands/
-│   │   │   ├── check-inbox.md
-│   │   │   ├── send-request.md
-│   │   │   ├── complete-request.md
-│   │   │   └── accord-scan.md  # /accord-scan slash command
+│   │   │   ├── accord-check-inbox.md
+│   │   │   ├── accord-send-request.md
+│   │   │   ├── accord-complete-request.md
+│   │   │   └── accord-scan.md
 │   │   ├── skills/
 │   │   │   └── contract-scanner/
 │   │   │       └── SKILL.md    # Contract scanner skill for Claude Code

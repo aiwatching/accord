@@ -80,7 +80,7 @@ fi
 ACCORD_COMMANDS=(
     "accord-dispatch.md" "accord-init.md" "accord-scan.md"
     "accord-status.md" "accord-validate.md"
-    "check-inbox.md" "send-request.md" "complete-request.md"
+    "accord-check-inbox.md" "accord-send-request.md" "accord-complete-request.md"
 )
 for cmd in "${ACCORD_COMMANDS[@]}"; do
     if [[ -f "$TARGET_DIR/.claude/commands/$cmd" ]]; then

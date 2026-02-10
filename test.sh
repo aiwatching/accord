@@ -151,9 +151,9 @@ bash "$ACCORD_DIR/init.sh" \
     --no-interactive > /dev/null 2>&1
 
 assert_file "$TEST4_DIR/CLAUDE.md"                                 "CLAUDE.md created"
-assert_file "$TEST4_DIR/.claude/commands/check-inbox.md"           "check-inbox command installed"
-assert_file "$TEST4_DIR/.claude/commands/send-request.md"          "send-request command installed"
-assert_file "$TEST4_DIR/.claude/commands/complete-request.md"      "complete-request command installed"
+assert_file "$TEST4_DIR/.claude/commands/accord-check-inbox.md"           "accord-check-inbox command installed"
+assert_file "$TEST4_DIR/.claude/commands/accord-send-request.md"          "accord-send-request command installed"
+assert_file "$TEST4_DIR/.claude/commands/accord-complete-request.md"      "accord-complete-request command installed"
 assert_file "$TEST4_DIR/.claude/commands/accord-scan.md"           "accord-scan command installed"
 assert_file "$TEST4_DIR/.claude/commands/accord-init.md"           "accord-init command installed"
 assert_file "$TEST4_DIR/.claude/skills/contract-scanner/SKILL.md"  "Scanner skill installed"
