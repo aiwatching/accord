@@ -232,6 +232,23 @@ interactive_prompt() {
         PROJECT_NAME="${input:-$detected_name}"
     fi
 
+    if [[ "$REPO_MODEL" == "monorepo" && -z "$HUB" ]]; then
+        echo ""
+        echo "  Repo model — how your project is organized:"
+        echo -e "    ${BOLD}1${NC}. monorepo    — all services in one repo ${DIM}(recommended)${NC}"
+        echo -e "    ${BOLD}2${NC}. multi-repo  — each service in its own repo (hub-and-spoke)"
+        read -r -p "  Choice [1]: " repo_choice
+        case "${repo_choice:-1}" in
+            2|multi-repo) REPO_MODEL="multi-repo" ;;
+            *)            REPO_MODEL="monorepo" ;;
+        esac
+
+        if [[ "$REPO_MODEL" == "multi-repo" ]]; then
+            read -r -p "  Hub repo URL (git URL for shared contracts): " HUB
+            [[ -z "$HUB" ]] && err "Hub repo URL is required for multi-repo model"
+        fi
+    fi
+
     if [[ -z "$SERVICES" ]]; then
         if [[ -n "$detected_services" ]]; then
             read -r -p "  Services (edit or Enter to confirm) [$detected_services]: " input
@@ -709,10 +726,12 @@ print_summary() {
     echo -e "${BOLD}=== Accord initialization complete ===${NC}"
     echo ""
     echo -e "  Project:    ${GREEN}$PROJECT_NAME${NC}"
+    echo -e "  Repo model: ${GREEN}$REPO_MODEL${NC}"
     echo -e "  Services:   ${GREEN}$SERVICES${NC}"
     [[ -n "$SERVICE" ]] && echo -e "  Modules:    ${GREEN}$SERVICE/ → $MODULES${NC}"
     [[ "$ADAPTER" != "none" ]] && echo -e "  Adapter:    ${GREEN}$ADAPTER${NC}"
     echo -e "  Sync mode:  ${GREEN}$SYNC_MODE${NC}"
+    [[ "$REPO_MODEL" == "multi-repo" ]] && echo -e "  Hub:        ${GREEN}$HUB${NC}"
     echo ""
     echo "  Created structure:"
     echo "    .accord/"
