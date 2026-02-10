@@ -108,6 +108,68 @@ For `accord sync pull`:
 2. Check hub inbox for new requests
 3. Report findings to the user
 
+## ON_DISPATCH (Multi-Module Feature Implementation)
+
+When the user requests a feature that spans multiple teams or modules, use subagents (Task tool) to coordinate the work. This avoids overloading a single agent's context with all modules' code.
+
+### Step 1: Analyze scope
+
+1. Read `.accord/config.yaml` to identify all teams and modules
+2. Read relevant contracts in `{{CONTRACTS_DIR}}` and `{{INTERNAL_CONTRACTS_DIR}}`
+3. Determine which modules are involved and what each needs to do
+4. Identify dependencies: does module A need module B's interface first?
+
+### Step 2: Plan the dispatch
+
+Build a dispatch plan:
+```
+Feature: "Add device search to nac-admin"
+  1. [device-manager] Add GET /api/devices/search → update contract
+  2. [nac-admin]      Call new search API → implement admin feature
+  Dependency: step 2 depends on step 1
+```
+
+Present this plan to the user for approval before proceeding.
+
+### Step 3: Dispatch subagents
+
+For each module's work, spawn a subagent using the Task tool:
+
+- **Scope the subagent**: tell it which team/module it's acting as, and restrict file changes to that module's directory
+- **Provide context**: include the relevant contract and the request description
+- **Contract updates**: the subagent must update the module's contract if the interface changes
+- **Sequential if dependent**: if module B needs module A's new interface, dispatch A first, wait for completion, then dispatch B with the updated contract
+- **Parallel if independent**: if modules have no dependency, dispatch them in parallel
+
+Example subagent prompt:
+```
+You are working as the device-manager team.
+Your module directory: device-manager/
+Your contract: contracts/device-manager.yaml
+
+Task: Add a GET /api/devices/search endpoint that accepts query params
+(name, type, status) and returns matching devices.
+
+Rules:
+- Only modify files under device-manager/
+- Update contracts/device-manager.yaml with the new endpoint
+- Follow existing code patterns in the module
+```
+
+### Step 4: Reconcile
+
+After all subagents complete:
+1. Verify all contracts were updated correctly
+2. If the feature created cross-boundary requests, ensure they follow the Accord protocol
+3. Run `/accord-validate` to check consistency
+4. Report results to the user
+
+### When NOT to dispatch
+
+- Simple single-module changes — just implement directly
+- The user explicitly wants to handle coordination manually
+- The feature scope is unclear — ask the user to clarify first
+
 ## ON_CONFLICT
 
 If `git pull` results in a merge conflict on any contract or request file:
