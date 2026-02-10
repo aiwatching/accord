@@ -138,6 +138,15 @@ install_commands() {
 
     mkdir -p "$commands_dest"
 
+    # Clean up old command filenames (pre-rename: without accord- prefix)
+    local OLD_COMMANDS=("check-inbox.md" "send-request.md" "complete-request.md")
+    for old_cmd in "${OLD_COMMANDS[@]}"; do
+        if [[ -f "$commands_dest/$old_cmd" ]]; then
+            rm -f "$commands_dest/$old_cmd"
+            log "Removed old command: $old_cmd (renamed to accord-$old_cmd)"
+        fi
+    done
+
     for cmd_file in "$commands_src"/*.md; do
         [[ ! -f "$cmd_file" ]] && continue
         local filename
