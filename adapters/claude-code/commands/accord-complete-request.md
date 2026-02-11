@@ -25,7 +25,7 @@ Mark an Accord request as completed and archive it.
    git add .accord/
    git commit -m "comms({your-module}): completed - {request-id}"
    ```
-   - Multi-repo only: `bash ~/.accord/accord-sync.sh push --target-dir .` to sync updated contract and archived request to hub
+   - Multi-repo only: `bash .accord/accord-sync.sh push --target-dir .` to sync updated contract and archived request to hub
    - Monorepo: no push needed
 
 6. **Report**: "Completed request {id}. Contract updated and request archived."

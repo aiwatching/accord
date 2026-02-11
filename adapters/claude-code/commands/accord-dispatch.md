@@ -85,7 +85,7 @@ Dispatch complete:
 ### 6. Sync to hub
 
 After all subagents complete and reconciliation is done:
-- Multi-repo: run `bash ~/.accord/accord-sync.sh push --target-dir .` to sync all changes to hub
+- Multi-repo: run `bash .accord/accord-sync.sh push --target-dir .` to sync all changes to hub
 
 ### 7. When a cross-service request IS needed
 

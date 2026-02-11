@@ -80,6 +80,14 @@ assert_validator "$ACCORD_DIR/protocol/scan/validators/validate-openapi.sh" \
 assert_validator "$ACCORD_DIR/protocol/scan/validators/validate-openapi.sh" \
     "$TEST1_DIR/.accord/contracts/beta.yaml" "Beta contract validates"
 
+# accord-sync.sh copied to .accord/
+assert_file "$TEST1_DIR/.accord/accord-sync.sh" "accord-sync.sh copied to .accord/"
+if [[ -x "$TEST1_DIR/.accord/accord-sync.sh" ]]; then
+    pass "accord-sync.sh is executable"
+else
+    fail "accord-sync.sh is not executable"
+fi
+
 # ══════════════════════════════════════════════════════════════════════════════
 # TEST 2: Init with service + modules
 # ══════════════════════════════════════════════════════════════════════════════

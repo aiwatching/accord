@@ -37,8 +37,8 @@ Each service and sub-module is an **independent boundary**. Every cross-boundary
 
 - Create/edit requests in `.accord/comms/inbox/{target}/`
 - Update contracts in `.accord/contracts/`
-- Use `accord-sync.sh push --target-dir .` to sync changes to hub
-- Use `accord-sync.sh pull --target-dir .` to get updates from hub
+- Use `bash .accord/accord-sync.sh push --target-dir .` to sync changes to hub
+- Use `bash .accord/accord-sync.sh pull --target-dir .` to get updates from hub
 - `.accord/hub/` is a git clone for exchange — treated as read-only by agents
 
 ---
@@ -49,17 +49,22 @@ At the beginning of every session, the agent should:
 
 1. Read `.accord/config.yaml` to understand the module structure, paths, and repo model.
 1b. Read `.accord/registry/` files to understand module responsibilities and data ownership.
-2. If multi-repo AND current directory is a git repo: run `git pull` to sync the latest code changes. (Monorepo: comms are already local.)
-3. Determine the working module from the user's first message.
-4. Announce the working module and directory scope.
-5. Check the inbox at `{{COMMS_DIR}}inbox/{your-module}/` for request files (`.md` files).
-6. For each request file found, read the YAML frontmatter to extract: `id`, `from`, `to`, `scope`, `type`, `priority`, `status`.
-7. Report a summary to the user:
+2. If multi-repo: run `bash .accord/accord-sync.sh pull --target-dir .` to sync contracts and requests from hub.
+   (Do NOT run bare `git pull` for hub sync — the sync script handles all hub communication.)
+3. If sync_mode is `auto-poll` in `.accord/config.yaml`:
+   - Check if accord-watch.sh is already running: `pgrep -f "accord-watch.sh" > /dev/null 2>&1`
+   - If not running: start it: `nohup bash .accord/accord-watch.sh --target-dir . > /dev/null 2>&1 &`
+   - Report: "Auto-poll watcher started"
+4. Determine the working module from the user's first message.
+5. Announce the working module and directory scope.
+6. Check the inbox at `{{COMMS_DIR}}inbox/{your-module}/` for request files (`.md` files).
+7. For each request file found, read the YAML frontmatter to extract: `id`, `from`, `to`, `scope`, `type`, `priority`, `status`.
+8. Report a summary to the user:
    - Working module and directory scope
    - Number of pending requests (awaiting review)
    - Number of approved requests (ready to implement)
    - Brief details of each request
-8. Check `git log --oneline -10` for recent contract changes.
+9. Check `git log --oneline -10` for recent contract changes.
 
 ---
 
@@ -139,7 +144,7 @@ When the agent needs an API or interface from another module that doesn't exist:
 5. Place the file at `{{COMMS_DIR}}inbox/{target-module}/{request-id}.md`.
 6. Optionally annotate the target contract with `x-accord-status: proposed`.
 7. Run: `git add .accord/ && git commit -m "comms({target}): request - {summary}"`
-8. Multi-repo: `accord-sync.sh push --target-dir .` (syncs request + contract to hub). Monorepo: no push needed.
+8. Multi-repo: `bash .accord/accord-sync.sh push --target-dir .` (syncs request + contract to hub). Monorepo: no push needed.
 9. Inform the user. Do **not** block — continue with mock data or TODO markers.
 
 ### Internal Request (cross-module within same service)
@@ -149,7 +154,7 @@ When the agent needs an API or interface from another module that doesn't exist:
 3. Set `scope: internal` and appropriate `type`.
 4. Place at `{{COMMS_DIR}}inbox/{target-module}/{request-id}.md`.
 5. Run: `git add .accord/ && git commit -m "comms({target-module}): request - {summary}"`
-6. Monorepo: no push needed. Multi-repo: `accord-sync.sh push --target-dir .`.
+6. Monorepo: no push needed. Multi-repo: `bash .accord/accord-sync.sh push --target-dir .`.
 7. Inform the user. Do **not** block.
 
 ---
@@ -186,7 +191,7 @@ When an approved request is found in the inbox:
       - Internal: `{{INTERNAL_CONTRACTS_DIR}}{your-module}.md`
    d. Update the request status to `completed`.
    e. Move the request to the archive directory.
-   f. Commit: `comms({your-module}): completed - {request-id}`. Multi-repo: `accord-sync.sh push --target-dir .`.
+   f. Commit: `comms({your-module}): completed - {request-id}`. Multi-repo: `bash .accord/accord-sync.sh push --target-dir .`.
 4. If the user declines: leave the request as approved.
 
 ---
@@ -201,7 +206,7 @@ Before marking a request as `completed`:
 4. Add a `## Resolution` section to the request file.
 5. Move the request from inbox to archive:
    - `{{COMMS_DIR}}inbox/{module}/` → `{{COMMS_DIR}}archive/`
-6. Commit: `comms({your-module}): completed - {request-id}`. Multi-repo: `accord-sync.sh push --target-dir .` to sync contract and archived request to hub.
+6. Commit: `comms({your-module}): completed - {request-id}`. Multi-repo: `bash .accord/accord-sync.sh push --target-dir .` to sync contract and archived request to hub.
 7. Inform the user.
 
 ---
@@ -244,7 +249,7 @@ When the agent receives a task that may involve multiple modules/services:
    c. Provider fulfills the request asynchronously
 
 4. **Always update contracts and sync to hub after implementation**
-   - Multi-repo: `accord-sync.sh push --target-dir .`
+   - Multi-repo: `bash .accord/accord-sync.sh push --target-dir .`
 
 ---
 

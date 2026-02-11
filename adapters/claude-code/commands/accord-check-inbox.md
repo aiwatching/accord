@@ -5,8 +5,7 @@ Check for incoming Accord requests across all inboxes.
 ## Instructions
 
 1. Check repo model in `.accord/config.yaml`:
-   - Multi-repo: run `git pull` to get latest changes
-   - Multi-repo: if `.accord/hub/` exists, also run `bash ~/.accord/accord-sync.sh pull --target-dir .` to pull from hub
+   - Multi-repo: run `bash .accord/accord-sync.sh pull --target-dir .` to sync contracts and requests from hub
    - Monorepo: requests are already local, no pull needed for comms
 
 2. **Determine your working module** — if not already established, infer from context or ask the user

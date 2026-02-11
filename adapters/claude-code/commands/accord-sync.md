@@ -9,21 +9,21 @@ Sync contracts and requests with the Accord hub repository (multi-repo only).
 
 2. If `.accord/hub/` doesn't exist, run the sync init:
    ```bash
-   bash ~/.accord/accord-sync.sh init --target-dir .
+   bash .accord/accord-sync.sh init --target-dir .
    ```
 
 3. Ask the user: **pull** or **push**?
 
 4. **Pull** (receive from hub):
    ```bash
-   bash ~/.accord/accord-sync.sh pull --target-dir .
+   bash .accord/accord-sync.sh pull --target-dir .
    ```
    - After pull, check inbox for new requests and report findings
    - Note any updated contracts from other services
 
 5. **Push** (send to hub):
    ```bash
-   bash ~/.accord/accord-sync.sh push --target-dir .
+   bash .accord/accord-sync.sh push --target-dir .
    ```
    - Pushes: own contract, outgoing requests, archived requests
    - Report what was synced

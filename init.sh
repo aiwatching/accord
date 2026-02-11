@@ -847,7 +847,7 @@ updated: ${ts}
 
 ## What
 
-Service **${own_svc}** has joined the project. Run \`accord-sync.sh pull\` to fetch the latest contracts.
+Service **${own_svc}** has joined the project. Run \`bash .accord/accord-sync.sh pull --target-dir .\` to fetch the latest contracts.
 
 ## Proposed Change
 
@@ -971,12 +971,12 @@ print_summary() {
         echo ""
         if [[ "$HUB_SYNC_OK" == true ]]; then
             echo "  Hub synced automatically. Other services have been notified."
-            echo "  Use 'accord-sync.sh pull' to check for updates, 'accord-sync.sh push' to publish changes."
+            echo "  Use '.accord/accord-sync.sh pull' to check for updates, '.accord/accord-sync.sh push' to publish changes."
         else
             echo "  Multi-repo setup detected. Hub sync was not completed."
             echo "  To connect to the hub manually:"
-            echo "    accord-sync.sh init --target-dir ."
-            echo "  Then use 'accord-sync.sh pull' and 'accord-sync.sh push' to sync."
+            echo "    bash .accord/accord-sync.sh init --target-dir ."
+            echo "  Then use '.accord/accord-sync.sh pull' and '.accord/accord-sync.sh push' to sync."
         fi
     fi
     echo ""
@@ -1033,6 +1033,14 @@ main() {
     generate_registry
     hub_sync_on_init
     generate_watch_script
+
+    # Copy accord-sync.sh to .accord/ for local use
+    if [[ -f "$ACCORD_DIR/accord-sync.sh" ]]; then
+        cp "$ACCORD_DIR/accord-sync.sh" "$TARGET_DIR/.accord/accord-sync.sh"
+        chmod +x "$TARGET_DIR/.accord/accord-sync.sh"
+        log "Copied accord-sync.sh to .accord/"
+    fi
+
     install_adapter
     run_scan
     print_summary
