@@ -653,6 +653,40 @@ bash "$ACCORD_DIR/accord-sync.sh" pull --target-dir "$TEST9_SVCB" --service-name
 assert_file "$TEST9_SVCB/.accord/comms/inbox/svc-b/req-001-test-sync.md" "Sync: request delivered via hub"
 assert_contains "$TEST9_SVCB/.accord/comms/inbox/svc-b/req-001-test-sync.md" "status: pending" "Sync: request has correct status"
 
+# 9c. Archive-aware pull: completed requests don't re-appear after pull
+# svc-b completes the request → moves to archive → pushes
+mkdir -p "$TEST9_SVCB/.accord/comms/archive"
+cp "$TEST9_SVCB/.accord/comms/inbox/svc-b/req-001-test-sync.md" "$TEST9_SVCB/.accord/comms/archive/req-001-test-sync.md"
+# Update status to completed in archive copy
+sed 's/status: pending/status: completed/' \
+    "$TEST9_SVCB/.accord/comms/archive/req-001-test-sync.md" \
+    > "$TEST9_SVCB/.accord/comms/archive/req-001-test-sync.md.tmp" \
+    && mv "$TEST9_SVCB/.accord/comms/archive/req-001-test-sync.md.tmp" \
+          "$TEST9_SVCB/.accord/comms/archive/req-001-test-sync.md"
+# Remove from inbox (as agent would do)
+rm "$TEST9_SVCB/.accord/comms/inbox/svc-b/req-001-test-sync.md"
+
+# Push archive to hub (should also clean up stale hub inbox copy)
+bash "$ACCORD_DIR/accord-sync.sh" push --target-dir "$TEST9_SVCB" --service-name svc-b > /dev/null 2>&1
+
+# Verify: archived request removed from hub inbox
+if [[ ! -f "$TEST9_SVCB/.accord/hub/comms/inbox/svc-b/req-001-test-sync.md" ]]; then
+    pass "Push cleans up archived request from hub inbox"
+else
+    fail "Stale request still in hub inbox after push"
+fi
+
+# Verify: archive copy exists in hub
+assert_file "$TEST9_SVCB/.accord/hub/comms/archive/req-001-test-sync.md" "Archived request pushed to hub archive"
+
+# Now pull again — archived request must NOT re-appear in local inbox
+bash "$ACCORD_DIR/accord-sync.sh" pull --target-dir "$TEST9_SVCB" --service-name svc-b > /dev/null 2>&1
+if [[ ! -f "$TEST9_SVCB/.accord/comms/inbox/svc-b/req-001-test-sync.md" ]]; then
+    pass "Pull skips archived request (no re-appear)"
+else
+    fail "Archived request re-appeared in inbox after pull"
+fi
+
 # ══════════════════════════════════════════════════════════════════════════════
 # TEST 10: Sync mode — auto-poll creates watch script
 # ══════════════════════════════════════════════════════════════════════════════

@@ -170,17 +170,21 @@ do_pull() {
     local local_inbox="$TARGET_DIR/.accord/comms/inbox/$SERVICE_NAME"
     local new_count=0
 
+    local local_archive="$TARGET_DIR/.accord/comms/archive"
+
     if [[ -d "$hub_inbox" ]]; then
         mkdir -p "$local_inbox"
         for req_file in "$hub_inbox"/req-*.md; do
             [[ ! -f "$req_file" ]] && continue
             local fname
             fname="$(basename "$req_file")"
-            if [[ ! -f "$local_inbox/$fname" ]]; then
-                cp "$req_file" "$local_inbox/$fname"
-                new_count=$((new_count + 1))
-                log "  New request: $fname"
-            fi
+            # Skip if already in local inbox
+            [[ -f "$local_inbox/$fname" ]] && continue
+            # Skip if already archived locally (completed/rejected)
+            [[ -f "$local_archive/$fname" ]] && continue
+            cp "$req_file" "$local_inbox/$fname"
+            new_count=$((new_count + 1))
+            log "  New request: $fname"
         done
     fi
 
@@ -289,7 +293,7 @@ do_push() {
         done
     fi
 
-    # 4. Copy archived requests → hub archive
+    # 4. Copy archived requests → hub archive + clean up stale hub inbox copies
     local local_archive="$TARGET_DIR/.accord/comms/archive"
     if [[ -d "$local_archive" ]]; then
         mkdir -p "$HUB_DIR/comms/archive"
@@ -299,6 +303,12 @@ do_push() {
             fname="$(basename "$f")"
             cp "$f" "$HUB_DIR/comms/archive/$fname"
             changes=$((changes + 1))
+            # Remove stale copy from hub inbox (prevents re-pull of completed requests)
+            local hub_inbox_copy="$HUB_DIR/comms/inbox/$SERVICE_NAME/$fname"
+            if [[ -f "$hub_inbox_copy" ]]; then
+                rm "$hub_inbox_copy"
+                log "  Cleaned up archived request from hub inbox: $fname"
+            fi
         done
     fi
 
