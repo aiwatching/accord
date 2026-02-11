@@ -215,14 +215,15 @@ install_hooks() {
     local settings_file="$settings_dir/settings.json"
     mkdir -p "$settings_dir"
 
-    # Build hooks array based on sync mode
+    # Build hooks object based on sync mode
+    # Claude Code hooks format: {"hooks": {"EventName": [{"matcher": "...", "hooks": [...]}]}}
     local hooks_json=""
     case "$SYNC_MODE" in
         on-action)
-            hooks_json='[{"matcher":"SessionStart","hooks":[{"type":"command","command":"bash .accord/hooks/accord-auto-sync.sh"}]}]'
+            hooks_json='{"SessionStart":[{"hooks":[{"type":"command","command":"bash .accord/hooks/accord-auto-sync.sh"}]}]}'
             ;;
         auto-poll)
-            hooks_json='[{"matcher":"SessionStart","hooks":[{"type":"command","command":"bash .accord/hooks/accord-auto-sync.sh"}]},{"matcher":"Stop","hooks":[{"type":"command","command":"bash .accord/hooks/accord-auto-sync.sh"}]}]'
+            hooks_json='{"SessionStart":[{"hooks":[{"type":"command","command":"bash .accord/hooks/accord-auto-sync.sh"}]}],"Stop":[{"hooks":[{"type":"command","command":"bash .accord/hooks/accord-auto-sync.sh"}]}]}'
             ;;
         manual)
             # No hooks for manual mode

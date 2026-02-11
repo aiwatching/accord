@@ -42,11 +42,11 @@ if [[ ! -f "$SYNC_SCRIPT" ]]; then
 fi
 
 # ── Determine event type ────────────────────────────────────────────────────
-# The hook JSON has a "event" field. Extract it.
+# Claude Code sends hook_event_name in the JSON input.
 EVENT=""
 if [[ -n "$HOOK_INPUT" ]]; then
     # Use python3 for reliable JSON parsing (available on macOS/Linux)
-    EVENT="$(echo "$HOOK_INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('event',''))" 2>/dev/null || true)"
+    EVENT="$(echo "$HOOK_INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('hook_event_name',''))" 2>/dev/null || true)"
 fi
 
 # ── Time-gating for Stop events ─────────────────────────────────────────────
