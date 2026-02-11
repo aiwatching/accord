@@ -248,6 +248,55 @@ else
     fail "Old command files still present after re-install"
 fi
 
+# Hook script installed
+assert_file "$TEST4_DIR/.accord/hooks/accord-auto-sync.sh" "Hook script installed"
+if [[ -x "$TEST4_DIR/.accord/hooks/accord-auto-sync.sh" ]]; then
+    pass "Hook script is executable"
+else
+    fail "Hook script is not executable"
+fi
+
+# .claude/settings.json created with hooks (default sync mode is on-action)
+assert_file "$TEST4_DIR/.claude/settings.json" "settings.json created"
+assert_contains "$TEST4_DIR/.claude/settings.json" "SessionStart" "settings.json has SessionStart hook"
+
+# Claude Code adapter with auto-poll: settings.json has both SessionStart and Stop hooks
+TEST4_POLL_DIR="$TMPDIR/test4-poll"
+mkdir -p "$TEST4_POLL_DIR"
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-adapter-poll" \
+    --repo-model monorepo \
+    --services "svc-a,svc-b" \
+    --adapter claude-code \
+    --sync-mode auto-poll \
+    --target-dir "$TEST4_POLL_DIR" \
+    --no-interactive > /dev/null 2>&1
+
+assert_contains "$TEST4_POLL_DIR/.claude/settings.json" "SessionStart" "auto-poll settings.json has SessionStart hook"
+assert_contains "$TEST4_POLL_DIR/.claude/settings.json" "Stop" "auto-poll settings.json has Stop hook"
+
+# No accord-watch.sh generated for claude-code adapter
+if [[ ! -f "$TEST4_POLL_DIR/.accord/accord-watch.sh" ]]; then
+    pass "No accord-watch.sh for claude-code adapter (hooks replace it)"
+else
+    fail "accord-watch.sh should not be generated for claude-code adapter"
+fi
+
+# Existing settings.json content preserved during merge
+TEST4_MERGE_DIR="$TMPDIR/test4-merge"
+mkdir -p "$TEST4_MERGE_DIR/.claude"
+echo '{"customSetting": true}' > "$TEST4_MERGE_DIR/.claude/settings.json"
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-adapter-merge" \
+    --repo-model monorepo \
+    --services "svc-a" \
+    --adapter claude-code \
+    --target-dir "$TEST4_MERGE_DIR" \
+    --no-interactive > /dev/null 2>&1
+
+assert_contains "$TEST4_MERGE_DIR/.claude/settings.json" "customSetting" "Existing settings.json content preserved"
+assert_contains "$TEST4_MERGE_DIR/.claude/settings.json" "hooks" "Hooks merged into existing settings.json"
+
 # ══════════════════════════════════════════════════════════════════════════════
 # TEST 5: Generic adapter installation
 # ══════════════════════════════════════════════════════════════════════════════
@@ -635,8 +684,12 @@ bash "$ACCORD_DIR/init.sh" \
     --target-dir "$TEST10_DIR" \
     --no-interactive > /dev/null 2>&1
 
-assert_file "$TEST10_DIR/.accord/accord-watch.sh" "Watch script created for auto-poll"
+assert_file "$TEST10_DIR/.accord/accord-watch.sh" "Watch script created for auto-poll (non-claude adapter)"
 assert_contains "$TEST10_DIR/.accord/config.yaml" "auto-poll" "Config has auto-poll sync mode"
+
+# .accord/.gitignore created with .last-sync-pull
+assert_file "$TEST10_DIR/.accord/.gitignore" ".accord/.gitignore created"
+assert_contains "$TEST10_DIR/.accord/.gitignore" ".last-sync-pull" ".gitignore excludes .last-sync-pull"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TEST 11: Debug logging setup

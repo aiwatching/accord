@@ -46,10 +46,8 @@ When a conversation starts:
 1b. Read `.accord/registry/` files to understand module responsibilities and data ownership
 2. If multi-repo: run `bash .accord/accord-sync.sh pull --target-dir .` to sync contracts and requests from hub
    (Do NOT run bare `git pull` for hub sync — the sync script handles all hub communication)
-3. If sync_mode is `auto-poll` in `.accord/config.yaml`:
-   - Check if accord-watch.sh is already running: `pgrep -f "accord-watch.sh" > /dev/null 2>&1`
-   - If not running: start it: `nohup bash .accord/accord-watch.sh --target-dir . > /dev/null 2>&1 &`
-   - Report: "Auto-poll watcher started"
+3. If sync_mode is `auto-poll`: auto-sync is handled by Claude Code hooks (no manual action needed).
+   Periodic hub sync runs automatically after each response cycle (time-gated to every 5 minutes).
 4. Determine your working module from the user's first message
 5. Announce your working module and directory scope
 6. Check your inbox: `{{COMMS_DIR}}inbox/{your-module}/`

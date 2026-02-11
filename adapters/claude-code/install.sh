@@ -188,6 +188,84 @@ install_scanner_skill() {
     done
 }
 
+# ── Hooks (auto-sync via Claude Code native hooks) ─────────────────────────
+
+install_hooks() {
+    local hooks_src="$ADAPTER_DIR/hooks"
+    local hooks_dest="$PROJECT_DIR/.accord/hooks"
+
+    if [[ ! -d "$hooks_src" ]]; then
+        warn "Hooks directory not found at $hooks_src (skipping)"
+        return
+    fi
+
+    # Copy hook script
+    mkdir -p "$hooks_dest"
+    for hook_file in "$hooks_src"/*.sh; do
+        [[ ! -f "$hook_file" ]] && continue
+        local filename
+        filename="$(basename "$hook_file")"
+        cp "$hook_file" "$hooks_dest/$filename"
+        chmod +x "$hooks_dest/$filename"
+        log "Installed hook: $filename"
+    done
+
+    # Generate .claude/settings.json with hooks config
+    local settings_dir="$PROJECT_DIR/.claude"
+    local settings_file="$settings_dir/settings.json"
+    mkdir -p "$settings_dir"
+
+    # Build hooks array based on sync mode
+    local hooks_json=""
+    case "$SYNC_MODE" in
+        on-action)
+            hooks_json='[{"matcher":"SessionStart","hooks":[{"type":"command","command":"bash .accord/hooks/accord-auto-sync.sh"}]}]'
+            ;;
+        auto-poll)
+            hooks_json='[{"matcher":"SessionStart","hooks":[{"type":"command","command":"bash .accord/hooks/accord-auto-sync.sh"}]},{"matcher":"Stop","hooks":[{"type":"command","command":"bash .accord/hooks/accord-auto-sync.sh"}]}]'
+            ;;
+        manual)
+            # No hooks for manual mode
+            return
+            ;;
+    esac
+
+    if [[ -f "$settings_file" ]]; then
+        # Merge hooks into existing settings.json
+        python3 -c "
+import json, sys
+
+with open('$settings_file', 'r') as f:
+    settings = json.load(f)
+
+new_hooks = json.loads('$hooks_json')
+settings['hooks'] = new_hooks
+
+with open('$settings_file', 'w') as f:
+    json.dump(settings, f, indent=2)
+    f.write('\n')
+" 2>/dev/null || {
+            warn "Failed to merge hooks into existing settings.json"
+            return
+        }
+        log "Merged hooks into existing $settings_file"
+    else
+        # Create new settings.json
+        python3 -c "
+import json
+
+settings = {'hooks': json.loads('$hooks_json')}
+with open('$settings_file', 'w') as f:
+    json.dump(settings, f, indent=2)
+    f.write('\n')
+" 2>/dev/null || {
+            warn "Failed to create settings.json"
+            return
+        }
+        log "Created $settings_file with hooks config"
+    fi
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 log "Installing Claude Code adapter for project: $PROJECT_NAME"
@@ -195,6 +273,7 @@ log "Installing Claude Code adapter for project: $PROJECT_NAME"
 inject_claude_md
 install_commands
 install_scanner_skill
+install_hooks
 
 log "Claude Code adapter installation complete"
 log "Slash commands available: /accord-check-inbox, /accord-send-request, /accord-complete-request, /accord-scan, /accord-sync"

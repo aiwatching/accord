@@ -513,6 +513,14 @@ scaffold_project() {
         log "Created .accord/log/ with .gitignore"
     fi
 
+    # .accord/.gitignore (runtime files)
+    if [[ ! -f "$accord_dir/.gitignore" ]]; then
+        echo ".last-sync-pull" > "$accord_dir/.gitignore"
+        log "Created .accord/.gitignore"
+    elif ! grep -q ".last-sync-pull" "$accord_dir/.gitignore" 2>/dev/null; then
+        echo ".last-sync-pull" >> "$accord_dir/.gitignore"
+    fi
+
     # Config (merged project + service)
     generate_config
 }
@@ -586,6 +594,9 @@ PROTO
 
 generate_watch_script() {
     [[ "$SYNC_MODE" != "auto-poll" ]] && return
+
+    # Claude Code adapter uses native hooks instead of accord-watch.sh
+    [[ "$ADAPTER" == "claude-code" ]] && return
 
     local watch_file="$TARGET_DIR/.accord/accord-watch.sh"
 
@@ -954,8 +965,10 @@ print_summary() {
     echo "        ├── inbox/{module}/        — Module inboxes"
     echo "        ├── archive/               — Completed requests"
     echo "        └── PROTOCOL.md / TEMPLATE.md"
-    if [[ "$SYNC_MODE" == "auto-poll" ]]; then
+    if [[ "$SYNC_MODE" == "auto-poll" && "$ADAPTER" != "claude-code" ]]; then
     echo "    .accord/accord-watch.sh         — Background polling"
+    elif [[ "$SYNC_MODE" == "auto-poll" && "$ADAPTER" == "claude-code" ]]; then
+    echo "    .accord/hooks/accord-auto-sync.sh — Auto-sync via Claude Code hooks"
     fi
     echo ""
     echo "  Next steps:"
@@ -966,7 +979,9 @@ print_summary() {
     fi
     echo "    2. git add .accord && git commit -m 'accord: init project'"
     echo "    3. Start your agent — it will check the inbox on start"
-    [[ "$SYNC_MODE" == "auto-poll" ]] && echo "    4. Run: .accord/accord-watch.sh &"
+    if [[ "$SYNC_MODE" == "auto-poll" && "$ADAPTER" != "claude-code" ]]; then
+        echo "    4. Run: .accord/accord-watch.sh &"
+    fi
     if [[ "$REPO_MODEL" == "multi-repo" ]]; then
         echo ""
         if [[ "$HUB_SYNC_OK" == true ]]; then
