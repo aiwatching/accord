@@ -28,3 +28,9 @@ Scan source code and generate Accord contract files.
 - Internal contracts: `.accord/contracts/internal/{module}.md`
 
 All generated contracts are marked as `draft` and require human review.
+
+## After Review
+
+Once the user approves the generated contracts:
+1. `git add .accord/contracts/ && git commit -m "contract({service}): update - scan results"`
+2. Multi-repo only: `bash .accord/accord-sync.sh push --target-dir .` to publish to hub

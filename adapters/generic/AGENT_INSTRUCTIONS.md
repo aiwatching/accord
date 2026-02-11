@@ -264,6 +264,8 @@ When the user asks to generate or update contracts:
 3. Generate contract files with `status: draft`.
 4. Run format validators if available.
 5. Report results to the user. Do **not** auto-commit.
+6. After user approves: `git add .accord/contracts/ && git commit -m "contract({module}): update - scan results"`
+7. Multi-repo only: `bash .accord/accord-sync.sh push --target-dir .` to publish updated contracts to hub
 
 ---
 
