@@ -171,7 +171,7 @@ When serving logs via `accord-log.sh`, a `manifest.json` file is generated in `.
 {
   "files": [
     "2026-02-10T14-30-00_device-manager.jsonl",
-    "2026-02-10T15-00-00_nac-engine.jsonl"
+    "2026-02-10T15-00-00_demo-engine.jsonl"
   ],
   "generated": "2026-02-10T15:30:00Z"
 }

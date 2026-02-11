@@ -12,7 +12,7 @@ Any participating agent MUST be able to perform these operations:
 
 | Capability   | Description                                | Example                         |
 |-------------|--------------------------------------------|---------------------------------|
-| READ_FILE   | Read the contents of a file at a given path | Read `.accord/comms/inbox/nac-engine/req-001.md` |
+| READ_FILE   | Read the contents of a file at a given path | Read `.accord/comms/inbox/demo-engine/req-001.md` |
 | WRITE_FILE  | Create a new file or modify an existing one | Create a request file            |
 | MOVE_FILE   | Move or rename a file to a different path   | Move request to archive          |
 | LIST_DIR    | List the contents of a directory            | List inbox to find new requests  |
@@ -219,9 +219,9 @@ Templates may use the following variables, replaced during `accord init`:
 
 | Variable                      | Description                                  | Example                               |
 |-------------------------------|----------------------------------------------|---------------------------------------|
-| `{{PROJECT_NAME}}`            | Project name from config                     | `next-nac`                            |
+| `{{PROJECT_NAME}}`            | Project name from config                     | `next-demo`                            |
 | `{{SERVICE_NAME}}`             | Service name (used in contract templates only)        | `device-manager`              |
-| `{{SERVICE_LIST}}`             | Comma-separated list of all services         | `frontend,nac-engine,device-manager`  |
+| `{{SERVICE_LIST}}`             | Comma-separated list of all services         | `frontend,demo-engine,device-manager`  |
 | `{{MODULE_LIST}}`             | Comma-separated list of modules (if any)     | `plugin,discovery,lifecycle`          |
 | `{{CONTRACTS_DIR}}`           | Path to external contracts directory         | `.accord/contracts/`                  |
 | `{{INTERNAL_CONTRACTS_DIR}}`  | Path to internal contracts directory         | `.accord/contracts/internal/`         |

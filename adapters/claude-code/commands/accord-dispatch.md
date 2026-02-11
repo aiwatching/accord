@@ -30,7 +30,7 @@ Determine:
 
 Present the plan to the user:
 ```
-Dispatch plan for: "Add device search to nac-admin"
+Dispatch plan for: "Add device search to demo-admin"
 
   Step 1: device-manager (no dependency)
     - Add GET /api/devices/search endpoint
@@ -38,9 +38,9 @@ Dispatch plan for: "Add device search to nac-admin"
     - Params: name (string), type (string), status (enum)
     - Returns: { devices: Device[], total: int }
 
-  Step 2: nac-admin (depends on step 1)
+  Step 2: demo-admin (depends on step 1)
     - Add admin search page/API that calls device-manager search
-    - Update .accord/contracts/nac-admin.yaml if BFF endpoint added
+    - Update .accord/contracts/demo-admin.yaml if BFF endpoint added
 
 Proceed? [y/n]
 ```
@@ -77,7 +77,7 @@ Report to user:
 ```
 Dispatch complete:
   - device-manager: GET /api/devices/search implemented, contract updated
-  - nac-admin: search feature implemented, calls device-manager API
+  - demo-admin: search feature implemented, calls device-manager API
   - Validation: all passed
   - New requests: none (same-session dispatch, no async handoff needed)
 ```

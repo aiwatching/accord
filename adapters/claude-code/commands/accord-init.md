@@ -7,8 +7,8 @@ One-click Accord project setup: scaffold directories, generate contracts from so
 ### Step 1: Gather Project Information
 
 Ask the user for:
-- **Project name** (e.g., `next-nac`)
-- **Service/module names** (comma-separated, e.g., `frontend,nac-engine,device-manager`)
+- **Project name** (e.g., `next-demo`)
+- **Service/module names** (comma-separated, e.g., `frontend,demo-engine,device-manager`)
 - **Repo model**: monorepo or multi-repo? (default: monorepo)
 - **Service with sub-modules?** If yes, ask for service name and module names
 - **Language** for internal contracts: java, python, typescript, go (default: java)

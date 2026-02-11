@@ -309,10 +309,10 @@ Actions: `request`, `approved`, `rejected`, `in-progress`, `completed`, `update`
 ### Examples
 
 ```
-comms(nac-engine): request - add policy-by-type API
+comms(demo-engine): request - add policy-by-type API
 comms(device-manager): approved - req-001
-comms(nac-engine): completed - req-001, contract updated
-contract(nac-engine): update - add policy-by-type endpoint
+comms(demo-engine): completed - req-001, contract updated
+contract(demo-engine): update - add policy-by-type endpoint
 ```
 
 ---

@@ -51,10 +51,10 @@ Format the output as a validation report:
 === Accord Validation Report ===
 
 External Contracts:
-  .accord/contracts/nac-engine.yaml       PASS
+  .accord/contracts/demo-engine.yaml       PASS
   .accord/contracts/device-manager.yaml   PASS
   .accord/contracts/frontend.yaml         PASS
-  .accord/contracts/nac-admin.yaml        PASS
+  .accord/contracts/demo-admin.yaml        PASS
 
 Internal Contracts:
   .accord/contracts/internal/plugin.md      PASS
@@ -62,12 +62,12 @@ Internal Contracts:
   .accord/contracts/internal/lifecycle.md   PASS
 
 Requests:
-  .accord/comms/inbox/nac-admin/req-002-rbac-permissions.md   PASS
+  .accord/comms/inbox/demo-admin/req-002-rbac-permissions.md   PASS
   .accord/comms/archive/req-001-policy-by-type.md             PASS
 
 Cross-references:
-  req-002 → .accord/contracts/nac-admin.yaml   PASS (file exists)
-  nac-admin.yaml proposed → req-002            PASS (request exists)
+  req-002 → .accord/contracts/demo-admin.yaml   PASS (file exists)
+  demo-admin.yaml proposed → req-002            PASS (request exists)
 
 Summary: 10 checked, 10 passed, 0 failed
 ```

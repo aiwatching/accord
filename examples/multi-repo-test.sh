@@ -83,7 +83,7 @@ mkdir -p "$WEB_DIR/src"
 (cd "$WEB_DIR" && git init > /dev/null 2>&1 && git config user.email "test@accord.dev" && git config user.name "Accord Test")
 
 bash "$ACCORD_DIR/init.sh" \
-    --project-name "next-nac" \
+    --project-name "next-demo" \
     --repo-model multi-repo \
     --services "web-server,device-manager" \
     --hub "$HUB_BARE" \
@@ -104,7 +104,7 @@ mkdir -p "$DM_DIR/src"
 
 # device-manager is the first service listed (own service)
 bash "$ACCORD_DIR/init.sh" \
-    --project-name "next-nac" \
+    --project-name "next-demo" \
     --repo-model multi-repo \
     --services "device-manager,web-server" \
     --hub "$HUB_BARE" \

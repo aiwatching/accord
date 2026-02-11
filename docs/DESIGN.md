@@ -168,7 +168,7 @@ Each service has its own repo. A shared **Accord Hub** repo centralizes contract
    accord sync        accord sync      accord sync
         │                  │                │
 ┌───────▼──────┐   ┌──────▼──────┐  ┌──────▼───────┐
-│device-manager│   │ nac-engine  │  │  nac-admin   │
+│device-manager│   │ demo-engine  │  │  demo-admin   │
 │   (own repo) │   │  (own repo) │  │  (own repo)  │
 │              │   │             │  │              │
 │ .accord/     │   │             │  │              │
@@ -229,14 +229,14 @@ The same protocol (request → approve → implement → complete) applies at bo
 ---
 id: req-001-add-policy-api
 from: device-manager
-to: nac-engine
+to: demo-engine
 scope: external
 type: api-addition
 priority: medium
 status: pending
 created: 2026-02-09T10:30:00Z
 updated: 2026-02-09T10:30:00Z
-related_contract: .accord/contracts/nac-engine.yaml
+related_contract: .accord/contracts/demo-engine.yaml
 ---
 
 ## What
@@ -327,10 +327,10 @@ Rules:
 comms({target-module}): {action} - {summary}
 ```
 Examples:
-- `comms(nac-engine): request - add policy-by-type API`
+- `comms(demo-engine): request - add policy-by-type API`
 - `comms(device-manager): approved - req-001`
-- `comms(nac-engine): completed - req-001, contract updated`
-- `contract(nac-engine): update v2 - add policy-by-type endpoint`
+- `comms(demo-engine): completed - req-001, contract updated`
+- `contract(demo-engine): update v2 - add policy-by-type endpoint`
 
 ### Branch Strategy
 - Each module can work on its own branch
@@ -339,31 +339,31 @@ Examples:
 
 ## 8. Workflow Example
 
-### Scenario: device-manager needs nac-engine to add an API
+### Scenario: device-manager needs demo-engine to add an API
 
 **Step 1: device-manager agent creates request**
 ```bash
-# Agent creates: .accord/comms/inbox/nac-engine/req-001-policy-by-type.md
-# Agent updates: .accord/contracts/nac-engine.yaml (marks new endpoint as PROPOSED)
-# Agent commits: "comms(nac-engine): request - add policy-by-type API"
+# Agent creates: .accord/comms/inbox/demo-engine/req-001-policy-by-type.md
+# Agent updates: .accord/contracts/demo-engine.yaml (marks new endpoint as PROPOSED)
+# Agent commits: "comms(demo-engine): request - add policy-by-type API"
 # Monorepo: done — request is immediately visible to other sessions
 # Multi-repo: agent pushes
 ```
 
-**Step 2: nac-engine developer gets notified**
+**Step 2: demo-engine developer gets notified**
 ```bash
-# On next session start, agent checks: .accord/comms/inbox/nac-engine/
+# On next session start, agent checks: .accord/comms/inbox/demo-engine/
 # Agent reports: "You have 1 pending request from device-manager"
 # Developer reviews and approves (changes status to 'approved')
 ```
 
-**Step 3: nac-engine agent implements**
+**Step 3: demo-engine agent implements**
 ```bash
 # Agent reads the approved request
 # Agent implements the endpoint
-# Agent updates .accord/contracts/nac-engine.yaml (removes PROPOSED marker)
+# Agent updates .accord/contracts/demo-engine.yaml (removes PROPOSED marker)
 # Agent moves request to .accord/comms/archive/
-# Agent commits: "comms(nac-engine): completed - req-001, contract updated"
+# Agent commits: "comms(demo-engine): completed - req-001, contract updated"
 # Multi-repo only: agent pushes
 ```
 

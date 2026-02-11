@@ -10,7 +10,7 @@ contract: .accord/contracts/frontend.yaml
 
 ## Responsibility
 
-Web management UI for the NAC system. Renders pages, handles user interactions, and calls backend service APIs.
+Web management UI for the DEMO System. Renders pages, handles user interactions, and calls backend service APIs.
 
 ## Owns (Data / Domain)
 
@@ -27,12 +27,12 @@ Web management UI for the NAC system. Renders pages, handles user interactions, 
 ## Does NOT Own
 
 - Device data → device-manager
-- Policy data → nac-engine
-- User/role data → nac-admin
+- Policy data → demo-engine
+- User/role data → demo-admin
 - Business logic — frontend is a presentation layer only
 
 ## Dependencies
 
 - device-manager: fetch device lists, device details, search
-- nac-engine: fetch policy status, evaluation results
-- nac-admin: fetch user info, role permissions
+- demo-engine: fetch policy status, evaluation results
+- demo-admin: fetch user info, role permissions

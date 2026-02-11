@@ -1046,14 +1046,14 @@ echo -e "\n${BOLD}[Test 16] Example project registry files${NC}"
 EXAMPLE_DIR="$ACCORD_DIR/examples/microservice-project"
 assert_dir "$EXAMPLE_DIR/.accord/registry" "Example project has registry dir"
 assert_file "$EXAMPLE_DIR/.accord/registry/frontend.md" "frontend registry exists"
-assert_file "$EXAMPLE_DIR/.accord/registry/nac-engine.md" "nac-engine registry exists"
+assert_file "$EXAMPLE_DIR/.accord/registry/demo-engine.md" "demo-engine registry exists"
 assert_file "$EXAMPLE_DIR/.accord/registry/device-manager.md" "device-manager registry exists"
-assert_file "$EXAMPLE_DIR/.accord/registry/nac-admin.md" "nac-admin registry exists"
+assert_file "$EXAMPLE_DIR/.accord/registry/demo-admin.md" "demo-admin registry exists"
 
 # Registry files have proper content
 assert_contains "$EXAMPLE_DIR/.accord/registry/frontend.md" "type: service" "frontend registry has type"
 assert_contains "$EXAMPLE_DIR/.accord/registry/device-manager.md" "## Owns" "device-manager has Owns section"
-assert_contains "$EXAMPLE_DIR/.accord/registry/nac-admin.md" "## Does NOT Own" "nac-admin has Does NOT Own section"
+assert_contains "$EXAMPLE_DIR/.accord/registry/demo-admin.md" "## Does NOT Own" "demo-admin has Does NOT Own section"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Summary

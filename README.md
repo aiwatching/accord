@@ -180,7 +180,7 @@ Each service has its own repo. A shared **Accord Hub** repo centralizes contract
                sync push/pull │ sync push/pull
                         │     │      │
               ┌─────────▼┐  ┌─▼──────▼──┐  ┌──────────┐
-              │ device-  │  │ nac-      │  │ nac-     │
+              │ device-  │  │ demo -      │  │ demo -     │
               │ manager  │  │ engine    │  │ admin    │
               └──────────┘  └───────────┘  └──────────┘
 ```
@@ -260,19 +260,19 @@ your-project/
 │   ├── config.yaml                        # Project configuration
 │   ├── contracts/                         # External Contract Registry
 │   │   ├── frontend.yaml                  # OpenAPI spec per service
-│   │   ├── nac-engine.yaml
+│   │   ├── demo-engine.yaml
 │   │   ├── device-manager.yaml
 │   │   └── internal/                      # Internal Contract Registry
 │   │       ├── plugin.md                  # Code-level interface contract
 │   │       └── discovery.md
 │   ├── registry/                          # Module Registry
 │   │   ├── frontend.md                    # Ownership, capabilities, dependencies
-│   │   ├── nac-engine.md
+│   │   ├── demo-engine.md
 │   │   └── device-manager.md
 │   ├── comms/                             # Communication Layer
 │   │   ├── inbox/
 │   │   │   ├── frontend/                  # Service-level inboxes
-│   │   │   ├── nac-engine/
+│   │   │   ├── demo-engine/
 │   │   │   ├── device-manager/
 │   │   │   ├── plugin/                    # Module-level inboxes
 │   │   │   └── discovery/

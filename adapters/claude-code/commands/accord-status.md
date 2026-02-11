@@ -25,8 +25,8 @@ Format as a table:
 ```
 External Contracts:
   Contract                           Status    Endpoints  Proposed
-  .accord/contracts/nac-engine.yaml  stable    4          0
-  .accord/contracts/nac-admin.yaml   stable    3          1 (req-002)
+  .accord/contracts/demo-engine.yaml  stable    4          0
+  .accord/contracts/demo-admin.yaml   stable    3          1 (req-002)
 ```
 
 ### 3. Internal Contracts
@@ -56,7 +56,7 @@ Format as tables grouped by status:
 ```
 Active Requests:
   ID                        From      To        Scope     Status    Priority  Age
-  req-002-rbac-permissions  frontend  nac-admin external  pending   high      1d
+  req-002-rbac-permissions  frontend  demo-admin external  pending   high      1d
 
 Archived Requests:
   ID                        Status     Archived

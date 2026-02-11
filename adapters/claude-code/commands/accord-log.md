@@ -28,7 +28,7 @@ Format as a table:
 Log Files:
   Session                              Module          Entries  Duration
   2026-02-10T14-30-00_device-manager   device-manager  42       12m
-  2026-02-10T15-00-00_nac-engine       nac-engine      18       5m
+  2026-02-10T15-00-00_demo-engine       demo-engine      18       5m
 ```
 
 If no log files exist, report: "No log files found in .accord/log/"

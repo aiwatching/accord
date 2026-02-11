@@ -30,11 +30,11 @@ contract: {{CONTRACT_PATH}}
 
 <!-- List what this module is NOT responsible for, with pointers to the owning module -->
 <!-- Example: -->
-<!-- - Policy evaluation → nac-engine -->
-<!-- - User management → nac-admin -->
+<!-- - Policy evaluation → demo-engine -->
+<!-- - User management → demo-admin -->
 
 ## Dependencies
 
 <!-- List modules this module depends on and why -->
 <!-- Example: -->
-<!-- - nac-engine: query device policies -->
+<!-- - demo-engine: query device policies -->

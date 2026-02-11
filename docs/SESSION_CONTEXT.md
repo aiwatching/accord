@@ -9,7 +9,7 @@ not just WHAT to build, but WHY each decision was made.
 ## Origin Story
 
 The project originated from a real need: developing a large-scale Network Access Control
-(NAC) system (next-nac) with multiple services (nac-admin, nac-engine, device-manager)
+(DEMO) system (next-demo) with multiple services (demo-admin, demo-engine, device-manager)
 and sub-modules within each service. The developer found that a single AI coding agent
 session was insufficient for complex multi-service development because:
 
@@ -60,8 +60,8 @@ Level 0: Project Lead (human orchestrator)
 │   └── QA/Test Service
 │
 ├── Level 1.5: Backend Sub-Services (independent sessions)
-│   ├── nac-admin
-│   ├── nac-engine ──── Accord External Contracts (OpenAPI)
+│   ├── demo-admin
+│   ├── demo-engine ──── Accord External Contracts (OpenAPI)
 │   └── device-manager
 │
 ├── Level 2: Within a Service (Subagents within a session)

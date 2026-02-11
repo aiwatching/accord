@@ -29,10 +29,10 @@ Device discovery, lifecycle management, and plugin orchestration. Manages the fu
 
 ## Does NOT Own
 
-- Policy evaluation → nac-engine
-- User management → nac-admin
+- Policy evaluation → demo-engine
+- User management → demo-admin
 - UI rendering → frontend
 
 ## Dependencies
 
-- nac-engine: notify on device state changes for re-evaluation
+- demo-engine: notify on device state changes for re-evaluation

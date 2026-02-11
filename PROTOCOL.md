@@ -51,13 +51,13 @@ Each service has its own repository. A shared **Accord Hub** repository centrali
 accord-hub/
 ├── contracts/                         # All external contracts
 │   ├── device-manager.yaml
-│   ├── nac-engine.yaml
-│   └── nac-admin.yaml
+│   ├── demo-engine.yaml
+│   └── demo-admin.yaml
 ├── comms/                             # Cross-service communication
 │   ├── inbox/
 │   │   ├── device-manager/
-│   │   ├── nac-engine/
-│   │   └── nac-admin/
+│   │   ├── demo-engine/
+│   │   └── demo-admin/
 │   └── archive/
 └── README.md
 ```
@@ -113,7 +113,7 @@ In multi-repo mode, the local `.accord/` directory is the authoritative write ta
 - `.accord/hub/` is a local clone used for exchange — agents never edit it directly
 
 ### 1.5 Naming Conventions
-- Service/module names: lowercase, hyphenated (e.g., `device-manager`, `nac-engine`)
+- Service/module names: lowercase, hyphenated (e.g., `device-manager`, `demo-engine`)
 - Module names: lowercase, hyphenated (e.g., `plugin`, `discovery`, `lifecycle`)
 - Request IDs: `req-{NNN}-{short-description}` (e.g., `req-001-add-policy-api`)
 - External contract files: `.accord/contracts/{service-name}.yaml`
@@ -237,13 +237,13 @@ Request files are Markdown with YAML frontmatter. Stored in `.accord/comms/inbox
 ---
 id: req-001-add-policy-api
 from: device-manager
-to: nac-engine
+to: demo-engine
 type: api-addition
 priority: medium
 status: pending
 created: 2026-02-09T10:30:00Z
 updated: 2026-02-09T10:30:00Z
-related_contract: .accord/contracts/nac-engine.yaml
+related_contract: .accord/contracts/demo-engine.yaml
 ---
 
 ## What
@@ -428,7 +428,7 @@ All configuration lives in a single file. For monorepo, services and modules are
 ```yaml
 version: "0.1"
 project:
-  name: next-nac
+  name: next-demo
   description: "Next-generation Network Access Control system"
 
 repo_model: monorepo
@@ -436,7 +436,7 @@ repo_model: monorepo
 services:
   - name: frontend
     description: "Web management UI"
-  - name: nac-engine
+  - name: demo-engine
     description: "Policy evaluation and enforcement engine"
   - name: device-manager
     description: "Device discovery, lifecycle, and plugin management"
@@ -450,7 +450,7 @@ services:
       - name: lifecycle
         path: device-manager/lifecycle/
         type: java-interface
-  - name: nac-admin
+  - name: demo-admin
     description: "Administration, RBAC, and audit logging"
 
 settings:

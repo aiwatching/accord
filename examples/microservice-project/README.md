@@ -1,15 +1,15 @@
-# Accord Example: next-nac Microservice Project
+# Accord Example: next-demo Microservice Project
 
-This example demonstrates a realistic Accord setup for a Network Access Control (NAC) system using the **monorepo** model with centralized `.accord/` structure.
+This example demonstrates a realistic Accord setup for a Network Access Control (MAC) system using the **monorepo** model with centralized `.accord/` structure.
 
 ## Services
 
 | Service | Description |
 |------|-------------|
 | `frontend` | Web management UI (BFF pattern) |
-| `nac-engine` | Policy evaluation and enforcement engine |
+| `demo-engine` | Policy evaluation and enforcement engine |
 | `device-manager` | Device discovery, lifecycle, and plugin management |
-| `nac-admin` | Administration, RBAC, and audit logging |
+| `demo-admin` | Administration, RBAC, and audit logging |
 
 ## Sub-Modules (device-manager)
 
@@ -28,10 +28,10 @@ examples/microservice-project/
 ├── .accord/
 │   ├── config.yaml                             # Project config (4 services, modules nested)
 │   ├── contracts/
-│   │   ├── nac-engine.yaml                     # 4 endpoints, stable
+│   │   ├── demo-engine.yaml                     # 4 endpoints, stable
 │   │   ├── device-manager.yaml                 # 3 endpoints, stable
 │   │   ├── frontend.yaml                       # Minimal BFF, stable
-│   │   ├── nac-admin.yaml                      # 3 endpoints, one proposed
+│   │   ├── demo-admin.yaml                      # 3 endpoints, one proposed
 │   │   └── internal/
 │   │       ├── plugin.md                       # PluginRegistry Java interface
 │   │       ├── discovery.md                    # DiscoveryService Java interface
@@ -41,9 +41,9 @@ examples/microservice-project/
 │       ├── TEMPLATE.md                         # Request template
 │       ├── inbox/
 │       │   ├── frontend/                       # (empty)
-│       │   ├── nac-engine/                     # (empty)
+│       │   ├── demo-engine/                     # (empty)
 │       │   ├── device-manager/                 # (empty)
-│       │   ├── nac-admin/
+│       │   ├── demo-admin/
 │       │   │   └── req-002-rbac-permissions.md # Pending request from frontend
 │       │   ├── plugin/                         # (empty)
 │       │   ├── discovery/                      # (empty)
@@ -57,20 +57,20 @@ examples/microservice-project/
 
 This example includes a completed request showing the full lifecycle:
 
-1. **device-manager** needed a "get policies by device type" API from **nac-engine**
-2. Created `req-001-policy-by-type.md` in `.accord/comms/inbox/nac-engine/`
-3. nac-engine service approved and implemented the endpoint
+1. **device-manager** needed a "get policies by device type" API from **demo-engine**
+2. Created `req-001-policy-by-type.md` in `.accord/comms/inbox/demo-engine/`
+3. demo-engine service approved and implemented the endpoint
 4. Request was moved to `.accord/comms/archive/` with status `completed`
-5. The endpoint is now in `.accord/contracts/nac-engine.yaml` (stable, no annotations)
+5. The endpoint is now in `.accord/contracts/demo-engine.yaml` (stable, no annotations)
 
 ## Walkthrough: Pending Request (req-002)
 
 There is also a pending request in progress:
 
-1. **frontend** needs RBAC permission checking from **nac-admin**
-2. Created `req-002-rbac-permissions.md` in `.accord/comms/inbox/nac-admin/`
-3. The proposed endpoint is annotated in `.accord/contracts/nac-admin.yaml` with `x-accord-status: proposed`
-4. Waiting for nac-admin service to review and approve
+1. **frontend** needs RBAC permission checking from **demo-admin**
+2. Created `req-002-rbac-permissions.md` in `.accord/comms/inbox/demo-admin/`
+3. The proposed endpoint is annotated in `.accord/contracts/demo-admin.yaml` with `x-accord-status: proposed`
+4. Waiting for demo-admin service to review and approve
 
 ## How to Use This Example
 
