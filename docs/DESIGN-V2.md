@@ -55,7 +55,7 @@ completion through a new entity called a **directive**.
                                  │
                     ┌────────────▼────────────┐
                     │      Orchestrator        │
-                    │  (Claude Code on hub)    │
+                    │  (agent on hub repo)     │
                     │                          │
                     │  - Reads all registries  │
                     │  - Reads all contracts   │
@@ -211,14 +211,17 @@ The `## Decomposition` table is populated by the orchestrator after analyzing th
 ### 5.3 Directive Lifecycle
 
 ```
-┌─────────┐     Orchestrator decomposes     ┌──────────────┐
-│ pending  │ ──────────────────────────────► │ in-progress  │
-└─────────┘     and dispatches requests      └──────┬───────┘
-                                                    │
-                                       ┌────────────┴────────────┐
-                                       ▼                         ▼
-                              ┌─────────────┐          ┌──────────┐
-                              │  completed   │          │  failed   │
+                                                          re-decompose
+                                                    ┌─────────────────────┐
+                                                    │                     │
+┌─────────┐     Orchestrator decomposes     ┌───────▼──────┐             │
+│ pending  │ ──────────────────────────────► │ in-progress  │             │
+└─────────┘     and dispatches requests      └──────┬───────┘             │
+                                                    │                     │
+                                       ┌────────────┴────────────┐       │
+                                       ▼                         ▼       │
+                              ┌─────────────┐          ┌──────────┐      │
+                              │  completed   │          │  failed   │─────┘
                               └─────────────┘          └──────────┘
                            all requests completed    one or more rejected
                                                      or unresolvable
@@ -229,22 +232,31 @@ The `## Decomposition` table is populated by the orchestrator after analyzing th
 - **completed**: All spawned requests are completed
 - **failed**: One or more requests were rejected or cannot be fulfilled
 
+**Re-decomposition**: When a directive reaches `failed` (e.g., a request was rejected because
+the orchestrator routed to the wrong service), the orchestrator can transition it back to
+`pending`, clear the stale requests list, re-analyze, and re-decompose. This handles the
+common case where a rejection reveals a decomposition error rather than a true failure.
+The previous requests remain in the archive for audit purposes.
+
 The orchestrator monitors request statuses and updates the directive automatically.
 
 ---
 
 ## 6. Request Extension
 
-v2 adds one optional field to the request frontmatter:
+v2 adds optional fields to the request frontmatter:
 
 ```yaml
-directive: dir-001-add-oauth
+directive: dir-001-add-oauth       # Links to parent directive
+on_behalf_of: project-lead         # Business stakeholder (orchestrator-initiated)
+routed_by: orchestrator            # Set when orchestrator re-routes an escalated request
+originated_from: req-201           # Original escalated request ID
 ```
 
-This field is **backward-compatible** — v1 services that don't understand it simply ignore it.
-The orchestrator uses it to link requests back to their parent directive for tracking.
+All fields are **backward-compatible** — v1 services that don't understand them simply ignore
+unknown frontmatter fields. The orchestrator uses them for tracking and attribution.
 
-**Extended request example:**
+**Orchestrator-initiated request example:**
 
 ```yaml
 ---
@@ -259,6 +271,7 @@ created: 2026-02-10T10:05:00Z
 updated: 2026-02-10T10:05:00Z
 related_contract: contracts/demo-engine.yaml
 directive: dir-001-add-oauth
+on_behalf_of: project-lead
 ---
 
 ## What
@@ -267,6 +280,10 @@ Add OAuth2 Bearer token validation to all /api/* endpoints.
 ## Proposed Change
 ...
 ```
+
+The `on_behalf_of` field tells demo-engine **who** needs this change (the project lead's
+OAuth requirement), not just that the orchestrator dispatched it. For service-escalated
+requests, `from` already reflects the actual requester, so `on_behalf_of` is not needed.
 
 **Service-escalated request (to orchestrator):**
 
@@ -302,13 +319,12 @@ new directories:
 
 ```
 accord-hub/                              ← git repo root
-├── CLAUDE.md                            ← Orchestrator instructions (NEW)
-├── .claude/
-│   └── commands/                        ← Orchestrator slash commands (NEW)
-│       ├── decompose.md
-│       ├── dispatch.md
-│       ├── monitor.md
-│       └── route.md
+├── ORCHESTRATOR.md                      ← Orchestrator instructions (NEW)
+├── commands/                            ← Orchestrator command definitions (NEW)
+│   ├── decompose.md
+│   ├── dispatch.md
+│   ├── monitor.md
+│   └── route.md
 ├── config.yaml                          ← Hub-level config (NEW)
 ├── registry/                            ← Master copy of all registries (NEW)
 │   ├── frontend.md
@@ -340,12 +356,13 @@ accord-hub/                              ← git repo root
     │   └── device-manager/
     ├── archive/                         ← Permanent archive (EXISTING, never purge)
     └── history/                         ← State transition audit log (NEW)
-        └── 2026-02-10.jsonl
+        ├── 2026-02-10-demo-engine.jsonl
+        └── 2026-02-10-orchestrator.jsonl
 ```
 
 **What's new at root level:**
-- `CLAUDE.md` — orchestrator agent instructions
-- `.claude/commands/` — orchestrator slash commands
+- `ORCHESTRATOR.md` — orchestrator agent instructions
+- `commands/` — orchestrator command definitions
 - `config.yaml` — hub-level configuration
 - `directives/` — high-level requirement files
 - `registry/` — master copy of all service/module registries
@@ -362,7 +379,9 @@ Everything else already exists in the v1 hub structure.
 
 ### 8.1 What It Is
 
-The orchestrator is a **Claude Code session running on the hub repo**. It has:
+The orchestrator is an **agent session (any AI coding agent or human) running on the hub
+repo**. Like all Accord participants, it only needs the standard capabilities (READ_FILE,
+WRITE_FILE, MOVE_FILE, LIST_DIR, RUN_COMMAND). It has:
 - Read access to all registries (who owns what)
 - Read access to all contracts (what APIs exist)
 - Read/write access to all inboxes (to dispatch and receive)
@@ -370,9 +389,34 @@ The orchestrator is a **Claude Code session running on the hub repo**. It has:
 
 It does NOT have access to service source code. It works entirely through the protocol.
 
-### 8.2 Behaviors
+### 8.2 Session Model: On-Demand + State on Disk
 
-The orchestrator follows four behaviors, injected via its `CLAUDE.md`:
+The orchestrator runs **on-demand, not always-on**. Each invocation:
+
+1. Starts a fresh session (any AI agent, a CLI script, or a human)
+2. Reads all state from disk: `config.yaml`, `registry/*.md`, `directives/*.md`, `comms/inbox/orchestrator/`
+3. Performs its action (decompose, route, or monitor)
+4. Writes results to disk (updated directives, new requests in inboxes, history entries)
+5. Commits, pushes, and exits
+
+All orchestrator state is persisted in files — directives, request statuses, decomposition
+tables. No session memory is needed between invocations. This means:
+- **Zero token cost when idle** — no long-running session burning context
+- **No context window pressure** — each invocation starts fresh, reads only what it needs
+- **Crash-safe** — if a session dies, restart and re-read file state
+- **Automatable** — `accord-scheduler.sh` can trigger the orchestrator on the same
+  interval-based or on-demand model it uses for services
+
+The orchestrator can be implemented with any agent or tool:
+- An **interactive AI agent session** on the hub repo (human-in-the-loop)
+- A **scheduled script** using any agent's headless/CLI mode (automated, periodic)
+- A **custom program** using an AI SDK (programmatic, CI/CD-integrated — see Section 15)
+- A **human** manually reading directives and creating request files
+
+### 8.3 Behaviors
+
+The orchestrator follows four behaviors, injected via `ORCHESTRATOR.md` (or the equivalent
+adapter instruction file for the chosen agent):
 
 | Behavior | Trigger | Action |
 |----------|---------|--------|
@@ -381,7 +425,7 @@ The orchestrator follows four behaviors, injected via its `CLAUDE.md`:
 | **ON_ROUTE** | New request in `comms/inbox/orchestrator/` | Read escalated request, consult registries to determine correct target, create new request in target service inbox with attribution, optionally link to existing directive |
 | **ON_MONITOR** | Periodic or on-demand | Scan all service inboxes and archive for requests linked to active directives, update directive decomposition table and status, report progress |
 
-### 8.3 Orchestrator Config
+### 8.4 Orchestrator Config
 
 The hub's `config.yaml` identifies this repo as the orchestrator:
 
@@ -428,14 +472,25 @@ including their final state and any rejection reasons.
 
 ### 9.2 History Log (New)
 
-The `comms/history/` directory contains append-only JSONL files — one per day:
+The `comms/history/` directory contains append-only JSONL files. Each file is scoped to a
+single actor (service or orchestrator) and date, preventing Git merge conflicts:
 
 ```
 comms/history/
-├── 2026-02-10.jsonl
-├── 2026-02-11.jsonl
+├── 2026-02-10-demo-engine.jsonl
+├── 2026-02-10-frontend.jsonl
+├── 2026-02-10-orchestrator.jsonl
+├── 2026-02-11-demo-engine.jsonl
 └── ...
 ```
+
+**File naming**: `{YYYY-MM-DD}-{actor}.jsonl`
+
+**Who writes**: Each actor appends to its own file when it performs a state transition.
+Services write when they approve, reject, start, or complete a request. The orchestrator
+writes when it decomposes a directive, routes a request, or updates a directive status.
+Because each actor writes to a separate file, concurrent pushes from different services
+never conflict.
 
 Each line records a single state transition:
 
@@ -456,6 +511,9 @@ Each line records a single state transition:
 | `to_status` | Yes | New status |
 | `actor` | Yes | Service/module that performed the transition |
 | `detail` | No | Human-readable description |
+
+To reconstruct a full timeline, the orchestrator (or a dashboard) merges all JSONL files,
+sorts by `ts`, and filters by `directive_id` or `request_id`.
 
 ### 9.3 Traceability Chain
 
@@ -492,7 +550,7 @@ accord-scheduler.sh [--mode auto|manual] [--interval 300]
 
 | Mode | Behavior |
 |------|----------|
-| `auto` | Loop: pull from hub → check inbox → if pending requests exist, run `claude -p "process inbox"` → push results → sleep interval |
+| `auto` | Loop: pull from hub → check inbox → if pending requests exist, invoke agent in headless mode to process inbox → push results → sleep interval |
 | `manual` | Pull from hub → check inbox → print status → exit (human decides what to do) |
 
 ### 10.2 End-to-End Sequence
@@ -667,15 +725,16 @@ is transparent to services — they just see normal requests in their inbox.
 
 ### 12.3 Request Format
 
-One new optional field:
+New optional fields:
 
 ```yaml
 directive: dir-001-add-oauth     # Optional. Links request to parent directive.
+on_behalf_of: project-lead       # Optional. Business stakeholder (orchestrator-initiated).
 routed_by: orchestrator           # Optional. Set when orchestrator re-routes.
 originated_from: req-201          # Optional. Original escalated request ID.
 ```
 
-All three are optional and backward-compatible. v1 services ignore unknown frontmatter fields.
+All four are optional and backward-compatible. v1 services ignore unknown frontmatter fields.
 
 ---
 
@@ -711,13 +770,36 @@ Always-on agents are expensive (token costs) and unnecessary. Most requests can 
 or hours for processing. A lightweight scheduler that checks periodically is more practical.
 The `manual` mode preserves full human control for teams that want it.
 
+### Why on-demand orchestrator, not always-on?
+
+An always-on session burns tokens continuously and hits context window limits when tracking
+many directives. The on-demand model (start → read file state → act → exit) has zero idle
+cost. All orchestrator state is already on disk (directives, requests, history), so no session
+memory is needed between invocations. This is the same model as v1 service sessions — agents
+start, check inbox, do work, exit.
+
+### Why per-actor history files?
+
+Two services pushing concurrently would both append to the same JSONL file, causing Git merge
+conflicts at the file tail. Per-actor files (`2026-02-10-demo-engine.jsonl`,
+`2026-02-10-frontend.jsonl`) eliminate this: each service writes only to its own file.
+The orchestrator merges all files when it needs a unified timeline.
+
 ### Why JSONL for history?
 
-- Append-only: safe for concurrent writes (each push appends lines)
-- One file per day: easy to manage, easy to grep
+- Append-only within each actor's file: no edit conflicts
 - Machine-readable: tools can parse and visualize
 - Human-readable: each line is self-contained JSON
 - Git-friendly: appending lines produces clean diffs
+- Per-actor + per-day partitioning: easy to manage, easy to grep
+
+### Why `on_behalf_of` for orchestrator-initiated requests?
+
+When demo-engine receives `from: orchestrator`, it knows the orchestrator dispatched it but
+not **why** or for **whom**. The `on_behalf_of` field provides business context (e.g.,
+"project-lead" or "quarterly-roadmap") so the receiving service understands the stakeholder.
+For service-escalated requests, `from` already identifies the real requester, so
+`on_behalf_of` is not needed.
 
 ### Why `routed_by` and `originated_from` instead of modifying `from`?
 
@@ -741,15 +823,33 @@ v2 is fully backward-compatible at the service level:
 
 To enable v2, add to the existing hub:
 
-1. `CLAUDE.md` — orchestrator instructions (new file)
-2. `.claude/commands/` — orchestrator slash commands (new directory)
+1. `ORCHESTRATOR.md` — orchestrator instructions (new file)
+2. `commands/` — orchestrator command definitions (new directory)
 3. `config.yaml` — hub config with `role: orchestrator` (new file)
-4. `registry/` — copy registry files from services (new directory, or populated via sync)
+4. `registry/` — master registry files (new directory, populated via registry sync)
 5. `directives/` — create empty directory (new)
 6. `comms/inbox/orchestrator/` — create empty directory (new)
 7. `comms/history/` — create empty directory (new)
 
 No existing hub files are modified or moved.
+
+### Registry Sync (Multi-Repo)
+
+In v1, `accord sync push` copies contracts and comms to the hub. v2 extends this to also
+push registry files:
+
+```
+.accord/registry/device-manager.md     (service's registry)
+        ↓  accord sync push
+accord-hub/registry/device-manager.md  (hub master copy)
+```
+
+This keeps the hub's `registry/` directory up to date automatically. When a service updates
+its registry (e.g., adds a new capability), the next `accord sync push` propagates the
+change to the hub, where the orchestrator can read it.
+
+In monorepo mode, registries are already centralized under `.accord/registry/` — no sync
+needed.
 
 ---
 
@@ -776,3 +876,13 @@ These are out of scope for the initial v2 but follow naturally from this archite
 
 - **Cost tracking**: Track token usage per directive by logging agent invocation costs
   alongside state transitions in the history log.
+
+- **Programmatic orchestrator**: Implement the orchestrator as a standalone program using
+  any AI agent SDK (Claude Agent SDK, OpenAI Agents SDK, LangChain, etc.). ON_DIRECTIVE,
+  ON_ROUTE, ON_MONITOR become API calls, making the orchestrator CI/CD-native and easier
+  to automate than interactive agent sessions.
+
+- **Human review gate**: Add a `require_human_review` config option. When enabled, the
+  agent creates a feature branch and PR after implementing a request, and the request stays
+  `in-progress` until the PR is merged. Only then does the agent mark it `completed`. This
+  adds code review to the approval → implementation → completion flow.
