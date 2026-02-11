@@ -258,7 +258,8 @@ interactive_prompt() {
             read -r -p "  Services (edit or Enter to confirm) [$detected_services]: " input
             SERVICES="${input:-$detected_services}"
         else
-            read -r -p "  Service names (comma-separated): " SERVICES
+            read -r -p "  Service names (comma-separated) [$PROJECT_NAME]: " input
+            SERVICES="${input:-$PROJECT_NAME}"
         fi
     fi
     [[ -z "$SERVICES" ]] && err "At least one service is required"
@@ -822,9 +823,10 @@ hub_sync_on_init() {
         fi
     done
 
-    # c. Push: copy own contract → hub (skip if still a template)
+    # c. Push: copy own contract → hub (always push, even if template —
+    #    other services need to know this service exists)
     local own_contract="$TARGET_DIR/.accord/contracts/${own_svc}.yaml"
-    if [[ -f "$own_contract" ]] && ! grep -q "^# Accord External Contract Template" "$own_contract" 2>/dev/null; then
+    if [[ -f "$own_contract" ]]; then
         mkdir -p "$hub_dir/contracts"
         cp "$own_contract" "$hub_dir/contracts/${own_svc}.yaml"
     fi
@@ -1018,6 +1020,7 @@ main() {
         [[ -z "$PROJECT_NAME" ]] && PROJECT_NAME="$(detect_project_name "$TARGET_DIR")"
         [[ -z "$ADAPTER" ]] && ADAPTER="$(detect_adapter "$TARGET_DIR")"
         [[ -z "$SERVICES" ]] && SERVICES="$(list_subdirs "$TARGET_DIR")"
+        [[ -z "$SERVICES" ]] && SERVICES="$PROJECT_NAME"
         LANGUAGE="$(detect_language "$TARGET_DIR")"
 
         if [[ -z "$SERVICE" && -n "$SERVICES" ]]; then

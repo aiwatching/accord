@@ -435,7 +435,7 @@ Logs can be viewed via `/accord-log` command, the CLI tool `accord-log.sh`, or b
 
 **Init idempotency**: Running `init.sh` twice safely exits with "Already initialized" on the second run. Use `--force` to re-initialize — existing contracts and registry files are preserved (file-exists checks prevent overwriting).
 
-**Template protection**: Contract files generated from templates (detected by the `# Accord External Contract Template` header) are not pushed to hub. Real contracts from hub are not overwritten by templates during pull.
+**Template protection (pull-side only)**: On init, own contracts are always pushed to hub — even templates — so other services can see the service exists. On pull, real local contracts are not overwritten by templates from hub (detected by the `# Accord External Contract Template` header).
 
 **Push retry**: `accord-sync.sh push` auto-retries with rebase on conflict (up to 3 attempts), handling the common case of concurrent pushes from different services.
 

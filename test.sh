@@ -573,16 +573,8 @@ bash "$ACCORD_DIR/init.sh" \
 # Verify auto-clone
 assert_dir "$TEST9_SVCA/.accord/hub/.git" "Init auto-clones hub"
 
-# Own contract is a template — NOT pushed to hub (template protection)
-if [[ ! -f "$TEST9_SVCA/.accord/hub/contracts/svc-a.yaml" ]]; then
-    pass "Template contract not pushed to hub (expected)"
-else
-    if grep -q "^# Accord External Contract Template" "$TEST9_SVCA/.accord/hub/contracts/svc-a.yaml" 2>/dev/null; then
-        fail "Template contract should not be pushed to hub"
-    else
-        pass "Real contract pushed to hub"
-    fi
-fi
+# Own contract pushed to hub (even if template — other services need to see it)
+assert_file "$TEST9_SVCA/.accord/hub/contracts/svc-a.yaml" "Own contract pushed to hub on init"
 
 # Verify service-joined notification in svc-b's inbox on hub
 assert_file "$TEST9_SVCA/.accord/hub/comms/inbox/svc-b/req-000-service-joined-svc-a.md" \
@@ -610,17 +602,11 @@ bash "$ACCORD_DIR/init.sh" \
     --target-dir "$TEST9_SVCB" \
     --no-interactive > /dev/null 2>&1
 
-# svc-a only had a template contract, so nothing real to pull for svc-b
-# Just verify svc-b's own template contract is also NOT pushed to hub (template protection)
-if [[ ! -f "$TEST9_SVCB/.accord/hub/contracts/svc-b.yaml" ]]; then
-    pass "svc-b template contract not pushed to hub (expected)"
-else
-    if grep -q "^# Accord External Contract Template" "$TEST9_SVCB/.accord/hub/contracts/svc-b.yaml" 2>/dev/null; then
-        fail "svc-b template contract should not be pushed to hub"
-    else
-        pass "svc-b real contract pushed to hub"
-    fi
-fi
+# svc-b's own contract pushed to hub
+assert_file "$TEST9_SVCB/.accord/hub/contracts/svc-b.yaml" "svc-b contract pushed to hub on init"
+
+# svc-b pulled svc-a's contract from hub
+assert_file "$TEST9_SVCB/.accord/contracts/svc-a.yaml" "svc-b pulled svc-a's contract from hub"
 
 # Manual push/pull still works after auto-sync
 (cd "$TEST9_SVCA" && git add -A && git commit -m "init" > /dev/null 2>&1) || true
@@ -907,17 +893,8 @@ bash "$ACCORD_DIR/init.sh" \
     --target-dir "$TEST14_SVC" \
     --no-interactive > /dev/null 2>&1
 
-# svc-a's contract is a template — verify it was NOT pushed to hub
-# (The template has "# Accord External Contract Template" as first line)
-if [[ -f "$TEST14_SVC/.accord/hub/contracts/svc-a.yaml" ]]; then
-    if grep -q "^# Accord External Contract Template" "$TEST14_SVC/.accord/hub/contracts/svc-a.yaml" 2>/dev/null; then
-        fail "Template contract should not be pushed to hub"
-    else
-        pass "Real contract pushed to hub (not a template)"
-    fi
-else
-    pass "Template contract not pushed to hub (file absent)"
-fi
+# svc-a's contract pushed to hub on init (even if template — visibility first)
+assert_file "$TEST14_SVC/.accord/hub/contracts/svc-a.yaml" "Own contract pushed to hub on init"
 
 # Now simulate svc-b having a real contract on hub and verify it's NOT overwritten by a template
 # Write a real contract to hub
