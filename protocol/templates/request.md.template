@@ -38,6 +38,16 @@ related_contract: {{RELATED_CONTRACT_PATH}}
   # Optional. Path to the related contract file.
   # External: .accord/contracts/{service-name}.yaml
   # Internal: .accord/contracts/internal/{module-name}.md
+
+# --- v2 fields (optional, backward-compatible) ---
+# directive: dir-NNN-description
+#   # Links to parent directive (orchestrator tracking)
+# on_behalf_of: stakeholder-name
+#   # Business stakeholder (for orchestrator-initiated requests)
+# routed_by: orchestrator
+#   # Set when orchestrator re-routes an escalated request
+# originated_from: req-NNN-description
+#   # Original escalated request ID (when re-routed)
 ---
 
 ## What

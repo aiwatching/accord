@@ -1056,6 +1056,386 @@ assert_contains "$EXAMPLE_DIR/.accord/registry/device-manager.md" "## Owns" "dev
 assert_contains "$EXAMPLE_DIR/.accord/registry/demo-admin.md" "## Does NOT Own" "demo-admin has Does NOT Own section"
 
 # ══════════════════════════════════════════════════════════════════════════════
+# TEST 17: Orchestrator init (v2)
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 17] Orchestrator init (v2)${NC}"
+
+TEST17_DIR="$TMPDIR/test17"
+mkdir -p "$TEST17_DIR"
+
+bash "$ACCORD_DIR/init.sh" \
+    --role orchestrator \
+    --project-name "test-hub" \
+    --services "frontend,demo-engine,device-manager" \
+    --adapter none \
+    --target-dir "$TEST17_DIR" \
+    --no-interactive > /dev/null 2>&1
+
+# Flat structure (no .accord/ prefix)
+assert_file "$TEST17_DIR/config.yaml"                         "Orchestrator config.yaml (flat)"
+assert_dir  "$TEST17_DIR/directives"                          "Directives directory created"
+assert_dir  "$TEST17_DIR/registry"                            "Registry directory created"
+assert_dir  "$TEST17_DIR/contracts"                           "Contracts directory created"
+assert_dir  "$TEST17_DIR/comms/inbox/orchestrator"            "Orchestrator inbox created"
+assert_dir  "$TEST17_DIR/comms/inbox/frontend"                "Service inbox: frontend"
+assert_dir  "$TEST17_DIR/comms/inbox/demo-engine"             "Service inbox: demo-engine"
+assert_dir  "$TEST17_DIR/comms/inbox/device-manager"          "Service inbox: device-manager"
+assert_dir  "$TEST17_DIR/comms/archive"                       "Archive directory created"
+assert_dir  "$TEST17_DIR/comms/history"                       "History directory created"
+assert_file "$TEST17_DIR/comms/PROTOCOL.md"                   "Comms PROTOCOL.md created"
+assert_file "$TEST17_DIR/comms/TEMPLATE.md"                   "Comms TEMPLATE.md created"
+
+# Config content
+assert_contains "$TEST17_DIR/config.yaml" "role: orchestrator"  "Config has role: orchestrator"
+assert_contains "$TEST17_DIR/config.yaml" 'version: "0.2"'     "Config has version 0.2"
+assert_contains "$TEST17_DIR/config.yaml" "history_enabled: true" "Config has history_enabled"
+assert_contains "$TEST17_DIR/config.yaml" "frontend"            "Config lists frontend service"
+assert_contains "$TEST17_DIR/config.yaml" "demo-engine"         "Config lists demo-engine service"
+
+# Protocol helpers copied
+assert_file "$TEST17_DIR/protocol/history/write-history.sh"     "write-history.sh copied to hub"
+assert_file "$TEST17_DIR/protocol/templates/directive.md.template" "Directive template copied to hub"
+
+# Idempotency
+reinit_orch_output=$(bash "$ACCORD_DIR/init.sh" \
+    --role orchestrator \
+    --project-name "test-hub" \
+    --services "frontend,demo-engine,device-manager" \
+    --adapter none \
+    --target-dir "$TEST17_DIR" \
+    --no-interactive 2>&1)
+
+if echo "$reinit_orch_output" | grep -q "Already initialized"; then
+    pass "Orchestrator re-init exits with 'Already initialized'"
+else
+    fail "Orchestrator re-init should show 'Already initialized'"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 18: Orchestrator with Claude Code adapter (v2)
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 18] Orchestrator Claude Code adapter (v2)${NC}"
+
+TEST18_DIR="$TMPDIR/test18"
+mkdir -p "$TEST18_DIR"
+
+bash "$ACCORD_DIR/init.sh" \
+    --role orchestrator \
+    --project-name "test-orch-adapter" \
+    --services "svc-a,svc-b,svc-c" \
+    --adapter claude-code \
+    --target-dir "$TEST18_DIR" \
+    --no-interactive > /dev/null 2>&1
+
+assert_file "$TEST18_DIR/CLAUDE.md"                                     "Orchestrator CLAUDE.md created"
+assert_file "$TEST18_DIR/.claude/commands/accord-decompose.md"          "accord-decompose command installed"
+assert_file "$TEST18_DIR/.claude/commands/accord-route.md"              "accord-route command installed"
+assert_file "$TEST18_DIR/.claude/commands/accord-monitor.md"            "accord-monitor command installed"
+assert_file "$TEST18_DIR/.claude/commands/accord-check-inbox.md"        "accord-check-inbox command installed"
+
+# Check variable substitution
+assert_contains "$TEST18_DIR/CLAUDE.md" "test-orch-adapter"    "CLAUDE.md has project name"
+assert_contains "$TEST18_DIR/CLAUDE.md" "svc-a"               "CLAUDE.md has service name"
+assert_not_contains "$TEST18_DIR/CLAUDE.md" "{{PROJECT_NAME}}" "No unresolved vars in CLAUDE.md"
+assert_contains "$TEST18_DIR/CLAUDE.md" "ACCORD START"          "Has ACCORD START marker"
+assert_contains "$TEST18_DIR/CLAUDE.md" "orchestrator"          "CLAUDE.md mentions orchestrator role"
+
+# No unresolved template variables in command files
+unresolved_orch_cmds=0
+for cmd_file in "$TEST18_DIR"/.claude/commands/accord-*.md; do
+    if grep -q '{{' "$cmd_file" 2>/dev/null; then
+        unresolved_orch_cmds=$((unresolved_orch_cmds + 1))
+    fi
+done
+if [[ "$unresolved_orch_cmds" -eq 0 ]]; then
+    pass "No unresolved {{VAR}} in orchestrator command files"
+else
+    fail "$unresolved_orch_cmds orchestrator command file(s) have unresolved {{VAR}}"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 19: Directive template and validator (v2)
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 19] Directive template and validator (v2)${NC}"
+
+# Create a valid directive from template
+DIRECTIVE_FILE="$TMPDIR/test-directive.md"
+cp "$ACCORD_DIR/protocol/templates/directive.md.template" "$DIRECTIVE_FILE"
+sed 's/{{DIRECTIVE_NUMBER}}/001/g; s/{{SHORT_DESCRIPTION}}/test-feature/g; s/{{TITLE}}/Test Feature/g; s/{{PRIORITY}}/high/g; s/{{CREATED_TIMESTAMP}}/2026-02-11T10:00:00Z/g; s/{{REQUIREMENT}}/Need a test feature./g; s/{{ACCEPTANCE_CRITERIA}}/Feature works./g' \
+    "$DIRECTIVE_FILE" > "$DIRECTIVE_FILE.tmp" && mv "$DIRECTIVE_FILE.tmp" "$DIRECTIVE_FILE"
+
+assert_validator "$ACCORD_DIR/protocol/scan/validators/validate-directive.sh" \
+    "$DIRECTIVE_FILE" "Valid directive passes validation"
+
+# Test with invalid status
+DIRECTIVE_BAD="$TMPDIR/test-directive-bad.md"
+cat > "$DIRECTIVE_BAD" <<'EOF'
+---
+id: dir-002-bad
+title: Bad Directive
+priority: high
+status: invalid-status
+created: 2026-02-11T10:00:00Z
+updated: 2026-02-11T10:00:00Z
+requests: []
+---
+
+## Requirement
+
+Something.
+EOF
+
+if ! bash "$ACCORD_DIR/protocol/scan/validators/validate-directive.sh" "$DIRECTIVE_BAD" > /dev/null 2>&1; then
+    pass "Directive validator rejects invalid status"
+else
+    fail "Directive validator should have rejected invalid status"
+fi
+
+# Test missing required fields
+DIRECTIVE_MISSING="$TMPDIR/test-directive-missing.md"
+cat > "$DIRECTIVE_MISSING" <<'EOF'
+---
+id: dir-003-missing
+title: Missing Fields
+---
+
+## Requirement
+
+Something.
+EOF
+
+if ! bash "$ACCORD_DIR/protocol/scan/validators/validate-directive.sh" "$DIRECTIVE_MISSING" > /dev/null 2>&1; then
+    pass "Directive validator rejects missing fields"
+else
+    fail "Directive validator should have rejected missing fields"
+fi
+
+# Validate example directive
+assert_validator "$ACCORD_DIR/protocol/scan/validators/validate-directive.sh" \
+    "$ACCORD_DIR/examples/multi-repo-project/hub/.accord/directives/dir-001-device-reboot.md" \
+    "Example directive passes validation"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 20: History write helper (v2)
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 20] History write helper (v2)${NC}"
+
+TEST20_HIST="$TMPDIR/test20-history"
+
+# Write a history entry
+bash "$ACCORD_DIR/protocol/history/write-history.sh" \
+    --history-dir "$TEST20_HIST" \
+    --request-id "req-001-test" \
+    --from-status "pending" \
+    --to-status "approved" \
+    --actor "device-manager" \
+    --detail "Approved by human review"
+
+# Check file was created
+DATE_TODAY="$(date -u +"%Y-%m-%d")"
+HIST_FILE="$TEST20_HIST/${DATE_TODAY}-device-manager.jsonl"
+assert_file "$HIST_FILE" "History file created with correct name"
+
+# Validate it's valid JSON
+if echo "$(head -1 "$HIST_FILE")" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+    pass "History entry is valid JSON"
+else
+    fail "History entry is not valid JSON"
+fi
+
+# Check required fields
+hist_entry="$(head -1 "$HIST_FILE")"
+for field in ts request_id from_status to_status actor; do
+    if echo "$hist_entry" | python3 -c "import sys,json; d=json.load(sys.stdin); assert '$field' in d" 2>/dev/null; then
+        pass "History entry has field: $field"
+    else
+        fail "History entry missing field: $field"
+    fi
+done
+
+# Write with directive-id
+bash "$ACCORD_DIR/protocol/history/write-history.sh" \
+    --history-dir "$TEST20_HIST" \
+    --request-id "dir-001-test" \
+    --from-status "pending" \
+    --to-status "in-progress" \
+    --actor "orchestrator" \
+    --directive-id "dir-001-test" \
+    --detail "Decomposed into 2 requests"
+
+ORCH_FILE="$TEST20_HIST/${DATE_TODAY}-orchestrator.jsonl"
+assert_file "$ORCH_FILE" "Orchestrator history file created"
+
+if head -1 "$ORCH_FILE" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d['directive_id']=='dir-001-test'" 2>/dev/null; then
+    pass "History entry includes directive_id"
+else
+    fail "History entry missing directive_id"
+fi
+
+# Multiple entries go to same file (actor file)
+bash "$ACCORD_DIR/protocol/history/write-history.sh" \
+    --history-dir "$TEST20_HIST" \
+    --request-id "req-002-test" \
+    --from-status "approved" \
+    --to-status "in-progress" \
+    --actor "device-manager"
+
+line_count=$(wc -l < "$HIST_FILE" | xargs)
+if [[ "$line_count" -eq 2 ]]; then
+    pass "Multiple entries append to same actor file ($line_count lines)"
+else
+    fail "Expected 2 lines in actor file, got $line_count"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 21: Registry sync via accord-sync.sh (v2)
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 21] Registry sync via accord-sync.sh (v2)${NC}"
+
+# Create a hub
+TEST21_HUB="$TMPDIR/test21-hub.git"
+git init --bare "$TEST21_HUB" > /dev/null 2>&1
+
+# Init svc-a
+TEST21_SVCA="$TMPDIR/test21-svc-a"
+mkdir -p "$TEST21_SVCA"
+(cd "$TEST21_SVCA" && git init > /dev/null 2>&1 && git config user.email "test@accord.dev" && git config user.name "Accord Test")
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-regsync" \
+    --repo-model multi-repo \
+    --services "svc-a,svc-b" \
+    --hub "$TEST21_HUB" \
+    --adapter none \
+    --target-dir "$TEST21_SVCA" \
+    --no-interactive > /dev/null 2>&1
+
+# svc-a should have a registry file
+assert_file "$TEST21_SVCA/.accord/registry/svc-a.md" "svc-a has local registry"
+
+# Push should sync registry to hub
+bash "$ACCORD_DIR/accord-sync.sh" push --target-dir "$TEST21_SVCA" --service-name svc-a > /dev/null 2>&1
+
+assert_file "$TEST21_SVCA/.accord/hub/registry/svc-a.md" "Registry pushed to hub"
+
+# Init svc-b
+TEST21_SVCB="$TMPDIR/test21-svc-b"
+mkdir -p "$TEST21_SVCB"
+(cd "$TEST21_SVCB" && git init > /dev/null 2>&1 && git config user.email "test@accord.dev" && git config user.name "Accord Test")
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-regsync" \
+    --repo-model multi-repo \
+    --services "svc-b,svc-a" \
+    --hub "$TEST21_HUB" \
+    --adapter none \
+    --target-dir "$TEST21_SVCB" \
+    --no-interactive > /dev/null 2>&1
+
+# svc-b pulls — should get svc-a's registry
+bash "$ACCORD_DIR/accord-sync.sh" pull --target-dir "$TEST21_SVCB" --service-name svc-b > /dev/null 2>&1
+
+assert_file "$TEST21_SVCB/.accord/registry/svc-a.md" "svc-b pulled svc-a's registry from hub"
+
+# svc-b's own registry should NOT be overwritten by pull
+assert_file "$TEST21_SVCB/.accord/registry/svc-b.md" "svc-b's own registry preserved after pull"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 22: Request template v2 fields (backward-compatible)
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 22] Request template v2 fields${NC}"
+
+assert_contains "$ACCORD_DIR/protocol/templates/request.md.template" "v2 fields" "Request template has v2 fields section"
+assert_contains "$ACCORD_DIR/protocol/templates/request.md.template" "directive:" "Request template has directive field"
+assert_contains "$ACCORD_DIR/protocol/templates/request.md.template" "on_behalf_of:" "Request template has on_behalf_of field"
+assert_contains "$ACCORD_DIR/protocol/templates/request.md.template" "routed_by:" "Request template has routed_by field"
+assert_contains "$ACCORD_DIR/protocol/templates/request.md.template" "originated_from:" "Request template has originated_from field"
+
+# Existing request validator still works with v1 requests (backward-compat)
+assert_validator "$ACCORD_DIR/protocol/scan/validators/validate-request.sh" \
+    "$ACCORD_DIR/examples/multi-repo-project/hub/.accord/comms/archive/req-001-list-devices.md" \
+    "v1 request still validates after template update"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 23: Example hub v2 files exist
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 23] Example hub v2 files${NC}"
+
+HUB_EXAMPLE="$ACCORD_DIR/examples/multi-repo-project/hub/.accord"
+
+assert_file "$HUB_EXAMPLE/config.yaml"                              "Hub config.yaml exists"
+assert_contains "$HUB_EXAMPLE/config.yaml" "role: orchestrator"     "Hub config has role: orchestrator"
+assert_contains "$HUB_EXAMPLE/config.yaml" 'version: "0.2"'         "Hub config has version 0.2"
+
+assert_file "$HUB_EXAMPLE/directives/dir-001-device-reboot.md"      "Example directive exists"
+assert_file "$HUB_EXAMPLE/registry/device-manager.md"               "Hub has device-manager registry"
+assert_file "$HUB_EXAMPLE/registry/web-server.md"                   "Hub has web-server registry"
+assert_file "$HUB_EXAMPLE/registry/frontend.md"                     "Hub has frontend registry"
+assert_dir  "$HUB_EXAMPLE/comms/inbox/orchestrator"                  "Hub has orchestrator inbox"
+assert_file "$HUB_EXAMPLE/comms/history/2026-02-05-orchestrator.jsonl" "Hub has history entries"
+
+# Validate example history entries are valid JSON
+hist_valid=true
+while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    if ! echo "$line" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+        hist_valid=false
+        break
+    fi
+done < "$HUB_EXAMPLE/comms/history/2026-02-05-orchestrator.jsonl"
+
+if [[ "$hist_valid" == true ]]; then
+    pass "Example history entries are valid JSONL"
+else
+    fail "Example history entries contain invalid JSON"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 24: Scheduler script exists and runs (v2)
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 24] Scheduler script (v2)${NC}"
+
+assert_file "$ACCORD_DIR/accord-scheduler.sh" "accord-scheduler.sh exists"
+if [[ -x "$ACCORD_DIR/accord-scheduler.sh" ]]; then
+    pass "accord-scheduler.sh is executable"
+else
+    fail "accord-scheduler.sh is not executable"
+fi
+
+# Scheduler should detect orchestrator role and run manual mode
+TEST24_DIR="$TMPDIR/test24"
+mkdir -p "$TEST24_DIR"
+bash "$ACCORD_DIR/init.sh" \
+    --role orchestrator \
+    --project-name "test-scheduler" \
+    --services "svc-a,svc-b" \
+    --adapter none \
+    --target-dir "$TEST24_DIR" \
+    --no-interactive > /dev/null 2>&1
+
+sched_output=$(bash "$ACCORD_DIR/accord-scheduler.sh" --mode manual --target-dir "$TEST24_DIR" 2>&1)
+if echo "$sched_output" | grep -q "orchestrator"; then
+    pass "Scheduler detects orchestrator role"
+else
+    fail "Scheduler should detect orchestrator role"
+fi
+
+# Scheduler on service should detect service role
+TEST24_SVC="$TMPDIR/test24-svc"
+mkdir -p "$TEST24_SVC"
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-scheduler-svc" \
+    --services "svc-a" \
+    --adapter none \
+    --target-dir "$TEST24_SVC" \
+    --no-interactive > /dev/null 2>&1
+
+svc_sched_output=$(bash "$ACCORD_DIR/accord-scheduler.sh" --mode manual --target-dir "$TEST24_SVC" 2>&1)
+if echo "$svc_sched_output" | grep -q "service"; then
+    pass "Scheduler detects service role"
+else
+    fail "Scheduler should detect service role"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Summary
 # ══════════════════════════════════════════════════════════════════════════════
 echo -e "\n${BOLD}=== Test Results ===${NC}"

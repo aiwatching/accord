@@ -34,7 +34,18 @@ Create and send an Accord request to another module.
    - External: add `x-accord-status: proposed` and `x-accord-request: {id}` to the relevant path in `{{CONTRACTS_DIR}}{target}.yaml`
    - Only if the proposed change is concrete enough
 
-7. **Commit**:
+7. **Write history entry** (if `settings.history_enabled` is `true` in `.accord/config.yaml`):
+   ```
+   bash .accord/protocol/history/write-history.sh \
+     --history-dir .accord/comms/history \
+     --request-id {request-id} \
+     --from-status none \
+     --to-status pending \
+     --actor {your-module} \
+     --detail "Created request to {target}: {summary}"
+   ```
+
+8. **Commit**:
    ```
    git add .accord/
    git commit -m "comms({target}): request - {summary}"
@@ -42,4 +53,4 @@ Create and send an Accord request to another module.
    - Multi-repo: `bash .accord/accord-sync.sh push --target-dir .` (syncs request to hub inbox)
    - Monorepo: no push needed — the request file is immediately visible locally
 
-8. **Report**: "Created request {id} to {target}. Status: pending. Needs their approval."
+9. **Report**: "Created request {id} to {target}. Status: pending. Needs their approval."

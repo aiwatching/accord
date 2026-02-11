@@ -222,6 +222,23 @@ do_pull() {
         done
     fi
 
+    # Pull registries from hub (other services' registries)
+    local hub_registry="$HUB_DIR/registry"
+    local local_registry="$TARGET_DIR/.accord/registry"
+    if [[ -d "$hub_registry" ]]; then
+        mkdir -p "$local_registry"
+        for reg_file in "$hub_registry"/*.md; do
+            [[ ! -f "$reg_file" ]] && continue
+            local fname
+            fname="$(basename "$reg_file")"
+            local reg_name="${fname%.md}"
+            # Don't overwrite own registry — we are the source of truth
+            [[ "$reg_name" == "$SERVICE_NAME" ]] && continue
+            cp "$reg_file" "$local_registry/$fname"
+        done
+        log "  Synced registries from hub"
+    fi
+
     if [[ $new_count -gt 0 ]]; then
         log "Pulled $new_count new request(s) from hub"
     else
@@ -312,7 +329,32 @@ do_push() {
         done
     fi
 
-    # 5. Commit and push hub (only if there are actual git changes)
+    # 5. Copy own registry → hub
+    local local_registry="$TARGET_DIR/.accord/registry"
+    if [[ -d "$local_registry" ]]; then
+        for reg_file in "$local_registry"/*.md; do
+            [[ ! -f "$reg_file" ]] && continue
+            local fname
+            fname="$(basename "$reg_file")"
+            mkdir -p "$HUB_DIR/registry"
+            cp "$reg_file" "$HUB_DIR/registry/$fname"
+        done
+        log "  Synced registries to hub"
+    fi
+
+    # 6. Push history entries to hub
+    local local_history="$TARGET_DIR/.accord/comms/history"
+    if [[ -d "$local_history" ]]; then
+        for hist_file in "$local_history"/*.jsonl; do
+            [[ ! -f "$hist_file" ]] && continue
+            local fname
+            fname="$(basename "$hist_file")"
+            mkdir -p "$HUB_DIR/comms/history"
+            cp "$hist_file" "$HUB_DIR/comms/history/$fname"
+        done
+    fi
+
+    # 7. Commit and push hub (only if there are actual git changes)
     (cd "$HUB_DIR" && git add -A)
     if (cd "$HUB_DIR" && git diff --cached --quiet); then
         log "No changes to push"

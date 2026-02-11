@@ -20,7 +20,18 @@ Mark an Accord request as completed and archive it.
 4. **Archive the request**:
    - Move from `{{COMMS_DIR}}inbox/{your-module}/` to `{{COMMS_DIR}}archive/`
 
-5. **Commit**:
+5. **Write history entry** (if `settings.history_enabled` is `true` in `.accord/config.yaml`):
+   ```
+   bash .accord/protocol/history/write-history.sh \
+     --history-dir .accord/comms/history \
+     --request-id {request-id} \
+     --from-status in-progress \
+     --to-status completed \
+     --actor {your-module} \
+     --detail "Completed: {brief summary}"
+   ```
+
+6. **Commit**:
    ```
    git add .accord/
    git commit -m "comms({your-module}): completed - {request-id}"
@@ -28,7 +39,7 @@ Mark an Accord request as completed and archive it.
    - Multi-repo only: `bash .accord/accord-sync.sh push --target-dir .` to sync updated contract and archived request to hub
    - Monorepo: no push needed
 
-6. **Report**: "Completed request {id}. Contract updated and request archived."
+7. **Report**: "Completed request {id}. Contract updated and request archived."
 
 ## Pre-checks
 
