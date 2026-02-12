@@ -29,6 +29,8 @@ SCAN=false
 SYNC_MODE=""
 HUB_SYNC_OK=false
 FORCE=false
+ROLE=""
+INIT_SERVICES=false
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -50,6 +52,8 @@ Options:
   --language <lang>           java | python | typescript | go (default: java)
   --scan                      After scaffolding, run contract scan
   --target-dir <path>         Target directory (default: current directory)
+  --role <role>               orchestrator | service (default: service)
+  --init-services             Also init all service repos (orchestrator only, dirs must be siblings)
   --force                     Re-initialize even if .accord/config.yaml exists
   --no-interactive            Use auto-detected defaults without prompts
   --help                      Show this help message
@@ -63,6 +67,12 @@ Examples:
 
   # Override specific values
   ~/.accord/init.sh --services "frontend,backend,engine" --sync-mode auto-poll
+
+  # Initialize as orchestrator hub (v2)
+  ~/.accord/init.sh --role orchestrator --services "frontend,backend,engine" --adapter claude-code --target-dir ./hub
+
+  # Initialize hub + all service repos in one command (service dirs must be siblings of hub)
+  ~/.accord/init.sh --role orchestrator --services "svc-a,svc-b,svc-c" --adapter claude-code --init-services --hub git@github.com:org/hub.git
 HELP
 }
 
@@ -185,6 +195,8 @@ parse_args() {
             --hub)            HUB="$2"; shift 2 ;;
             --language)       LANGUAGE="$2"; shift 2 ;;
             --target-dir)     TARGET_DIR="$2"; shift 2 ;;
+            --role)            ROLE="$2"; shift 2 ;;
+            --init-services)  INIT_SERVICES=true; shift ;;
             --scan)           SCAN=true; shift ;;
             --force)          FORCE=true; shift ;;
             --no-interactive) INTERACTIVE=false; shift ;;
@@ -353,6 +365,21 @@ validate_inputs() {
             MODULES="$(list_subdirs "$svc_dir")"
             [[ -n "$MODULES" ]] && log "Auto-detected modules in $SERVICE/: $MODULES"
         fi
+    fi
+
+    if [[ -n "$ROLE" ]]; then
+        case "$ROLE" in
+            orchestrator|service) ;;
+            *) err "Invalid role: $ROLE (must be orchestrator or service)" ;;
+        esac
+    fi
+
+    if [[ "$ROLE" == "orchestrator" && -z "$SERVICES" ]]; then
+        err "--services is required for orchestrator role"
+    fi
+
+    if [[ "$INIT_SERVICES" == true && "$ROLE" != "orchestrator" ]]; then
+        err "--init-services requires --role orchestrator"
     fi
 
     SYNC_MODE="${SYNC_MODE:-on-action}"
@@ -892,6 +919,154 @@ NOTIFY
     fi
 }
 
+# ── Orchestrator Scaffolding (v2) ────────────────────────────────────────
+
+generate_orchestrator_config() {
+    local config_file="$TARGET_DIR/config.yaml"
+
+    if [[ -f "$config_file" ]]; then
+        warn "Config already exists: $config_file (skipping)"
+        return
+    fi
+
+    local services_yaml=""
+    IFS=',' read -ra svc_arr <<< "$SERVICES"
+    for svc in "${svc_arr[@]}"; do
+        svc="$(echo "$svc" | xargs)"
+        services_yaml="${services_yaml}
+  - name: ${svc}"
+    done
+
+    cat > "$config_file" <<EOF
+version: "0.2"
+role: orchestrator
+
+project:
+  name: ${PROJECT_NAME}
+
+services:${services_yaml}
+
+settings:
+  sync_mode: ${SYNC_MODE}
+  require_human_approval: true
+  archive_completed: true
+  history_enabled: true
+EOF
+
+    log "Created $config_file"
+}
+
+scaffold_orchestrator() {
+    log "Scaffolding orchestrator hub: $PROJECT_NAME"
+
+    # Flat structure (no .accord/ prefix — this IS the hub)
+    mkdir -p "$TARGET_DIR/directives"
+    touch "$TARGET_DIR/directives/.gitkeep"
+
+    mkdir -p "$TARGET_DIR/registry"
+    touch "$TARGET_DIR/registry/.gitkeep"
+
+    mkdir -p "$TARGET_DIR/contracts"
+    mkdir -p "$TARGET_DIR/contracts/internal"
+    touch "$TARGET_DIR/contracts/.gitkeep"
+
+    # comms structure
+    mkdir -p "$TARGET_DIR/comms/archive"
+    mkdir -p "$TARGET_DIR/comms/inbox/orchestrator"
+    touch "$TARGET_DIR/comms/inbox/orchestrator/.gitkeep"
+
+    IFS=',' read -ra svc_arr <<< "$SERVICES"
+    for svc in "${svc_arr[@]}"; do
+        svc="$(echo "$svc" | xargs)"
+        mkdir -p "$TARGET_DIR/comms/inbox/${svc}"
+        touch "$TARGET_DIR/comms/inbox/${svc}/.gitkeep"
+    done
+
+    mkdir -p "$TARGET_DIR/comms/history"
+    touch "$TARGET_DIR/comms/history/.gitkeep"
+
+    # PROTOCOL.md for hub comms
+    if [[ ! -f "$TARGET_DIR/comms/PROTOCOL.md" ]]; then
+        generate_comms_protocol "$TARGET_DIR/comms/PROTOCOL.md"
+    fi
+
+    # TEMPLATE.md (request template)
+    if [[ ! -f "$TARGET_DIR/comms/TEMPLATE.md" ]]; then
+        cp "$ACCORD_DIR/protocol/templates/request.md.template" "$TARGET_DIR/comms/TEMPLATE.md"
+        log "Created comms/TEMPLATE.md"
+    fi
+
+    # Copy protocol helpers
+    mkdir -p "$TARGET_DIR/protocol/history"
+    cp "$ACCORD_DIR/protocol/history/write-history.sh" "$TARGET_DIR/protocol/history/write-history.sh"
+    chmod +x "$TARGET_DIR/protocol/history/write-history.sh"
+    log "Copied protocol/history/write-history.sh"
+
+    mkdir -p "$TARGET_DIR/protocol/templates"
+    cp "$ACCORD_DIR/protocol/templates/directive.md.template" "$TARGET_DIR/protocol/templates/directive.md.template"
+    log "Copied protocol/templates/directive.md.template"
+
+    # Generate config
+    generate_orchestrator_config
+}
+
+install_orchestrator_adapter() {
+    [[ "$ADAPTER" == "none" ]] && return
+
+    local adapter_dir="$ACCORD_DIR/adapters/$ADAPTER"
+    local orch_install="$adapter_dir/orchestrator/install.sh"
+
+    if [[ -f "$orch_install" ]]; then
+        log "Installing orchestrator adapter: $ADAPTER"
+        bash "$orch_install" \
+            --project-dir "$TARGET_DIR" \
+            --project-name "$PROJECT_NAME" \
+            --service-list "$SERVICES"
+        log "Orchestrator adapter $ADAPTER installed"
+    else
+        warn "No orchestrator adapter found for: $ADAPTER"
+    fi
+}
+
+print_orchestrator_summary() {
+    echo ""
+    echo -e "${BOLD}=== Accord orchestrator initialization complete ===${NC}"
+    echo ""
+    echo -e "  Project:    ${GREEN}$PROJECT_NAME${NC}"
+    echo -e "  Role:       ${GREEN}orchestrator${NC}"
+    echo -e "  Services:   ${GREEN}$SERVICES${NC}"
+    [[ "$ADAPTER" != "none" ]] && echo -e "  Adapter:    ${GREEN}$ADAPTER${NC}"
+    echo ""
+    echo "  Created hub structure (flat):"
+    echo "    config.yaml                     — Hub configuration (role: orchestrator)"
+    echo "    directives/                     — High-level requirements"
+    echo "    registry/                       — Service/module registries"
+    echo "    contracts/                      — Service contracts"
+    echo "    comms/"
+    echo "        ├── inbox/orchestrator/     — Escalated requests"
+    echo "        ├── inbox/{service}/        — Per-service inboxes"
+    echo "        ├── archive/               — Completed/rejected requests"
+    echo "        ├── history/               — Audit log (JSONL)"
+    echo "        └── PROTOCOL.md / TEMPLATE.md"
+    if [[ "$ADAPTER" != "none" ]]; then
+    echo "    CLAUDE.md                       — Orchestrator agent instructions"
+    echo "    .claude/commands/               — Orchestrator slash commands"
+    fi
+    echo ""
+    echo "  Next steps:"
+    if [[ "$INIT_SERVICES" == true ]]; then
+    echo "    1. Commit hub: git add . && git commit -m 'accord: init orchestrator hub'"
+    echo "    2. Commit each service repo"
+    echo "    3. Start agent sessions (one per repo) and begin working"
+    else
+    echo "    1. git add . && git commit -m 'accord: init orchestrator hub'"
+    echo "    2. Init service repos: re-run with --init-services, or init each service individually"
+    echo "    3. Create directives in directives/ for feature decomposition"
+    echo "    4. Start your orchestrator agent — it will read registries and process directives"
+    fi
+    echo ""
+}
+
 # ── Registry Generation ──────────────────────────────────────────────────
 
 generate_registry() {
@@ -999,6 +1174,58 @@ print_summary() {
     echo ""
 }
 
+# ── Batch Service Init (--init-services) ─────────────────────────────────────
+
+init_service_repos() {
+    # Resolve hub URL: explicit --hub > git remote > error
+    local hub_url="$HUB"
+    if [[ -z "$hub_url" ]]; then
+        hub_url="$(git -C "$TARGET_DIR" remote get-url origin 2>/dev/null || true)"
+    fi
+    if [[ -z "$hub_url" ]]; then
+        err "--init-services requires a hub URL. Use --hub <url> or ensure the hub repo has a git remote."
+    fi
+
+    local parent_dir
+    parent_dir="$(dirname "$TARGET_DIR")"
+
+    local svc_count=0
+    local svc_skipped=0
+
+    IFS=',' read -ra svc_arr <<< "$SERVICES"
+    for svc in "${svc_arr[@]}"; do
+        svc="$(echo "$svc" | xargs)"
+        local svc_dir="$parent_dir/$svc"
+
+        if [[ ! -d "$svc_dir" ]]; then
+            warn "Service directory not found: $svc_dir (skipping)"
+            svc_skipped=$((svc_skipped + 1))
+            continue
+        fi
+
+        log "Initializing service: $svc → $svc_dir"
+        bash "$ACCORD_DIR/init.sh" \
+            --target-dir "$svc_dir" \
+            --project-name "$PROJECT_NAME" \
+            --repo-model multi-repo \
+            --hub "$hub_url" \
+            --services "$SERVICES" \
+            --adapter "$ADAPTER" \
+            --language "$LANGUAGE" \
+            --sync-mode "${SYNC_MODE}" \
+            --no-interactive || {
+            warn "Failed to initialize service: $svc"
+            svc_skipped=$((svc_skipped + 1))
+            continue
+        }
+
+        svc_count=$((svc_count + 1))
+    done
+
+    echo ""
+    log "Batch init complete: $svc_count services initialized, $svc_skipped skipped"
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 main() {
@@ -1011,9 +1238,15 @@ main() {
     TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
 
     # Idempotency: skip if already initialized (unless --force)
-    if [[ -f "$TARGET_DIR/.accord/config.yaml" ]] && [[ "$FORCE" != "true" ]]; then
-        log "Already initialized ($TARGET_DIR/.accord/config.yaml exists). Use --force to re-initialize."
-        exit 0
+    # Orchestrator uses flat config.yaml; service uses .accord/config.yaml
+    if [[ "$FORCE" != "true" ]]; then
+        if [[ "$ROLE" == "orchestrator" && -f "$TARGET_DIR/config.yaml" ]]; then
+            log "Already initialized ($TARGET_DIR/config.yaml exists). Use --force to re-initialize."
+            exit 0
+        elif [[ "$ROLE" != "orchestrator" && -f "$TARGET_DIR/.accord/config.yaml" ]]; then
+            log "Already initialized ($TARGET_DIR/.accord/config.yaml exists). Use --force to re-initialize."
+            exit 0
+        fi
     fi
 
     if [[ "$INTERACTIVE" == false ]]; then
@@ -1047,21 +1280,30 @@ main() {
 
     validate_inputs
 
-    scaffold_project
-    generate_registry
-    hub_sync_on_init
-    generate_watch_script
+    if [[ "$ROLE" == "orchestrator" ]]; then
+        scaffold_orchestrator
+        install_orchestrator_adapter
+        print_orchestrator_summary
+        if [[ "$INIT_SERVICES" == true ]]; then
+            init_service_repos
+        fi
+    else
+        scaffold_project
+        generate_registry
+        hub_sync_on_init
+        generate_watch_script
 
-    # Copy accord-sync.sh to .accord/ for local use
-    if [[ -f "$ACCORD_DIR/accord-sync.sh" ]]; then
-        cp "$ACCORD_DIR/accord-sync.sh" "$TARGET_DIR/.accord/accord-sync.sh"
-        chmod +x "$TARGET_DIR/.accord/accord-sync.sh"
-        log "Copied accord-sync.sh to .accord/"
+        # Copy accord-sync.sh to .accord/ for local use
+        if [[ -f "$ACCORD_DIR/accord-sync.sh" ]]; then
+            cp "$ACCORD_DIR/accord-sync.sh" "$TARGET_DIR/.accord/accord-sync.sh"
+            chmod +x "$TARGET_DIR/.accord/accord-sync.sh"
+            log "Copied accord-sync.sh to .accord/"
+        fi
+
+        install_adapter
+        run_scan
+        print_summary
     fi
-
-    install_adapter
-    run_scan
-    print_summary
 }
 
 main "$@"
