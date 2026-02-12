@@ -113,7 +113,19 @@ Agent command resolution order: `--agent-cmd` flag > `settings.agent_cmd` in con
 
 **Command requests** (shell fast-path): `status`, `scan`, `check-inbox`, `validate`. Flow: set `status: in-progress` → execute → append `## Result` → set `status: completed` → archive → write history.
 
-**Non-command requests** (agent path): set `status: in-progress` → build prompt from request content → invoke agent with timeout → on success: archive + write history. On failure/timeout: revert `status: pending` for retry.
+**Non-command requests** (agent path): set `status: in-progress` → commit + push (claim task) → build prompt with registry/contract context → invoke agent with timeout → on success: archive + write history. On failure/timeout: increment `attempts` counter → if `attempts < 3`: revert `status: pending` for retry → if `attempts >= 3`: set `status: failed` + escalate to orchestrator.
+
+**Processing model**: Sequential per service — one request at a time to avoid concurrency issues (the agent works in the same repo). Parallelism comes from running separate daemons per service via `start-all`.
+
+**Task claiming**: Before invoking the agent, the daemon commits and pushes the `status: in-progress` change. This prevents other agents from picking up the same request during the (potentially long) agent execution.
+
+**Retry limit**: Failed requests track an `attempts` field in frontmatter. After 3 failed attempts, the request is permanently marked `status: failed` (no more retries). Only the final failure triggers escalation.
+
+**Push retry**: The daemon retries `git push` up to 3 times with `pull --rebase` on conflict, matching the pattern used by `accord-sync.sh`.
+
+**Error escalation**: On the final failed attempt (attempt 3/3), the daemon creates a `type: other` escalation request in the orchestrator inbox (if reachable at `.accord/hub/comms/inbox/orchestrator/` or `.accord/comms/inbox/orchestrator/`). The escalation includes the failure reason, original request ID (`originated_from`), and service name. Escalation filenames include an epoch timestamp for uniqueness. If no orchestrator inbox exists, the failure is only logged.
+
+**Agent prompt context**: The prompt injected into the agent includes registry file listings and contract file listings from `.accord/registry/` and `.accord/contracts/`, enabling the agent to understand service boundaries and create cascade requests when needed.
 
 ---
 

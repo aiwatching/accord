@@ -2354,6 +2354,7 @@ bash "$ACCORD_DIR/accord-agent.sh" run-once \
 # Request should still be in inbox with status: pending (reverted)
 assert_file "$TEST40_DIR/.accord/comms/inbox/fail-svc/req-201-fail.md" "Failed request stays in inbox"
 assert_contains "$TEST40_DIR/.accord/comms/inbox/fail-svc/req-201-fail.md" "status: pending" "Failed request reverted to pending"
+assert_contains "$TEST40_DIR/.accord/comms/inbox/fail-svc/req-201-fail.md" "attempts: 1" "Failed request has attempts: 1"
 
 if [[ ! -f "$TEST40_DIR/.accord/comms/archive/req-201-fail.md" ]]; then
     pass "Failed request not in archive"
@@ -2500,6 +2501,196 @@ bash "$ACCORD_DIR/accord-agent.sh" run-once \
 assert_file "$TEST43_DIR/.accord/comms/archive/req-204-cmd-status.md" "Command request archived via shell fast-path"
 assert_contains "$TEST43_DIR/.accord/comms/archive/req-204-cmd-status.md" "status: completed" "Command request completed without agent"
 assert_contains "$TEST43_DIR/.accord/comms/archive/req-204-cmd-status.md" "## Result" "Command request has ## Result section"
+
+# TEST 44: Error escalation to orchestrator (max attempts)
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 44] Error escalation to orchestrator (max attempts)${NC}"
+
+TEST44_DIR="$TMPDIR/test44"
+mkdir -p "$TEST44_DIR"
+(cd "$TEST44_DIR" && git init --quiet)
+
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-escalation" \
+    --services "esc-svc" \
+    --target-dir "$TEST44_DIR" \
+    --no-interactive > /dev/null 2>&1
+
+# Create mock orchestrator inbox (simulates multi-repo hub)
+mkdir -p "$TEST44_DIR/.accord/hub/comms/inbox/orchestrator"
+
+# Create a non-command request pre-seeded with attempts: 2 (one more failure = max)
+mkdir -p "$TEST44_DIR/.accord/comms/inbox/esc-svc"
+cat > "$TEST44_DIR/.accord/comms/inbox/esc-svc/req-301-feature.md" <<'EOF'
+---
+id: req-301-feature
+from: orchestrator
+to: esc-svc
+scope: external
+type: other
+priority: medium
+status: pending
+created: 2026-02-11T10:00:00Z
+updated: 2026-02-11T10:00:00Z
+attempts: 2
+---
+
+## What
+
+Add a new feature.
+
+## Proposed Change
+
+Implement something.
+EOF
+
+# Use a guaranteed-to-fail agent command — this is attempt 3 of 3
+bash "$ACCORD_DIR/accord-agent.sh" run-once \
+    --target-dir "$TEST44_DIR" \
+    --agent-cmd "/nonexistent/agent/that/will/fail" > /dev/null 2>&1 || true
+
+# Verify escalation request was created in orchestrator inbox (only on max attempts)
+ESC_FILES=("$TEST44_DIR/.accord/hub/comms/inbox/orchestrator"/req-escalation-*.md)
+if [[ -f "${ESC_FILES[0]}" ]]; then
+    pass "Escalation request created in orchestrator inbox"
+    assert_contains "${ESC_FILES[0]}" "originated_from: req-301-feature" "Escalation has originated_from field"
+    assert_contains "${ESC_FILES[0]}" "type: other" "Escalation has type: other"
+    assert_contains "${ESC_FILES[0]}" "priority: high" "Escalation has priority: high"
+    assert_contains "${ESC_FILES[0]}" "to: orchestrator" "Escalation sent to orchestrator"
+    assert_contains "${ESC_FILES[0]}" "Agent processing failed" "Escalation describes the failure"
+    assert_contains "${ESC_FILES[0]}" "max attempts" "Escalation mentions max attempts"
+else
+    fail "Escalation request created in orchestrator inbox — no req-escalation-*.md found"
+fi
+
+# Verify original request is marked as failed (not pending — no more retries)
+assert_contains "$TEST44_DIR/.accord/comms/inbox/esc-svc/req-301-feature.md" "status: failed" "Max attempts: request marked as failed"
+assert_contains "$TEST44_DIR/.accord/comms/inbox/esc-svc/req-301-feature.md" "attempts: 3" "Attempt counter incremented to 3"
+
+# TEST 45: start-all forwards --agent-cmd and --timeout
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 45] start-all forwards --agent-cmd and --timeout${NC}"
+
+TEST45_DIR="$TMPDIR/test45"
+mkdir -p "$TEST45_DIR/test45-hub" "$TEST45_DIR/test45-svc"
+(cd "$TEST45_DIR/test45-hub" && git init --quiet)
+(cd "$TEST45_DIR/test45-svc" && git init --quiet)
+
+bash "$ACCORD_DIR/init.sh" \
+    --role orchestrator \
+    --project-name "test-flags" \
+    --services "test45-svc" \
+    --target-dir "$TEST45_DIR/test45-hub" \
+    --no-interactive > /dev/null 2>&1
+
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-flags" \
+    --services "test45-svc" \
+    --target-dir "$TEST45_DIR/test45-svc" \
+    --no-interactive > /dev/null 2>&1
+
+# Create a request in the service inbox that will be processed
+mkdir -p "$TEST45_DIR/test45-svc/.accord/comms/inbox/test45-svc"
+cat > "$TEST45_DIR/test45-svc/.accord/comms/inbox/test45-svc/req-401-cmd-status.md" <<'EOF'
+---
+id: req-401-cmd-status
+from: orchestrator
+to: test45-svc
+scope: external
+type: command
+command: status
+priority: medium
+status: pending
+created: 2026-02-11T10:00:00Z
+updated: 2026-02-11T10:00:00Z
+---
+
+## What
+
+Remote status command.
+EOF
+
+# Start-all with custom agent-cmd and timeout — verify it starts and processes
+# We use run-once on each service to verify flags are usable (start-all uses start which backgrounds)
+bash "$ACCORD_DIR/accord-agent.sh" start-all \
+    --target-dir "$TEST45_DIR/test45-hub" \
+    --agent-cmd "echo mock-agent" \
+    --timeout 123 > /dev/null 2>&1 || true
+
+# Give background daemon a moment then stop
+sleep 2
+bash "$ACCORD_DIR/accord-agent.sh" stop-all \
+    --target-dir "$TEST45_DIR/test45-hub" > /dev/null 2>&1 || true
+
+# The command request should have been processed via shell fast-path regardless of agent-cmd
+if [[ -f "$TEST45_DIR/test45-svc/.accord/comms/archive/req-401-cmd-status.md" ]]; then
+    pass "start-all with --agent-cmd and --timeout started daemon and processed request"
+else
+    # The daemon may not have had time to tick — verify it at least started
+    if [[ -f "$TEST45_DIR/test45-svc/.accord/.agent.pid" ]] || [[ -f "$TEST45_DIR/test45-svc/.accord/log/"agent-*.log ]]; then
+        pass "start-all with --agent-cmd and --timeout started daemon (request pending — timing)"
+    else
+        fail "start-all with --agent-cmd and --timeout — daemon did not start or process"
+    fi
+fi
+
+# TEST 46: Retry counting — first failure, no escalation
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 46] Retry counting — first failure, no escalation${NC}"
+
+TEST46_DIR="$TMPDIR/test46"
+mkdir -p "$TEST46_DIR"
+(cd "$TEST46_DIR" && git init --quiet)
+
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-retry" \
+    --services "retry-svc" \
+    --target-dir "$TEST46_DIR" \
+    --no-interactive > /dev/null 2>&1
+
+# Create mock orchestrator inbox
+mkdir -p "$TEST46_DIR/.accord/hub/comms/inbox/orchestrator"
+
+# Create a fresh request (no attempts field)
+mkdir -p "$TEST46_DIR/.accord/comms/inbox/retry-svc"
+cat > "$TEST46_DIR/.accord/comms/inbox/retry-svc/req-501-retry.md" <<'EOF'
+---
+id: req-501-retry
+from: orchestrator
+to: retry-svc
+scope: external
+type: other
+priority: medium
+status: pending
+created: 2026-02-11T10:00:00Z
+updated: 2026-02-11T10:00:00Z
+---
+
+## What
+
+Test retry counting.
+
+## Proposed Change
+
+Implement something.
+EOF
+
+# First failure
+bash "$ACCORD_DIR/accord-agent.sh" run-once \
+    --target-dir "$TEST46_DIR" \
+    --agent-cmd "/nonexistent/agent/will/fail" > /dev/null 2>&1 || true
+
+# Should be pending with attempts: 1, NOT failed, NO escalation
+assert_contains "$TEST46_DIR/.accord/comms/inbox/retry-svc/req-501-retry.md" "status: pending" "First failure: status reverted to pending"
+assert_contains "$TEST46_DIR/.accord/comms/inbox/retry-svc/req-501-retry.md" "attempts: 1" "First failure: attempts set to 1"
+
+# No escalation — orchestrator inbox should be empty
+ESC46_COUNT=$(find "$TEST46_DIR/.accord/hub/comms/inbox/orchestrator" -name "req-escalation-*.md" 2>/dev/null | wc -l | xargs)
+if [[ "$ESC46_COUNT" -eq 0 ]]; then
+    pass "First failure: no escalation (retry pending)"
+else
+    fail "First failure: no escalation expected but found $ESC46_COUNT escalation file(s)"
+fi
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Summary

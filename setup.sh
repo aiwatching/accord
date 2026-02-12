@@ -117,6 +117,13 @@ collect_info() {
     if [[ "$scan_input" =~ ^[Yy]$ ]]; then
         SCAN=true
     fi
+
+    # 6. Agent daemons
+    read -r -p "  Start agent daemons for all services? (y/N): " daemon_input
+    START_DAEMONS=false
+    if [[ "$daemon_input" =~ ^[Yy]$ ]]; then
+        START_DAEMONS=true
+    fi
 }
 
 # ── Confirm ──────────────────────────────────────────────────────────────────
@@ -229,6 +236,22 @@ execute_setup() {
             continue
         }
     done
+
+    # 4. Start agent daemons if requested
+    if [[ "$START_DAEMONS" == true ]]; then
+        echo ""
+        log "Starting agent daemons..."
+        for i in "${!SVC_NAMES[@]}"; do
+            local svc="${SVC_NAMES[$i]}"
+            local dir="${SVC_DIRS[$i]}"
+            if [[ "$dir" != /* ]]; then dir="$project_dir/$dir"; fi
+            dir="$(cd "$dir" 2>/dev/null && pwd)" || continue
+            log "Starting daemon for: $svc"
+            bash "$ACCORD_DIR/accord-agent.sh" start --target-dir "$dir" || {
+                warn "Failed to start daemon for: $svc"
+            }
+        done
+    fi
 }
 
 # ── Summary ──────────────────────────────────────────────────────────────────
@@ -261,6 +284,14 @@ print_done() {
     for i in "${!SVC_NAMES[@]}"; do
         echo -e "       ${DIM}# ${SVC_NAMES[$i]}${NC}"
         echo "       cd ${SVC_DIRS[$i]} && claude"
+    done
+    echo ""
+    echo "    3. (Alternative) Start headless agent daemons instead:"
+    echo ""
+    echo "       accord-agent.sh start-all --target-dir $HUB_DIR"
+    echo -e "       ${DIM}# Or per-service:${NC}"
+    for i in "${!SVC_NAMES[@]}"; do
+        echo "       accord-agent.sh start --target-dir ${SVC_DIRS[$i]}"
     done
     echo ""
 }

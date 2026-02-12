@@ -1094,11 +1094,15 @@ print_orchestrator_summary() {
     echo "    1. Commit hub: git add . && git commit -m 'accord: init orchestrator hub'"
     echo "    2. Commit each service repo"
     echo "    3. Start agent sessions (one per repo) and begin working"
+    echo "    4. (Optional) Start headless agent daemons for all services:"
+    echo "       accord-agent.sh start-all --target-dir ."
     else
     echo "    1. git add . && git commit -m 'accord: init orchestrator hub'"
     echo "    2. Init service repos: re-run with --init-services, or init each service individually"
     echo "    3. Create directives in directives/ for feature decomposition"
     echo "    4. Start your orchestrator agent — it will read registries and process directives"
+    echo "    5. (Optional) Start headless agent daemons for all services:"
+    echo "       accord-agent.sh start-all --target-dir ."
     fi
     echo ""
 }
@@ -1192,8 +1196,10 @@ print_summary() {
     fi
     echo "    2. git add .accord && git commit -m 'accord: init project'"
     echo "    3. Start your agent — it will check the inbox on start"
+    echo "    4. (Optional) Start the headless agent daemon for autonomous processing:"
+    echo "       .accord/accord-agent.sh start"
     if [[ "$SYNC_MODE" == "auto-poll" && "$ADAPTER" != "claude-code" ]]; then
-        echo "    4. Run: .accord/accord-watch.sh &"
+        echo "    5. Run: .accord/accord-watch.sh &"
     fi
     if [[ "$REPO_MODEL" == "multi-repo" ]]; then
         echo ""
