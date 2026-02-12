@@ -6,7 +6,12 @@
 #
 # Usage:
 #   mkdir my-project && cd my-project
-#   ~/.accord/setup.sh
+#   ~/.accord/setup.sh             # New project or overwrite existing
+#   ~/.accord/setup.sh --force     # Clean re-init: deletes .accord/ in all services
+#
+# Default: re-running overwrites config/adapters but preserves .accord/ structure.
+# --force: deletes .accord/ in every service directory and hub stale files,
+#          then regenerates everything from scratch.
 #
 # This script collects project info interactively, then calls init.sh
 # to initialize the hub and each service.
@@ -14,6 +19,7 @@
 set -euo pipefail
 
 ACCORD_DIR="$(cd "$(dirname "$0")" && pwd)"
+FORCE=false
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -197,6 +203,7 @@ execute_setup() {
         --adapter "$ADAPTER"
         --target-dir "$HUB_DIR"
         --no-interactive
+        --force
     )
     if [[ -n "$service_repos_csv" ]]; then
         init_args+=(--service-repos "$service_repos_csv")
@@ -216,6 +223,12 @@ execute_setup() {
             continue
         }
 
+        # --force: delete .accord/ entirely for a clean slate
+        if [[ "$FORCE" == true && -d "$dir/.accord" ]]; then
+            log "Removing $dir/.accord/ (clean re-init)"
+            rm -rf "$dir/.accord"
+        fi
+
         log "Initializing service: $svc → $dir"
 
         local svc_args=(
@@ -226,6 +239,7 @@ execute_setup() {
             --services "$services_csv"
             --adapter "$ADAPTER"
             --no-interactive
+            --force
         )
         if [[ "$SCAN" == true ]]; then
             svc_args+=(--scan)
@@ -429,9 +443,13 @@ join_project() {
             svc_dir="$(cd "$svc" && pwd)"
         fi
 
-        # Skip if already initialized
-        if [[ -f "$svc_dir/.accord/config.yaml" ]]; then
-            log "$svc: already initialized (skipping)"
+        # --force: delete .accord/ for clean re-init
+        if [[ "$FORCE" == true && -d "$svc_dir/.accord" ]]; then
+            log "Removing $svc_dir/.accord/ (clean re-init)"
+            rm -rf "$svc_dir/.accord"
+        elif [[ "$FORCE" != true && -f "$svc_dir/.accord/config.yaml" ]]; then
+            # Default without --force in join mode: skip already initialized
+            log "$svc: already initialized (skipping — use --force to re-init)"
             continue
         fi
 
@@ -443,7 +461,8 @@ join_project() {
             --hub "$JOIN_HUB_URL" \
             --services "$all_services_csv" \
             --adapter "$adapter" \
-            --no-interactive || {
+            --no-interactive \
+            --force || {
             warn "Failed to initialize: $svc"
             continue
         }
@@ -465,8 +484,21 @@ join_project() {
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 main() {
+    # Parse CLI args
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --force) FORCE=true; shift ;;
+            *) shift ;;
+        esac
+    done
+
     if ! tty -s 2>/dev/null; then
         err "setup.sh requires an interactive terminal (stdin must be a tty)"
+    fi
+
+    if [[ "$FORCE" == true ]]; then
+        echo ""
+        echo -e "${RED}[--force] Clean re-init: .accord/ will be deleted and regenerated in all services${NC}"
     fi
 
     echo ""
@@ -496,4 +528,4 @@ main() {
     esac
 }
 
-main
+main "$@"

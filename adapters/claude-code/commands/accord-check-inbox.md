@@ -1,6 +1,6 @@
 # /accord-check-inbox
 
-Check for incoming Accord requests across all inboxes.
+Check for incoming Accord requests in your module's inbox.
 
 ## Instructions
 
@@ -10,8 +10,9 @@ Check for incoming Accord requests across all inboxes.
 
 2. **Determine your working module** — if not already established, infer from context or ask the user
 
-3. **Check all inbox directories** under `{{COMMS_DIR}}inbox/`:
-   - Focus on `{{COMMS_DIR}}inbox/{your-module}/` for requests directed at you
+3. **Check YOUR inbox only** — `{{COMMS_DIR}}inbox/{your-module}/`:
+   - ONLY read requests in YOUR module's inbox directory
+   - Do NOT scan or report requests from other modules' inboxes
    - Read each `.md` file's YAML frontmatter
    - Note the `id`, `from`, `scope`, `type`, `priority`, `status`
 

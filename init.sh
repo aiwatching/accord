@@ -992,8 +992,65 @@ EOF
     log "Created $config_file"
 }
 
+clean_hub_stale_files() {
+    local cleaned=0
+
+    # Clean stale requests from all inboxes
+    local inbox_files
+    inbox_files="$(find "$TARGET_DIR/comms/inbox" -name "req-*.md" 2>/dev/null || true)"
+    if [[ -n "$inbox_files" ]]; then
+        local count
+        count="$(echo "$inbox_files" | wc -l | xargs)"
+        log "Removing $count stale request(s) from inbox..."
+        echo "$inbox_files" | while IFS= read -r f; do rm -f "$f"; done
+        cleaned=$((cleaned + count))
+    fi
+
+    # Clean archived requests
+    local archive_files
+    archive_files="$(find "$TARGET_DIR/comms/archive" -name "req-*.md" 2>/dev/null || true)"
+    if [[ -n "$archive_files" ]]; then
+        local count
+        count="$(echo "$archive_files" | wc -l | xargs)"
+        log "Removing $count stale request(s) from archive..."
+        echo "$archive_files" | while IFS= read -r f; do rm -f "$f"; done
+        cleaned=$((cleaned + count))
+    fi
+
+    # Clean stale directives
+    local directive_files
+    directive_files="$(find "$TARGET_DIR/directives" -name "dir-*.md" 2>/dev/null || true)"
+    if [[ -n "$directive_files" ]]; then
+        local count
+        count="$(echo "$directive_files" | wc -l | xargs)"
+        log "Removing $count stale directive(s)..."
+        echo "$directive_files" | while IFS= read -r f; do rm -f "$f"; done
+        cleaned=$((cleaned + count))
+    fi
+
+    # Clean history logs
+    local history_files
+    history_files="$(find "$TARGET_DIR/comms/history" -name "*.jsonl" 2>/dev/null || true)"
+    if [[ -n "$history_files" ]]; then
+        local count
+        count="$(echo "$history_files" | wc -l | xargs)"
+        log "Removing $count stale history log(s)..."
+        echo "$history_files" | while IFS= read -r f; do rm -f "$f"; done
+        cleaned=$((cleaned + count))
+    fi
+
+    if [[ $cleaned -gt 0 ]]; then
+        log "Cleaned $cleaned stale file(s) from hub"
+    fi
+}
+
 scaffold_orchestrator() {
     log "Scaffolding orchestrator hub: $PROJECT_NAME"
+
+    # Clean stale files from previous setup (if hub dir already has data)
+    if [[ -d "$TARGET_DIR/comms" ]]; then
+        clean_hub_stale_files
+    fi
 
     # Flat structure (no .accord/ prefix — this IS the hub)
     mkdir -p "$TARGET_DIR/directives"
