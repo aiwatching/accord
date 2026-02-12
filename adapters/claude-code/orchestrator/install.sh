@@ -143,4 +143,4 @@ inject_claude_md
 install_commands
 
 log "Orchestrator adapter installation complete"
-log "Slash commands available: /accord-decompose, /accord-route, /accord-monitor, /accord-check-inbox, /accord-remote-command, /accord-check-results"
+log "Slash commands available: /accord-decompose, /accord-route, /accord-monitor, /accord-check-inbox, /accord-remote, /accord-check-results"

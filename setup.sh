@@ -398,6 +398,12 @@ join_project() {
             svc_dir="$(cd "$svc" && pwd)"
         fi
 
+        # Skip if already initialized
+        if [[ -f "$svc_dir/.accord/config.yaml" ]]; then
+            log "$svc: already initialized (skipping)"
+            continue
+        fi
+
         log "Initializing service: $svc"
         bash "$ACCORD_DIR/init.sh" \
             --target-dir "$svc_dir" \

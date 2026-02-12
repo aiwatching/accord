@@ -1623,7 +1623,12 @@ bash "$ACCORD_DIR/init.sh" \
     --force \
     --no-interactive > /dev/null 2>&1
 
-assert_file "$TEST27_DIR/.claude/commands/accord-remote-command.md" "accord-remote-command.md installed"
+assert_file "$TEST27_DIR/.claude/commands/accord-remote.md" "accord-remote.md installed"
+if [[ ! -f "$TEST27_DIR/.claude/commands/accord-remote-command.md" ]]; then
+    pass "accord-remote-command.md does NOT exist (replaced by accord-remote.md)"
+else
+    fail "accord-remote-command.md should not exist (replaced by accord-remote.md)"
+fi
 assert_file "$TEST27_DIR/.claude/commands/accord-check-results.md" "accord-check-results.md installed"
 assert_file "$TEST27_DIR/.claude/commands/accord-decompose.md" "accord-decompose.md still installed"
 assert_file "$TEST27_DIR/.claude/commands/accord-route.md" "accord-route.md still installed"
@@ -1793,6 +1798,73 @@ bash "$ACCORD_DIR/init.sh" \
 
 assert_file "$TEST30_SVC/.accord/config.yaml" "Service config.yaml created with --repo"
 assert_contains "$TEST30_SVC/.accord/config.yaml" "repo: git@github.com:org/my-svc.git" "Service config has repo URL"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Test 31: Batch remote command naming
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}Test 31: Batch remote command naming${NC}"
+
+# Verify the source command file exists in the adapter
+assert_file "$ACCORD_DIR/adapters/claude-code/orchestrator/commands/accord-remote.md" \
+    "accord-remote.md exists in adapter source"
+
+# Verify the old file does NOT exist in the adapter
+if [[ ! -f "$ACCORD_DIR/adapters/claude-code/orchestrator/commands/accord-remote-command.md" ]]; then
+    pass "accord-remote-command.md removed from adapter source"
+else
+    fail "accord-remote-command.md should be removed from adapter source"
+fi
+
+# Verify the new command heading matches the filename
+actual_heading="$(head -1 "$ACCORD_DIR/adapters/claude-code/orchestrator/commands/accord-remote.md")"
+if [[ "$actual_heading" == "# /accord-remote" ]]; then
+    pass "accord-remote.md heading matches filename"
+else
+    fail "accord-remote.md heading should be '# /accord-remote', got '$actual_heading'"
+fi
+
+# Verify orchestrator CLAUDE.md template references /accord-remote (not /accord-remote-command)
+assert_contains "$ACCORD_DIR/adapters/claude-code/orchestrator/CLAUDE.md.template" \
+    "/accord-remote " "Template references /accord-remote"
+assert_not_contains "$ACCORD_DIR/adapters/claude-code/orchestrator/CLAUDE.md.template" \
+    "/accord-remote-command" "Template does NOT reference /accord-remote-command"
+
+# Verify install.sh references /accord-remote
+assert_contains "$ACCORD_DIR/adapters/claude-code/orchestrator/install.sh" \
+    "/accord-remote," "install.sh references /accord-remote"
+assert_not_contains "$ACCORD_DIR/adapters/claude-code/orchestrator/install.sh" \
+    "/accord-remote-command" "install.sh does NOT reference /accord-remote-command"
+
+# Verify check-results references /accord-remote (not /accord-remote-command)
+assert_contains "$ACCORD_DIR/adapters/claude-code/orchestrator/commands/accord-check-results.md" \
+    "/accord-remote" "check-results references /accord-remote"
+assert_not_contains "$ACCORD_DIR/adapters/claude-code/orchestrator/commands/accord-check-results.md" \
+    "/accord-remote-command" "check-results does NOT reference /accord-remote-command"
+
+# Install to a fresh dir and verify batch command is installed
+TEST31_DIR="$TMPDIR/test31"
+mkdir -p "$TEST31_DIR"
+(cd "$TEST31_DIR" && git init --quiet)
+
+bash "$ACCORD_DIR/init.sh" \
+    --role orchestrator \
+    --project-name "batch-cmd-test" \
+    --services "svc-a,svc-b,svc-c" \
+    --adapter claude-code \
+    --target-dir "$TEST31_DIR" \
+    --force \
+    --no-interactive > /dev/null 2>&1
+
+assert_file "$TEST31_DIR/.claude/commands/accord-remote.md" "accord-remote.md installed to project"
+if [[ ! -f "$TEST31_DIR/.claude/commands/accord-remote-command.md" ]]; then
+    pass "accord-remote-command.md NOT installed to project"
+else
+    fail "accord-remote-command.md should not be installed"
+fi
+
+# Verify CLAUDE.md has updated ON_COMMAND section
+assert_contains "$TEST31_DIR/CLAUDE.md" "/accord-remote " "Installed CLAUDE.md references /accord-remote"
+assert_not_contains "$TEST31_DIR/CLAUDE.md" "/accord-remote-command" "Installed CLAUDE.md does NOT reference /accord-remote-command"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Summary

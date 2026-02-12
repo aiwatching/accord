@@ -101,10 +101,12 @@ When an escalated request arrives in `comms/inbox/orchestrator/`:
 ## ON_COMMAND (Remote Service Commands)
 
 Send diagnostic commands to services via the protocol:
-1. Use `/accord-remote-command` to send a command (status, scan, check-inbox, validate)
-2. Use `/accord-check-results` to check returned results
-3. Commands are fire-and-check-later — inherent latency from git push/pull
-4. Command requests use `type: command` and skip human approval on the service side
+1. Use `/accord-remote {command}` to send a command to ALL services
+2. Use `/accord-remote {command} --services svc1,svc2` to target specific services
+3. Use `/accord-check-results` to check returned results
+4. Supported commands: status, scan, check-inbox, validate
+5. Commands are fire-and-check-later — inherent latency from git push/pull
+6. Command requests use `type: command` and skip human approval on the service side
 
 ## State Machine (Directives)
 
