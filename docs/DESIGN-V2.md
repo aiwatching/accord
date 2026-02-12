@@ -4,7 +4,7 @@ Version: 0.2.0-draft
 
 > This document describes the v2 evolution of Accord. For the v1 foundation (two-layer design,
 > fractal protocol, two-level contracts, hub-and-spoke model), see [`docs/DESIGN.md`](DESIGN.md)
-> and [`PROTOCOL.md`](../PROTOCOL.md). Everything in v1 remains unchanged — v2 is purely additive.
+> and [`PROTOCOL.md`](PROTOCOL.md). Everything in v1 remains unchanged — v2 is purely additive.
 
 ---
 

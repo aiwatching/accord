@@ -53,11 +53,15 @@ Accord solves this with a file-based protocol layered on Git, so any agent that 
 accord/
 ├── CLAUDE.md                    # This file
 ├── README.md                    # Public-facing project description
-├── PROTOCOL.md                  # Core protocol specification
-├── INTERFACE.md                 # Agent capability requirements
 ├── docs/
+│   ├── PROTOCOL.md              # Core protocol specification
+│   ├── INTERFACE.md             # Agent capability requirements
 │   ├── DESIGN.md                # Full design document (architecture rationale)
-│   └── SESSION_CONTEXT.md       # Design session context (WHY behind decisions)
+│   ├── DESIGN-V2.md             # v2 orchestrator architecture
+│   ├── SESSION_CONTEXT.md       # Design session context (WHY behind decisions)
+│   ├── INSTALL.md               # Hub-centric setup guide
+│   ├── COMMANDS.md              # Command reference
+│   └── CONTRACT-TYPES-ROADMAP.md # Contract types expansion roadmap
 ├── protocol/
 │   ├── state-machine.md         # Request state transitions
 │   ├── request-format.md        # Request file specification
@@ -107,5 +111,5 @@ accord/
 ## Reference Documents
 - See `docs/DESIGN.md` for the full architectural design and rationale
 - See `docs/SESSION_CONTEXT.md` for the complete design session context — WHY each decision was made, what alternatives were considered, and the developer's original use case
-- See `PROTOCOL.md` for the core protocol specification
-- See `INTERFACE.md` for agent capability requirements
+- See `docs/PROTOCOL.md` for the core protocol specification
+- See `docs/INTERFACE.md` for agent capability requirements

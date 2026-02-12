@@ -292,12 +292,16 @@ your-project/
 
 | Document | Description |
 |----------|-------------|
-| [Protocol Specification](PROTOCOL.md) | Core protocol: state machine, formats, rules, module registry |
-| [Standard Interface](INTERFACE.md) | Required agent capabilities and behaviors (ON_START, ON_ROUTE, etc.) |
+| [Install Guide](docs/INSTALL.md) | Hub-centric setup guide (setup.sh as primary entry point) |
+| [Commands Reference](docs/COMMANDS.md) | All slash commands and CLI tools |
+| [v2 Architecture](docs/DESIGN-V2.md) | Orchestrator, directives, centralized routing, audit trail |
+| [Contract Types Roadmap](docs/CONTRACT-TYPES-ROADMAP.md) | Expansion plan: DB schema, AsyncAPI, gRPC, etc. |
+| [Protocol Specification](docs/PROTOCOL.md) | Core protocol: state machine, formats, rules (v1) |
+| [Standard Interface](docs/INTERFACE.md) | Required agent capabilities and behaviors (v1) |
+| [Design Document](docs/DESIGN.md) | Architecture rationale and design decisions (v1) |
+| [Session Context](docs/SESSION_CONTEXT.md) | WHY behind each design decision |
 | [Registry Format](protocol/registry-format.md) | Module registry format and usage |
 | [Scan Instructions](protocol/scan/SCAN_INSTRUCTIONS.md) | How contract scanning works |
-| [Design Document](docs/DESIGN.md) | Architecture rationale and design decisions |
-| [Session Context](docs/SESSION_CONTEXT.md) | WHY behind each design decision |
 
 ## Contributing
 
