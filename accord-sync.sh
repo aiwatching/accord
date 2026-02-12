@@ -180,8 +180,17 @@ do_pull() {
             fname="$(basename "$req_file")"
             # Skip if already in local inbox
             [[ -f "$local_inbox/$fname" ]] && continue
-            # Skip if already archived locally (completed/rejected)
-            [[ -f "$local_archive/$fname" ]] && continue
+            # Check archive: if archived copy exists but hub has a pending version,
+            # it's a new request with a reused ID — allow it through
+            if [[ -f "$local_archive/$fname" ]]; then
+                local hub_status
+                hub_status="$(sed -n '/^---$/,/^---$/{ s/^status:[[:space:]]*//p; }' "$req_file" | head -1 | xargs)"
+                if [[ "$hub_status" != "pending" ]]; then
+                    continue
+                fi
+                # New pending request with same filename as archived one — accept it
+                log "  Re-opened request (was archived): $fname"
+            fi
             cp "$req_file" "$local_inbox/$fname"
             new_count=$((new_count + 1))
             log "  New request: $fname"
