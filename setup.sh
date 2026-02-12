@@ -173,6 +173,27 @@ execute_setup() {
     local project_dir
     project_dir="$(pwd)"
 
+    # 0. Stop running daemons before re-init
+    local stopped_any=false
+    for i in "${!SVC_NAMES[@]}"; do
+        local dir="${SVC_DIRS[$i]}"
+        if [[ "$dir" != /* ]]; then dir="$project_dir/$dir"; fi
+        dir="$(cd "$dir" 2>/dev/null && pwd)" || continue
+        local pf="$dir/.accord/.agent.pid"
+        if [[ -f "$pf" ]]; then
+            local pid
+            pid="$(cat "$pf")"
+            if kill -0 "$pid" 2>/dev/null; then
+                log "Stopping agent daemon for ${SVC_NAMES[$i]} (pid $pid)"
+                bash "$ACCORD_DIR/accord-agent.sh" stop --target-dir "$dir" 2>/dev/null || true
+                stopped_any=true
+            fi
+        fi
+    done
+    if [[ "$stopped_any" == true ]]; then
+        log "All running daemons stopped"
+    fi
+
     # 1. Clone hub if needed
     if [[ "$HUB_CLONE" == true ]]; then
         log "Cloning hub → $HUB_DIR"
