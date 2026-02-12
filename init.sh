@@ -468,6 +468,7 @@ settings:
   require_human_approval: true
   archive_completed: true
   debug: false
+  # agent_cmd: "claude --dangerously-skip-permissions -p"
 EOF
 
     log "Created $config_file"
@@ -551,7 +552,7 @@ scaffold_project() {
     # .accord/log/ (debug logging)
     mkdir -p "$accord_dir/log"
     if [[ ! -f "$accord_dir/log/.gitignore" ]]; then
-        echo "*.jsonl" > "$accord_dir/log/.gitignore"
+        printf "*.jsonl\nagent-*.log\n" > "$accord_dir/log/.gitignore"
         log "Created .accord/log/ with .gitignore"
     fi
 
@@ -561,6 +562,9 @@ scaffold_project() {
         log "Created .accord/.gitignore"
     elif ! grep -q ".last-sync-pull" "$accord_dir/.gitignore" 2>/dev/null; then
         echo ".last-sync-pull" >> "$accord_dir/.gitignore"
+    fi
+    if ! grep -q ".agent.pid" "$accord_dir/.gitignore" 2>/dev/null; then
+        echo ".agent.pid" >> "$accord_dir/.gitignore"
     fi
 
     # Config (merged project + service)
@@ -982,6 +986,7 @@ settings:
   require_human_approval: true
   archive_completed: true
   history_enabled: true
+  # agent_cmd: "claude --dangerously-skip-permissions -p"
 EOF
 
     log "Created $config_file"
@@ -1329,6 +1334,13 @@ main() {
             cp "$ACCORD_DIR/accord-sync.sh" "$TARGET_DIR/.accord/accord-sync.sh"
             chmod +x "$TARGET_DIR/.accord/accord-sync.sh"
             log "Copied accord-sync.sh to .accord/"
+        fi
+
+        # Copy accord-agent.sh to .accord/ for local use
+        if [[ -f "$ACCORD_DIR/accord-agent.sh" ]]; then
+            cp "$ACCORD_DIR/accord-agent.sh" "$TARGET_DIR/.accord/accord-agent.sh"
+            chmod +x "$TARGET_DIR/.accord/accord-agent.sh"
+            log "Copied accord-agent.sh to .accord/"
         fi
 
         install_adapter

@@ -107,6 +107,8 @@ Send diagnostic commands to services via the protocol:
 4. Supported commands: status, scan, check-inbox, validate
 5. Commands are fire-and-check-later — inherent latency from git push/pull
 6. Command requests use `type: command` and skip human approval on the service side
+7. For fully autonomous processing, use `accord-agent.sh start-all` from the hub directory
+8. Configure AI agent: `--agent-cmd "claude --dangerously-skip-permissions -p"` (processes all request types)
 
 ## State Machine (Directives)
 

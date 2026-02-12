@@ -1867,6 +1867,641 @@ assert_contains "$TEST31_DIR/CLAUDE.md" "/accord-remote " "Installed CLAUDE.md r
 assert_not_contains "$TEST31_DIR/CLAUDE.md" "/accord-remote-command" "Installed CLAUDE.md does NOT reference /accord-remote-command"
 
 # ══════════════════════════════════════════════════════════════════════════════
+# TEST 32: accord-agent.sh basics (exists, executable, help)
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "${BOLD}[Test 32] accord-agent.sh basics${NC}"
+
+assert_file "$ACCORD_DIR/accord-agent.sh" "accord-agent.sh exists"
+if [[ -x "$ACCORD_DIR/accord-agent.sh" ]]; then
+    pass "accord-agent.sh is executable"
+else
+    fail "accord-agent.sh is not executable"
+fi
+
+help_output=$(bash "$ACCORD_DIR/accord-agent.sh" --help 2>&1)
+if echo "$help_output" | grep -q "Autonomous request processing daemon"; then
+    pass "accord-agent.sh --help shows description"
+else
+    fail "accord-agent.sh --help missing description"
+fi
+if echo "$help_output" | grep -q "start-all"; then
+    pass "accord-agent.sh --help lists start-all"
+else
+    fail "accord-agent.sh --help missing start-all"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 33: run-once processes cmd-status request
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 33] run-once processes cmd-status request${NC}"
+
+TEST33_DIR="$TMPDIR/test33"
+mkdir -p "$TEST33_DIR"
+(cd "$TEST33_DIR" && git init --quiet)
+
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-agent" \
+    --services "agent-svc" \
+    --target-dir "$TEST33_DIR" \
+    --no-interactive > /dev/null 2>&1
+
+# Create a command request in the service inbox
+mkdir -p "$TEST33_DIR/.accord/comms/inbox/agent-svc"
+cat > "$TEST33_DIR/.accord/comms/inbox/agent-svc/req-100-cmd-status.md" <<'EOF'
+---
+id: req-100-cmd-status
+from: orchestrator
+to: agent-svc
+scope: external
+type: command
+command: status
+priority: medium
+status: pending
+created: 2026-02-11T10:00:00Z
+updated: 2026-02-11T10:00:00Z
+---
+
+## What
+
+Run status check.
+
+## Proposed Change
+
+N/A
+
+## Why
+
+Diagnostic check.
+EOF
+
+# Run once
+bash "$ACCORD_DIR/accord-agent.sh" run-once --target-dir "$TEST33_DIR" > /dev/null 2>&1
+
+# Verify: request moved to archive
+assert_file "$TEST33_DIR/.accord/comms/archive/req-100-cmd-status.md" "cmd-status request moved to archive"
+if [[ ! -f "$TEST33_DIR/.accord/comms/inbox/agent-svc/req-100-cmd-status.md" ]]; then
+    pass "cmd-status request removed from inbox"
+else
+    fail "cmd-status request still in inbox after processing"
+fi
+
+# Verify: has ## Result section
+assert_contains "$TEST33_DIR/.accord/comms/archive/req-100-cmd-status.md" "## Result" "Archived request has ## Result section"
+
+# Verify: status is completed
+assert_contains "$TEST33_DIR/.accord/comms/archive/req-100-cmd-status.md" "status: completed" "Archived request has status: completed"
+
+# Verify: result has status report content
+assert_contains "$TEST33_DIR/.accord/comms/archive/req-100-cmd-status.md" "Status Report" "Result contains status report"
+
+# Verify: executed-by line
+assert_contains "$TEST33_DIR/.accord/comms/archive/req-100-cmd-status.md" "accord-agent.sh" "Result has executed-by attribution"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 34: run-once processes cmd-validate request
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 34] run-once processes cmd-validate request${NC}"
+
+TEST34_DIR="$TMPDIR/test34"
+mkdir -p "$TEST34_DIR"
+(cd "$TEST34_DIR" && git init --quiet)
+
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-validate" \
+    --services "val-svc" \
+    --target-dir "$TEST34_DIR" \
+    --no-interactive > /dev/null 2>&1
+
+mkdir -p "$TEST34_DIR/.accord/comms/inbox/val-svc"
+cat > "$TEST34_DIR/.accord/comms/inbox/val-svc/req-101-cmd-validate.md" <<'EOF'
+---
+id: req-101-cmd-validate
+from: orchestrator
+to: val-svc
+scope: external
+type: command
+command: validate
+priority: medium
+status: pending
+created: 2026-02-11T10:00:00Z
+updated: 2026-02-11T10:00:00Z
+---
+
+## What
+
+Run validation.
+
+## Proposed Change
+
+N/A
+
+## Why
+
+Diagnostic check.
+EOF
+
+bash "$ACCORD_DIR/accord-agent.sh" run-once --target-dir "$TEST34_DIR" > /dev/null 2>&1
+
+assert_file "$TEST34_DIR/.accord/comms/archive/req-101-cmd-validate.md" "cmd-validate request archived"
+assert_contains "$TEST34_DIR/.accord/comms/archive/req-101-cmd-validate.md" "Validation Report" "Result contains Validation Report"
+assert_contains "$TEST34_DIR/.accord/comms/archive/req-101-cmd-validate.md" "status: completed" "cmd-validate status is completed"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 35: run-once processes non-command requests via agent
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 35] run-once processes non-command requests via agent${NC}"
+
+TEST35_DIR="$TMPDIR/test35"
+mkdir -p "$TEST35_DIR"
+(cd "$TEST35_DIR" && git init --quiet)
+
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-agent" \
+    --services "agent-svc" \
+    --target-dir "$TEST35_DIR" \
+    --no-interactive > /dev/null 2>&1
+
+# Create a mock agent script that exits 0 (simulates successful processing)
+cat > "$TMPDIR/mock-agent-ok.sh" <<'MOCK'
+#!/usr/bin/env bash
+# Mock agent: receive prompt as $1, do nothing, exit 0
+exit 0
+MOCK
+chmod +x "$TMPDIR/mock-agent-ok.sh"
+
+mkdir -p "$TEST35_DIR/.accord/comms/inbox/agent-svc"
+cat > "$TEST35_DIR/.accord/comms/inbox/agent-svc/req-102-api-add.md" <<'EOF'
+---
+id: req-102-api-add
+from: other-svc
+to: agent-svc
+scope: external
+type: api-addition
+priority: medium
+status: pending
+created: 2026-02-11T10:00:00Z
+updated: 2026-02-11T10:00:00Z
+---
+
+## What
+
+Add a new endpoint.
+
+## Proposed Change
+
+GET /health
+
+## Why
+
+Health check needed.
+EOF
+
+bash "$ACCORD_DIR/accord-agent.sh" run-once \
+    --target-dir "$TEST35_DIR" \
+    --agent-cmd "bash $TMPDIR/mock-agent-ok.sh" > /dev/null 2>&1
+
+# Non-command request should now be archived (agent succeeded)
+if [[ ! -f "$TEST35_DIR/.accord/comms/inbox/agent-svc/req-102-api-add.md" ]]; then
+    pass "Non-command request removed from inbox after agent success"
+else
+    fail "Non-command request should be removed from inbox"
+fi
+assert_file "$TEST35_DIR/.accord/comms/archive/req-102-api-add.md" "Non-command request archived after agent success"
+assert_contains "$TEST35_DIR/.accord/comms/archive/req-102-api-add.md" "status: completed" "Archived request has status: completed"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 36: PID management (start, status, stop)
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 36] PID management (start, status, stop)${NC}"
+
+TEST36_DIR="$TMPDIR/test36"
+mkdir -p "$TEST36_DIR"
+(cd "$TEST36_DIR" && git init --quiet)
+
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-pid" \
+    --services "pid-svc" \
+    --target-dir "$TEST36_DIR" \
+    --no-interactive > /dev/null 2>&1
+
+# Start daemon
+bash "$ACCORD_DIR/accord-agent.sh" start --target-dir "$TEST36_DIR" --interval 300 > /dev/null 2>&1
+sleep 1
+
+# Verify PID file exists
+assert_file "$TEST36_DIR/.accord/.agent.pid" "start creates .agent.pid"
+
+# Verify PID is alive
+pid36=$(cat "$TEST36_DIR/.accord/.agent.pid")
+if kill -0 "$pid36" 2>/dev/null; then
+    pass "Daemon process is running (pid $pid36)"
+else
+    fail "Daemon process not running"
+fi
+
+# Status should show running
+status_output=$(bash "$ACCORD_DIR/accord-agent.sh" status --target-dir "$TEST36_DIR" 2>&1)
+if echo "$status_output" | grep -q "Running"; then
+    pass "status shows Running"
+else
+    fail "status should show Running"
+fi
+
+# Idempotent start (should not fail)
+start_output=$(bash "$ACCORD_DIR/accord-agent.sh" start --target-dir "$TEST36_DIR" --interval 300 2>&1)
+if echo "$start_output" | grep -q "Already running"; then
+    pass "Second start is idempotent"
+else
+    fail "Second start should say Already running"
+fi
+
+# Stop daemon
+bash "$ACCORD_DIR/accord-agent.sh" stop --target-dir "$TEST36_DIR" > /dev/null 2>&1
+sleep 1
+
+# Verify PID file removed
+if [[ ! -f "$TEST36_DIR/.accord/.agent.pid" ]]; then
+    pass "stop removes .agent.pid"
+else
+    fail "stop should remove .agent.pid"
+fi
+
+# Verify process gone
+if ! kill -0 "$pid36" 2>/dev/null; then
+    pass "Daemon process stopped"
+else
+    fail "Daemon process should be stopped"
+    kill "$pid36" 2>/dev/null || true
+fi
+
+# Status after stop
+status_output2=$(bash "$ACCORD_DIR/accord-agent.sh" status --target-dir "$TEST36_DIR" 2>&1)
+if echo "$status_output2" | grep -q "Not running"; then
+    pass "status after stop shows Not running"
+else
+    fail "status after stop should show Not running"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 37: start-all / stop-all from hub
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 37] start-all / stop-all from hub${NC}"
+
+TEST37_DIR="$TMPDIR/test37"
+TEST37_HUB="$TEST37_DIR/hub"
+TEST37_SVC_A="$TEST37_DIR/svc-a"
+TEST37_SVC_B="$TEST37_DIR/svc-b"
+
+mkdir -p "$TEST37_HUB" "$TEST37_SVC_A" "$TEST37_SVC_B"
+(cd "$TEST37_SVC_A" && git init --quiet)
+(cd "$TEST37_SVC_B" && git init --quiet)
+
+# Init both services
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-all" \
+    --services "svc-a,svc-b" \
+    --target-dir "$TEST37_SVC_A" \
+    --no-interactive > /dev/null 2>&1
+
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-all" \
+    --services "svc-a,svc-b" \
+    --target-dir "$TEST37_SVC_B" \
+    --no-interactive > /dev/null 2>&1
+
+# Create hub config with services list
+mkdir -p "$TEST37_HUB"
+cat > "$TEST37_HUB/config.yaml" <<'EOF'
+project: test-all
+role: orchestrator
+services:
+  - name: svc-a
+  - name: svc-b
+EOF
+
+# start-all from hub
+bash "$ACCORD_DIR/accord-agent.sh" start-all --target-dir "$TEST37_HUB" --interval 300 > /dev/null 2>&1
+sleep 1
+
+# Verify both services have PID files
+assert_file "$TEST37_SVC_A/.accord/.agent.pid" "start-all creates PID for svc-a"
+assert_file "$TEST37_SVC_B/.accord/.agent.pid" "start-all creates PID for svc-b"
+
+# stop-all from hub
+bash "$ACCORD_DIR/accord-agent.sh" stop-all --target-dir "$TEST37_HUB" > /dev/null 2>&1
+sleep 1
+
+# Verify PID files removed
+if [[ ! -f "$TEST37_SVC_A/.accord/.agent.pid" ]]; then
+    pass "stop-all removes PID for svc-a"
+else
+    fail "stop-all should remove PID for svc-a"
+    # Clean up
+    kill "$(cat "$TEST37_SVC_A/.accord/.agent.pid")" 2>/dev/null || true
+fi
+if [[ ! -f "$TEST37_SVC_B/.accord/.agent.pid" ]]; then
+    pass "stop-all removes PID for svc-b"
+else
+    fail "stop-all should remove PID for svc-b"
+    kill "$(cat "$TEST37_SVC_B/.accord/.agent.pid")" 2>/dev/null || true
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 38: init.sh copies accord-agent.sh, .gitignore has .agent.pid
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 38] init.sh copies accord-agent.sh and updates .gitignore${NC}"
+
+TEST38_DIR="$TMPDIR/test38"
+mkdir -p "$TEST38_DIR"
+(cd "$TEST38_DIR" && git init --quiet)
+
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-copy" \
+    --services "copy-svc" \
+    --target-dir "$TEST38_DIR" \
+    --no-interactive > /dev/null 2>&1
+
+# Verify accord-agent.sh copied
+assert_file "$TEST38_DIR/.accord/accord-agent.sh" "init.sh copies accord-agent.sh to .accord/"
+if [[ -x "$TEST38_DIR/.accord/accord-agent.sh" ]]; then
+    pass "Copied accord-agent.sh is executable"
+else
+    fail "Copied accord-agent.sh should be executable"
+fi
+
+# Verify .gitignore has .agent.pid
+assert_contains "$TEST38_DIR/.accord/.gitignore" ".agent.pid" ".gitignore has .agent.pid"
+
+# Verify log .gitignore has agent-*.log
+assert_contains "$TEST38_DIR/.accord/log/.gitignore" "agent-\*.log" "log/.gitignore has agent-*.log"
+
+# Verify idempotency: re-run init should not duplicate
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-copy" \
+    --services "copy-svc" \
+    --target-dir "$TEST38_DIR" \
+    --no-interactive > /dev/null 2>&1
+
+pid_count=$(grep -c ".agent.pid" "$TEST38_DIR/.accord/.gitignore")
+if [[ "$pid_count" -eq 1 ]]; then
+    pass ".agent.pid not duplicated on re-init"
+else
+    fail ".agent.pid duplicated in .gitignore ($pid_count times)"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 39: Agent timeout → revert to pending
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 39] Agent timeout reverts request to pending${NC}"
+
+TEST39_DIR="$TMPDIR/test39"
+mkdir -p "$TEST39_DIR"
+(cd "$TEST39_DIR" && git init --quiet)
+
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-timeout" \
+    --services "timeout-svc" \
+    --target-dir "$TEST39_DIR" \
+    --no-interactive > /dev/null 2>&1
+
+# Mock agent that sleeps forever
+cat > "$TMPDIR/mock-agent-hang.sh" <<'MOCK'
+#!/usr/bin/env bash
+sleep 999
+MOCK
+chmod +x "$TMPDIR/mock-agent-hang.sh"
+
+mkdir -p "$TEST39_DIR/.accord/comms/inbox/timeout-svc"
+cat > "$TEST39_DIR/.accord/comms/inbox/timeout-svc/req-200-timeout.md" <<'EOF'
+---
+id: req-200-timeout
+from: other-svc
+to: timeout-svc
+scope: external
+type: api-addition
+priority: medium
+status: pending
+created: 2026-02-11T10:00:00Z
+updated: 2026-02-11T10:00:00Z
+---
+
+## What
+
+This request should time out.
+EOF
+
+bash "$ACCORD_DIR/accord-agent.sh" run-once \
+    --target-dir "$TEST39_DIR" \
+    --agent-cmd "bash $TMPDIR/mock-agent-hang.sh" \
+    --timeout 2 > /dev/null 2>&1
+
+# Request should still be in inbox with status: pending (reverted)
+assert_file "$TEST39_DIR/.accord/comms/inbox/timeout-svc/req-200-timeout.md" "Timed-out request stays in inbox"
+assert_contains "$TEST39_DIR/.accord/comms/inbox/timeout-svc/req-200-timeout.md" "status: pending" "Timed-out request reverted to pending"
+
+# Should NOT be in archive
+if [[ ! -f "$TEST39_DIR/.accord/comms/archive/req-200-timeout.md" ]]; then
+    pass "Timed-out request not in archive"
+else
+    fail "Timed-out request should NOT be in archive"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 40: Agent failure → revert to pending
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 40] Agent failure reverts request to pending${NC}"
+
+TEST40_DIR="$TMPDIR/test40"
+mkdir -p "$TEST40_DIR"
+(cd "$TEST40_DIR" && git init --quiet)
+
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-fail" \
+    --services "fail-svc" \
+    --target-dir "$TEST40_DIR" \
+    --no-interactive > /dev/null 2>&1
+
+# Mock agent that exits with error
+cat > "$TMPDIR/mock-agent-fail.sh" <<'MOCK'
+#!/usr/bin/env bash
+exit 1
+MOCK
+chmod +x "$TMPDIR/mock-agent-fail.sh"
+
+mkdir -p "$TEST40_DIR/.accord/comms/inbox/fail-svc"
+cat > "$TEST40_DIR/.accord/comms/inbox/fail-svc/req-201-fail.md" <<'EOF'
+---
+id: req-201-fail
+from: other-svc
+to: fail-svc
+scope: external
+type: interface-change
+priority: high
+status: pending
+created: 2026-02-11T10:00:00Z
+updated: 2026-02-11T10:00:00Z
+---
+
+## What
+
+This request should fail.
+EOF
+
+bash "$ACCORD_DIR/accord-agent.sh" run-once \
+    --target-dir "$TEST40_DIR" \
+    --agent-cmd "bash $TMPDIR/mock-agent-fail.sh" > /dev/null 2>&1
+
+# Request should still be in inbox with status: pending (reverted)
+assert_file "$TEST40_DIR/.accord/comms/inbox/fail-svc/req-201-fail.md" "Failed request stays in inbox"
+assert_contains "$TEST40_DIR/.accord/comms/inbox/fail-svc/req-201-fail.md" "status: pending" "Failed request reverted to pending"
+
+if [[ ! -f "$TEST40_DIR/.accord/comms/archive/req-201-fail.md" ]]; then
+    pass "Failed request not in archive"
+else
+    fail "Failed request should NOT be in archive"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 41: Config-based agent_cmd
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 41] Config-based agent_cmd${NC}"
+
+TEST41_DIR="$TMPDIR/test41"
+mkdir -p "$TEST41_DIR"
+(cd "$TEST41_DIR" && git init --quiet)
+
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-config-agent" \
+    --services "cfg-svc" \
+    --target-dir "$TEST41_DIR" \
+    --no-interactive > /dev/null 2>&1
+
+# Add agent_cmd to config settings
+sed "s|debug: false|debug: false\n  agent_cmd: bash $TMPDIR/mock-agent-ok.sh|" \
+    "$TEST41_DIR/.accord/config.yaml" > "$TEST41_DIR/.accord/config.yaml.tmp" \
+    && mv "$TEST41_DIR/.accord/config.yaml.tmp" "$TEST41_DIR/.accord/config.yaml"
+
+mkdir -p "$TEST41_DIR/.accord/comms/inbox/cfg-svc"
+cat > "$TEST41_DIR/.accord/comms/inbox/cfg-svc/req-202-config.md" <<'EOF'
+---
+id: req-202-config
+from: other-svc
+to: cfg-svc
+scope: external
+type: api-addition
+priority: medium
+status: pending
+created: 2026-02-11T10:00:00Z
+updated: 2026-02-11T10:00:00Z
+---
+
+## What
+
+Test config-based agent_cmd.
+EOF
+
+# Run WITHOUT --agent-cmd flag — should pick up from config
+bash "$ACCORD_DIR/accord-agent.sh" run-once \
+    --target-dir "$TEST41_DIR" > /dev/null 2>&1
+
+# Request should be archived (config agent_cmd was used)
+assert_file "$TEST41_DIR/.accord/comms/archive/req-202-config.md" "Config agent_cmd: request archived"
+assert_contains "$TEST41_DIR/.accord/comms/archive/req-202-config.md" "status: completed" "Config agent_cmd: request completed"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 42: CLI --agent-cmd overrides config
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 42] CLI --agent-cmd overrides config${NC}"
+
+TEST42_DIR="$TMPDIR/test42"
+mkdir -p "$TEST42_DIR"
+(cd "$TEST42_DIR" && git init --quiet)
+
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-override" \
+    --services "ovr-svc" \
+    --target-dir "$TEST42_DIR" \
+    --no-interactive > /dev/null 2>&1
+
+# Config has FAILING agent
+sed "s|debug: false|debug: false\n  agent_cmd: bash $TMPDIR/mock-agent-fail.sh|" \
+    "$TEST42_DIR/.accord/config.yaml" > "$TEST42_DIR/.accord/config.yaml.tmp" \
+    && mv "$TEST42_DIR/.accord/config.yaml.tmp" "$TEST42_DIR/.accord/config.yaml"
+
+mkdir -p "$TEST42_DIR/.accord/comms/inbox/ovr-svc"
+cat > "$TEST42_DIR/.accord/comms/inbox/ovr-svc/req-203-override.md" <<'EOF'
+---
+id: req-203-override
+from: other-svc
+to: ovr-svc
+scope: external
+type: api-addition
+priority: medium
+status: pending
+created: 2026-02-11T10:00:00Z
+updated: 2026-02-11T10:00:00Z
+---
+
+## What
+
+Test CLI override of config agent_cmd.
+EOF
+
+# CLI provides working agent — should override the failing config agent
+bash "$ACCORD_DIR/accord-agent.sh" run-once \
+    --target-dir "$TEST42_DIR" \
+    --agent-cmd "bash $TMPDIR/mock-agent-ok.sh" > /dev/null 2>&1
+
+# Request should be archived (CLI agent wins over config)
+assert_file "$TEST42_DIR/.accord/comms/archive/req-203-override.md" "CLI --agent-cmd overrides config: request archived"
+assert_contains "$TEST42_DIR/.accord/comms/archive/req-203-override.md" "status: completed" "CLI --agent-cmd overrides config: request completed"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEST 43: Command requests bypass agent (regression)
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 43] Command requests bypass agent (regression)${NC}"
+
+TEST43_DIR="$TMPDIR/test43"
+mkdir -p "$TEST43_DIR"
+(cd "$TEST43_DIR" && git init --quiet)
+
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "test-bypass" \
+    --services "bypass-svc" \
+    --target-dir "$TEST43_DIR" \
+    --no-interactive > /dev/null 2>&1
+
+mkdir -p "$TEST43_DIR/.accord/comms/inbox/bypass-svc"
+cat > "$TEST43_DIR/.accord/comms/inbox/bypass-svc/req-204-cmd-status.md" <<'EOF'
+---
+id: req-204-cmd-status
+from: orchestrator
+to: bypass-svc
+scope: external
+type: command
+command: status
+priority: medium
+status: pending
+created: 2026-02-11T10:00:00Z
+updated: 2026-02-11T10:00:00Z
+---
+
+## What
+
+Remote status command.
+EOF
+
+# Use a nonexistent agent — command requests should NOT invoke it
+bash "$ACCORD_DIR/accord-agent.sh" run-once \
+    --target-dir "$TEST43_DIR" \
+    --agent-cmd "/nonexistent/agent/binary" > /dev/null 2>&1
+
+# Command request should be archived via shell fast-path (agent never invoked)
+assert_file "$TEST43_DIR/.accord/comms/archive/req-204-cmd-status.md" "Command request archived via shell fast-path"
+assert_contains "$TEST43_DIR/.accord/comms/archive/req-204-cmd-status.md" "status: completed" "Command request completed without agent"
+assert_contains "$TEST43_DIR/.accord/comms/archive/req-204-cmd-status.md" "## Result" "Command request has ## Result section"
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Summary
 # ══════════════════════════════════════════════════════════════════════════════
 echo -e "\n${BOLD}=== Test Results ===${NC}"

@@ -27,8 +27,6 @@ Does NOT auto-discover subdirectories. Services must be explicitly listed.
 Per-repo initialization. Non-interactive when flags are provided.
 
 ```bash
-bash ~/.accord/init.sh --role orchestrator --init-services
-# Non-interactive; after hub initialization, service repositories in the same-level directory are automatically batch-initialized.
 # Service repo
 bash ~/.accord/init.sh \
   --project-name my-project \
@@ -59,7 +57,7 @@ Key flags:
 | Flag | Description |
 |------|-------------|
 | `--role orchestrator` | Init as hub (flat structure, no `.accord/` prefix) |
-| `--init-services` | After hub init, batch-init sibling service directories |
+| `--init-services` | After hub init, batch-init `--services` 中声明的同级目录（目录必须已存在，不会自动发现） |
 | `--repo-model multi-repo` | Multi-repo mode (enables hub sync) |
 | `--hub <url>` | Hub git URL for multi-repo |
 | `--service-repos "a=url,b=url"` | Write `repo:` URLs into hub config |
@@ -69,6 +67,53 @@ Key flags:
 | `--sync-mode <mode>` | `on-action` / `auto-poll` / `manual` |
 
 Idempotent — re-running without `--force` exits with "Already initialized".
+
+---
+
+### `accord-agent.sh`
+
+Autonomous request processing daemon. Handles all request types in service inboxes:
+
+- **`type: command`** → shell fast-path (no AI agent needed, same as before)
+- **All other types** → invokes an AI agent (Claude Code by default) for autonomous implementation
+
+```bash
+# Process all requests once and exit
+accord-agent.sh run-once --target-dir ./frontend
+
+# Use a specific AI agent command
+accord-agent.sh run-once --target-dir ./frontend --agent-cmd "claude --dangerously-skip-permissions -p"
+
+# Start background daemon (polls every 60s)
+accord-agent.sh start --target-dir ./frontend --interval 60
+
+# Start with custom agent and timeout
+accord-agent.sh start --target-dir ./frontend --agent-cmd "cursor-agent -p" --timeout 300
+
+# Check daemon status
+accord-agent.sh status --target-dir ./frontend
+
+# Stop daemon
+accord-agent.sh stop --target-dir ./frontend
+
+# Start/stop daemons for ALL services (from hub directory)
+accord-agent.sh start-all --target-dir ./hub
+accord-agent.sh stop-all --target-dir ./hub
+```
+
+Flags:
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--target-dir <path>` | Project directory | `.` |
+| `--interval <seconds>` | Polling interval for `start` | `60` |
+| `--agent-cmd <command>` | AI agent command for non-command requests | `claude --dangerously-skip-permissions -p` |
+| `--timeout <seconds>` | Per-request agent timeout | `600` |
+
+Agent command resolution order: `--agent-cmd` flag > `settings.agent_cmd` in config.yaml > built-in default.
+
+**Command requests** (shell fast-path): `status`, `scan`, `check-inbox`, `validate`. Flow: set `status: in-progress` → execute → append `## Result` → set `status: completed` → archive → write history.
+
+**Non-command requests** (agent path): set `status: in-progress` → build prompt from request content → invoke agent with timeout → on success: archive + write history. On failure/timeout: revert `status: pending` for retry.
 
 ---
 
