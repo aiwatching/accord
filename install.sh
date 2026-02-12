@@ -81,7 +81,7 @@ else
     log "Downloaded successfully"
 fi
 
-chmod +x "$ACCORD_HOME/init.sh" "$ACCORD_HOME/uninstall.sh" "$ACCORD_HOME/upgrade.sh"
+chmod +x "$ACCORD_HOME/init.sh" "$ACCORD_HOME/setup.sh" "$ACCORD_HOME/uninstall.sh" "$ACCORD_HOME/upgrade.sh"
 
 # ── Read installed version ────────────────────────────────────────────────────
 
@@ -96,9 +96,10 @@ echo -e "${GREEN}${BOLD}Accord v${INSTALLED_VERSION} installed at ~/.accord/${NC
 echo ""
 echo "Commands:"
 echo ""
-echo -e "  ${BOLD}~/.accord/init.sh${NC}          Initialize Accord in your project"
-echo -e "  ${BOLD}~/.accord/upgrade.sh${NC}       Upgrade project to latest Accord version"
-echo -e "  ${BOLD}~/.accord/uninstall.sh${NC}     Remove Accord from your project"
+echo -e "  ${BOLD}~/.accord/setup.sh${NC}         Set up a new project (interactive wizard)"
+echo -e "  ${BOLD}~/.accord/init.sh${NC}          Initialize a single repo (hub or service)"
+echo -e "  ${BOLD}~/.accord/upgrade.sh${NC}       Upgrade to latest Accord version"
+echo -e "  ${BOLD}~/.accord/uninstall.sh${NC}     Remove Accord from a project"
 echo ""
 echo -e "  ${DIM}Installed version: ${INSTALLED_VERSION}${NC}"
 echo -e "  ${DIM}Run any command with --help for options.${NC}"

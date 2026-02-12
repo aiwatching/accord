@@ -248,20 +248,20 @@ interactive_prompt() {
         PROJECT_NAME="${input:-$detected_name}"
     fi
 
-    if [[ "$REPO_MODEL" == "monorepo" && -z "$HUB" ]]; then
-        echo ""
-        echo "  Repo model — how your project is organized:"
-        echo -e "    ${BOLD}1${NC}. monorepo    — all services in one repo ${DIM}(recommended)${NC}"
-        echo -e "    ${BOLD}2${NC}. multi-repo  — each service in its own repo (hub-and-spoke)"
-        read -r -p "  Choice [1]: " repo_choice
-        case "${repo_choice:-1}" in
-            2|multi-repo) REPO_MODEL="multi-repo" ;;
-            *)            REPO_MODEL="monorepo" ;;
-        esac
+    if [[ -z "$HUB" ]]; then
+        # Auto-detect hub URL from git remote
+        local detected_hub=""
+        detected_hub="$(git -C "$abs_target" remote get-url origin 2>/dev/null || true)"
 
-        if [[ "$REPO_MODEL" == "multi-repo" ]]; then
+        echo ""
+        if [[ -n "$detected_hub" ]]; then
+            read -r -p "  Hub repo URL [$detected_hub]: " input
+            HUB="${input:-$detected_hub}"
+        else
             read -r -p "  Hub repo URL (git URL for shared contracts): " HUB
-            [[ -z "$HUB" ]] && err "Hub repo URL is required for multi-repo model"
+        fi
+        if [[ -n "$HUB" ]]; then
+            REPO_MODEL="multi-repo"
         fi
     fi
 
