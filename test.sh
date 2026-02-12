@@ -1436,6 +1436,89 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}[Test 25] Batch service init (--init-services)${NC}"
+
+TEST25_DIR="$TMPDIR/test25"
+mkdir -p "$TEST25_DIR/hub"
+mkdir -p "$TEST25_DIR/svc-a"
+mkdir -p "$TEST25_DIR/svc-b"
+
+# Init hub with --init-services (using local path as hub URL since no real git remote)
+# We simulate by creating a bare git repo as the hub
+(cd "$TEST25_DIR/hub" && git init --quiet)
+(cd "$TEST25_DIR/svc-a" && git init --quiet)
+(cd "$TEST25_DIR/svc-b" && git init --quiet)
+
+bash "$ACCORD_DIR/init.sh" \
+    --role orchestrator \
+    --project-name "batch-test" \
+    --services "svc-a,svc-b" \
+    --adapter none \
+    --target-dir "$TEST25_DIR/hub" \
+    --hub "$TEST25_DIR/hub" \
+    --init-services \
+    --no-interactive > /dev/null 2>&1
+
+# Hub should be initialized
+assert_file "$TEST25_DIR/hub/config.yaml" "Hub config.yaml created"
+if grep -q "role: orchestrator" "$TEST25_DIR/hub/config.yaml"; then
+    pass "Hub has role: orchestrator"
+else
+    fail "Hub should have role: orchestrator"
+fi
+
+# Service repos should be initialized
+assert_file "$TEST25_DIR/svc-a/.accord/config.yaml" "svc-a .accord/config.yaml created"
+assert_file "$TEST25_DIR/svc-b/.accord/config.yaml" "svc-b .accord/config.yaml created"
+
+if grep -q "multi-repo" "$TEST25_DIR/svc-a/.accord/config.yaml"; then
+    pass "svc-a has repo_model: multi-repo"
+else
+    fail "svc-a should have multi-repo model"
+fi
+
+if grep -q "multi-repo" "$TEST25_DIR/svc-b/.accord/config.yaml"; then
+    pass "svc-b has repo_model: multi-repo"
+else
+    fail "svc-b should have multi-repo model"
+fi
+
+# Both services should have contracts dir
+assert_dir "$TEST25_DIR/svc-a/.accord/contracts" "svc-a contracts dir exists"
+assert_dir "$TEST25_DIR/svc-b/.accord/contracts" "svc-b contracts dir exists"
+
+# Both services should have comms
+assert_dir "$TEST25_DIR/svc-a/.accord/comms/inbox" "svc-a comms inbox exists"
+assert_dir "$TEST25_DIR/svc-b/.accord/comms/inbox" "svc-b comms inbox exists"
+
+# --init-services without --role orchestrator should fail
+if bash "$ACCORD_DIR/init.sh" --init-services --project-name "fail-test" --services "x" --adapter none --target-dir "$TEST25_DIR/hub" --no-interactive > /dev/null 2>&1; then
+    fail "--init-services should require --role orchestrator"
+else
+    pass "--init-services fails without --role orchestrator"
+fi
+
+# Missing service dir should warn but not fail
+TEST25_MISS="$TMPDIR/test25-miss"
+mkdir -p "$TEST25_MISS/hub"
+(cd "$TEST25_MISS/hub" && git init --quiet)
+miss_output=$(bash "$ACCORD_DIR/init.sh" \
+    --role orchestrator \
+    --project-name "miss-test" \
+    --services "existing,missing" \
+    --adapter none \
+    --target-dir "$TEST25_MISS/hub" \
+    --hub "$TEST25_MISS/hub" \
+    --init-services \
+    --force \
+    --no-interactive 2>&1)
+if echo "$miss_output" | grep -q "skipping"; then
+    pass "Missing service dir is skipped with warning"
+else
+    fail "Should warn about missing service directory"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Summary
 # ══════════════════════════════════════════════════════════════════════════════
 echo -e "\n${BOLD}=== Test Results ===${NC}"

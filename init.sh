@@ -30,6 +30,7 @@ SYNC_MODE=""
 HUB_SYNC_OK=false
 FORCE=false
 ROLE=""
+INIT_SERVICES=false
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -52,6 +53,7 @@ Options:
   --scan                      After scaffolding, run contract scan
   --target-dir <path>         Target directory (default: current directory)
   --role <role>               orchestrator | service (default: service)
+  --init-services             Also init all service repos (orchestrator only, dirs must be siblings)
   --force                     Re-initialize even if .accord/config.yaml exists
   --no-interactive            Use auto-detected defaults without prompts
   --help                      Show this help message
@@ -68,6 +70,9 @@ Examples:
 
   # Initialize as orchestrator hub (v2)
   ~/.accord/init.sh --role orchestrator --services "frontend,backend,engine" --adapter claude-code --target-dir ./hub
+
+  # Initialize hub + all service repos in one command (service dirs must be siblings of hub)
+  ~/.accord/init.sh --role orchestrator --services "svc-a,svc-b,svc-c" --adapter claude-code --init-services --hub git@github.com:org/hub.git
 HELP
 }
 
@@ -191,6 +196,7 @@ parse_args() {
             --language)       LANGUAGE="$2"; shift 2 ;;
             --target-dir)     TARGET_DIR="$2"; shift 2 ;;
             --role)            ROLE="$2"; shift 2 ;;
+            --init-services)  INIT_SERVICES=true; shift ;;
             --scan)           SCAN=true; shift ;;
             --force)          FORCE=true; shift ;;
             --no-interactive) INTERACTIVE=false; shift ;;
@@ -370,6 +376,10 @@ validate_inputs() {
 
     if [[ "$ROLE" == "orchestrator" && -z "$SERVICES" ]]; then
         err "--services is required for orchestrator role"
+    fi
+
+    if [[ "$INIT_SERVICES" == true && "$ROLE" != "orchestrator" ]]; then
+        err "--init-services requires --role orchestrator"
     fi
 
     SYNC_MODE="${SYNC_MODE:-on-action}"
@@ -1044,10 +1054,16 @@ print_orchestrator_summary() {
     fi
     echo ""
     echo "  Next steps:"
-    echo "    1. git init && git add . && git commit -m 'accord: init orchestrator hub'"
-    echo "    2. Services push their registries and contracts to this hub"
+    if [[ "$INIT_SERVICES" == true ]]; then
+    echo "    1. Commit hub: git add . && git commit -m 'accord: init orchestrator hub'"
+    echo "    2. Commit each service repo"
+    echo "    3. Start agent sessions (one per repo) and begin working"
+    else
+    echo "    1. git add . && git commit -m 'accord: init orchestrator hub'"
+    echo "    2. Init service repos: re-run with --init-services, or init each service individually"
     echo "    3. Create directives in directives/ for feature decomposition"
     echo "    4. Start your orchestrator agent — it will read registries and process directives"
+    fi
     echo ""
 }
 
@@ -1158,6 +1174,58 @@ print_summary() {
     echo ""
 }
 
+# ── Batch Service Init (--init-services) ─────────────────────────────────────
+
+init_service_repos() {
+    # Resolve hub URL: explicit --hub > git remote > error
+    local hub_url="$HUB"
+    if [[ -z "$hub_url" ]]; then
+        hub_url="$(git -C "$TARGET_DIR" remote get-url origin 2>/dev/null || true)"
+    fi
+    if [[ -z "$hub_url" ]]; then
+        err "--init-services requires a hub URL. Use --hub <url> or ensure the hub repo has a git remote."
+    fi
+
+    local parent_dir
+    parent_dir="$(dirname "$TARGET_DIR")"
+
+    local svc_count=0
+    local svc_skipped=0
+
+    IFS=',' read -ra svc_arr <<< "$SERVICES"
+    for svc in "${svc_arr[@]}"; do
+        svc="$(echo "$svc" | xargs)"
+        local svc_dir="$parent_dir/$svc"
+
+        if [[ ! -d "$svc_dir" ]]; then
+            warn "Service directory not found: $svc_dir (skipping)"
+            svc_skipped=$((svc_skipped + 1))
+            continue
+        fi
+
+        log "Initializing service: $svc → $svc_dir"
+        bash "$ACCORD_DIR/init.sh" \
+            --target-dir "$svc_dir" \
+            --project-name "$PROJECT_NAME" \
+            --repo-model multi-repo \
+            --hub "$hub_url" \
+            --services "$SERVICES" \
+            --adapter "$ADAPTER" \
+            --language "$LANGUAGE" \
+            --sync-mode "${SYNC_MODE}" \
+            --no-interactive || {
+            warn "Failed to initialize service: $svc"
+            svc_skipped=$((svc_skipped + 1))
+            continue
+        }
+
+        svc_count=$((svc_count + 1))
+    done
+
+    echo ""
+    log "Batch init complete: $svc_count services initialized, $svc_skipped skipped"
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 main() {
@@ -1216,6 +1284,9 @@ main() {
         scaffold_orchestrator
         install_orchestrator_adapter
         print_orchestrator_summary
+        if [[ "$INIT_SERVICES" == true ]]; then
+            init_service_repos
+        fi
     else
         scaffold_project
         generate_registry
