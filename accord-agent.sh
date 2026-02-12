@@ -42,12 +42,13 @@ Processes all request types: command requests via shell fast-path,
 all other types via an AI agent (Claude Code by default).
 
 Commands:
-  start      Start the daemon (background)
-  stop       Stop the daemon
-  status     Show daemon status
-  run-once   Process requests once, then exit
-  start-all  Start daemons for all services (from hub)
-  stop-all   Stop daemons for all services (from hub)
+  start       Start the daemon (background)
+  stop        Stop the daemon
+  status      Show daemon status
+  run-once    Process requests once, then exit
+  start-all   Start daemons for all services (from hub)
+  stop-all    Stop daemons for all services (from hub)
+  status-all  Show status dashboard for all services (from hub)
 
 Options:
   --target-dir <path>     Project directory (default: current directory)
@@ -107,7 +108,7 @@ parse_args() {
     SUBCOMMAND="$1"; shift
 
     case "$SUBCOMMAND" in
-        start|stop|status|run-once|start-all|stop-all) ;;
+        start|stop|status|run-once|start-all|stop-all|status-all) ;;
         --help|-h) usage; exit 0 ;;
         *) err "Unknown command: $SUBCOMMAND" ;;
     esac
@@ -1034,6 +1035,148 @@ do_stop_all() {
     log "stop-all complete: $stopped stopped, $skipped skipped"
 }
 
+do_status_all() {
+    local config="$TARGET_DIR/config.yaml"
+    if [[ ! -f "$config" ]]; then
+        config="$TARGET_DIR/.accord/config.yaml"
+    fi
+    if [[ ! -f "$config" ]]; then
+        err "No config.yaml found in $TARGET_DIR or $TARGET_DIR/.accord/"
+    fi
+
+    local parent_dir
+    parent_dir="$(dirname "$TARGET_DIR")"
+
+    local running=0
+    local stopped=0
+    local total=0
+
+    echo ""
+    echo "=== Agent Status (all services) ==="
+    echo ""
+
+    # Header
+    printf "  %-20s %-10s %-8s  %s\n" "SERVICE" "STATUS" "PID" "LAST ACTIVITY"
+    printf "  %-20s %-10s %-8s  %s\n" "───────────────────" "────────" "──────" "──────────────────────────────"
+
+    while IFS= read -r svc; do
+        svc="$(echo "$svc" | xargs)"
+        [[ -z "$svc" ]] && continue
+        total=$((total + 1))
+
+        local svc_dir="$parent_dir/$svc"
+        if [[ ! -d "$svc_dir/.accord" ]]; then
+            printf "  %-20s %-10s %-8s  %s\n" "$svc" "NO_INIT" "-" "directory not initialized"
+            stopped=$((stopped + 1))
+            continue
+        fi
+
+        local pf="$svc_dir/.accord/.agent.pid"
+        local svc_status="STOPPED"
+        local pid_str="-"
+
+        if [[ -f "$pf" ]]; then
+            local pid
+            pid="$(cat "$pf")"
+            if kill -0 "$pid" 2>/dev/null; then
+                svc_status="RUNNING"
+                pid_str="$pid"
+                running=$((running + 1))
+            else
+                # Stale PID
+                rm -f "$pf"
+                stopped=$((stopped + 1))
+            fi
+        else
+            stopped=$((stopped + 1))
+        fi
+
+        # Get last activity from log
+        local last_activity="-"
+        local log_dir="$svc_dir/.accord/log"
+        if [[ -d "$log_dir" ]]; then
+            # Find newest agent log
+            local newest_log
+            newest_log="$(ls -t "$log_dir"/agent-*.log 2>/dev/null | head -1)"
+            if [[ -n "$newest_log" && -f "$newest_log" ]]; then
+                local last_line
+                last_line="$(tail -1 "$newest_log" 2>/dev/null)"
+                if [[ -n "$last_line" ]]; then
+                    # Extract timestamp and message
+                    local ts msg
+                    ts="$(echo "$last_line" | sed -n 's/^\[accord-agent\] \([^ ]*\) .*/\1/p')"
+                    msg="$(echo "$last_line" | sed 's/^\[accord-agent\] [^ ]* //')"
+                    # Truncate message
+                    if [[ ${#msg} -gt 45 ]]; then
+                        msg="${msg:0:42}..."
+                    fi
+                    if [[ -n "$ts" ]]; then
+                        last_activity="$ts $msg"
+                    else
+                        last_activity="$msg"
+                    fi
+                fi
+            fi
+        fi
+
+        # Count pending requests
+        local pending=0
+        for f in "$svc_dir/.accord/comms/inbox/"*/req-*.md; do
+            if [[ -f "$f" ]]; then
+                local st
+                st="$(sed -n '/^---$/,/^---$/{ s/^status:[[:space:]]*//p; }' "$f" | head -1 | xargs)"
+                if [[ "$st" == "pending" || "$st" == "approved" ]]; then
+                    pending=$((pending + 1))
+                fi
+            fi
+        done
+
+        local pending_info=""
+        if [[ $pending -gt 0 ]]; then
+            pending_info=" [${pending} pending]"
+        fi
+
+        # Color output
+        local status_display="$svc_status"
+        if [[ "$svc_status" == "RUNNING" ]]; then
+            status_display=$'\033[0;32m'"RUNNING"$'\033[0m'
+        elif [[ "$svc_status" == "STOPPED" ]]; then
+            status_display=$'\033[0;31m'"STOPPED"$'\033[0m'
+        fi
+
+        printf "  %-20s %b  %-8s  %s%s\n" "$svc" "$status_display" "$pid_str" "$last_activity" "$pending_info"
+
+    done < <(yaml_all_services "$config")
+
+    echo ""
+    echo "  Total: $total services — $running running, $stopped stopped"
+
+    # Show hub-level request summary
+    local hub_pending=0
+    local hub_completed=0
+    for inbox_dir in "$TARGET_DIR/comms/inbox/"*/; do
+        if [[ ! -d "$inbox_dir" ]]; then continue; fi
+        for f in "$inbox_dir"req-*.md; do
+            if [[ ! -f "$f" ]]; then continue; fi
+            local st
+            st="$(sed -n '/^---$/,/^---$/{ s/^status:[[:space:]]*//p; }' "$f" | head -1 | xargs)"
+            if [[ "$st" == "pending" || "$st" == "approved" || "$st" == "in-progress" ]]; then
+                hub_pending=$((hub_pending + 1))
+            fi
+        done
+    done
+    for f in "$TARGET_DIR/comms/archive/"req-*.md; do
+        if [[ -f "$f" ]]; then
+            hub_completed=$((hub_completed + 1))
+        fi
+    done
+
+    if [[ $hub_pending -gt 0 || $hub_completed -gt 0 ]]; then
+        echo "  Hub requests: $hub_pending active, $hub_completed archived"
+    fi
+    echo ""
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 main() {
@@ -1042,12 +1185,13 @@ main() {
     TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
 
     case "$SUBCOMMAND" in
-        start)     do_start ;;
-        stop)      do_stop ;;
-        status)    do_status ;;
-        run-once)  do_run_once ;;
-        start-all) do_start_all ;;
-        stop-all)  do_stop_all ;;
+        start)      do_start ;;
+        stop)       do_stop ;;
+        status)     do_status ;;
+        run-once)   do_run_once ;;
+        start-all)  do_start_all ;;
+        stop-all)   do_stop_all ;;
+        status-all) do_status_all ;;
     esac
 }
 

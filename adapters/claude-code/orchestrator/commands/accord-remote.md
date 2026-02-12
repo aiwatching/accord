@@ -64,7 +64,7 @@ Supported commands: `status`, `scan`, `check-inbox`, `validate`
       bash protocol/history/write-history.sh \
         --history-dir comms/history \
         --request-id req-{NNN}-cmd-{command} \
-        --from-status "" \
+        --from-status "new" \
         --to-status pending \
         --actor orchestrator \
         --detail "Sent remote command: {command} to {service}"

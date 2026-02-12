@@ -30,10 +30,9 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Validate required fields
+# Validate required fields (from-status may be empty for new requests)
 [[ -z "$HISTORY_DIR" ]] && { echo "ERROR: --history-dir is required" >&2; exit 1; }
 [[ -z "$REQUEST_ID" ]] && { echo "ERROR: --request-id is required" >&2; exit 1; }
-[[ -z "$FROM_STATUS" ]] && { echo "ERROR: --from-status is required" >&2; exit 1; }
 [[ -z "$TO_STATUS" ]] && { echo "ERROR: --to-status is required" >&2; exit 1; }
 [[ -z "$ACTOR" ]] && { echo "ERROR: --actor is required" >&2; exit 1; }
 
