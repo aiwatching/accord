@@ -1519,6 +1519,282 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Test 26: Command request format validation
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}Test 26: Command request format validation${NC}"
+
+TEST26_DIR="$TMPDIR/test26"
+mkdir -p "$TEST26_DIR"
+
+# Valid command request
+cat > "$TEST26_DIR/req-001-cmd-status.md" <<'EOF'
+---
+id: req-001-cmd-status
+from: orchestrator
+to: frontend
+scope: external
+type: command
+command: status
+command_args: ""
+priority: medium
+status: pending
+created: 2026-02-11T10:00:00Z
+updated: 2026-02-11T10:00:00Z
+---
+
+## What
+
+Remote command: `status`
+
+## Proposed Change
+
+N/A — diagnostic command, no contract changes.
+
+## Why
+
+Orchestrator diagnostic: requested by user.
+
+## Impact
+
+None — read-only diagnostic command.
+EOF
+
+if bash "$ACCORD_DIR/protocol/scan/validators/validate-request.sh" "$TEST26_DIR/req-001-cmd-status.md" 2>/dev/null; then
+    pass "Valid command request passes validation"
+else
+    fail "Valid command request should pass validation"
+fi
+
+# Command request with all valid command types
+for cmd in status scan check-inbox validate; do
+    local_req="$TEST26_DIR/req-cmd-$cmd.md"
+    cat > "$local_req" <<CMDEOF
+---
+id: req-002-cmd-$cmd
+from: orchestrator
+to: frontend
+scope: external
+type: command
+command: $cmd
+priority: medium
+status: pending
+created: 2026-02-11T10:00:00Z
+updated: 2026-02-11T10:00:00Z
+---
+
+## What
+
+Remote command: \`$cmd\`
+
+## Proposed Change
+
+N/A
+
+## Why
+
+Diagnostic.
+
+## Impact
+
+None.
+CMDEOF
+    if bash "$ACCORD_DIR/protocol/scan/validators/validate-request.sh" "$local_req" 2>/dev/null; then
+        pass "Command type '$cmd' passes validation"
+    else
+        fail "Command type '$cmd' should pass validation"
+    fi
+done
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Test 27: Orchestrator command files installed
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}Test 27: Orchestrator command files installed${NC}"
+
+TEST27_DIR="$TMPDIR/test27"
+mkdir -p "$TEST27_DIR"
+(cd "$TEST27_DIR" && git init --quiet)
+
+bash "$ACCORD_DIR/init.sh" \
+    --role orchestrator \
+    --project-name "cmd-test" \
+    --services "svc-a,svc-b" \
+    --adapter claude-code \
+    --target-dir "$TEST27_DIR" \
+    --force \
+    --no-interactive > /dev/null 2>&1
+
+assert_file "$TEST27_DIR/.claude/commands/accord-remote-command.md" "accord-remote-command.md installed"
+assert_file "$TEST27_DIR/.claude/commands/accord-check-results.md" "accord-check-results.md installed"
+assert_file "$TEST27_DIR/.claude/commands/accord-decompose.md" "accord-decompose.md still installed"
+assert_file "$TEST27_DIR/.claude/commands/accord-route.md" "accord-route.md still installed"
+assert_file "$TEST27_DIR/.claude/commands/accord-monitor.md" "accord-monitor.md still installed"
+assert_file "$TEST27_DIR/.claude/commands/accord-check-inbox.md" "orchestrator accord-check-inbox.md still installed"
+
+# Check CLAUDE.md has ON_COMMAND section
+assert_contains "$TEST27_DIR/CLAUDE.md" "ON_COMMAND" "CLAUDE.md contains ON_COMMAND section"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Test 28: Command validation edge cases
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}Test 28: Command validation edge cases${NC}"
+
+TEST28_DIR="$TMPDIR/test28"
+mkdir -p "$TEST28_DIR"
+
+# type: command without command: field should FAIL
+cat > "$TEST28_DIR/req-bad-no-cmd.md" <<'EOF'
+---
+id: req-010-cmd-missing
+from: orchestrator
+to: frontend
+scope: external
+type: command
+priority: medium
+status: pending
+created: 2026-02-11T10:00:00Z
+updated: 2026-02-11T10:00:00Z
+---
+
+## What
+
+Missing command field.
+
+## Proposed Change
+
+N/A
+
+## Why
+
+Test.
+
+## Impact
+
+None.
+EOF
+
+if bash "$ACCORD_DIR/protocol/scan/validators/validate-request.sh" "$TEST28_DIR/req-bad-no-cmd.md" > /dev/null 2>&1; then
+    fail "type: command without command: field should fail"
+else
+    pass "type: command without command: field fails validation"
+fi
+
+# Non-standard command value should warn but not fail
+cat > "$TEST28_DIR/req-bad-cmd-value.md" <<'EOF'
+---
+id: req-011-cmd-unknown
+from: orchestrator
+to: frontend
+scope: external
+type: command
+command: restart
+priority: medium
+status: pending
+created: 2026-02-11T10:00:00Z
+updated: 2026-02-11T10:00:00Z
+---
+
+## What
+
+Unknown command.
+
+## Proposed Change
+
+N/A
+
+## Why
+
+Test.
+
+## Impact
+
+None.
+EOF
+
+output28=$(bash "$ACCORD_DIR/protocol/scan/validators/validate-request.sh" "$TEST28_DIR/req-bad-cmd-value.md" 2>&1 || true)
+if echo "$output28" | grep -q "Non-standard command"; then
+    pass "Non-standard command value produces warning"
+else
+    fail "Non-standard command value should produce warning"
+fi
+# Should still pass (warning, not error)
+if bash "$ACCORD_DIR/protocol/scan/validators/validate-request.sh" "$TEST28_DIR/req-bad-cmd-value.md" > /dev/null 2>&1; then
+    pass "Non-standard command value does not cause failure"
+else
+    fail "Non-standard command value should only warn, not fail"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Test 29: Orchestrator config with repo URLs
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}Test 29: Orchestrator config with repo URLs${NC}"
+
+TEST29_DIR="$TMPDIR/test29"
+mkdir -p "$TEST29_DIR"
+(cd "$TEST29_DIR" && git init --quiet)
+
+bash "$ACCORD_DIR/init.sh" \
+    --role orchestrator \
+    --project-name "repo-test" \
+    --services "svc-a,svc-b,svc-c" \
+    --service-repos "svc-a=git@github.com:org/svc-a.git,svc-c=git@github.com:org/svc-c.git" \
+    --adapter none \
+    --target-dir "$TEST29_DIR" \
+    --force \
+    --no-interactive > /dev/null 2>&1
+
+assert_file "$TEST29_DIR/config.yaml" "Orchestrator config.yaml created"
+assert_contains "$TEST29_DIR/config.yaml" "repo: git@github.com:org/svc-a.git" "svc-a has repo URL"
+assert_contains "$TEST29_DIR/config.yaml" "repo: git@github.com:org/svc-c.git" "svc-c has repo URL"
+assert_not_contains "$TEST29_DIR/config.yaml" "svc-b.*repo:" "svc-b has no repo URL (not provided)"
+
+# Verify the YAML structure: name then repo on next line
+if grep -A1 "name: svc-a" "$TEST29_DIR/config.yaml" | grep -q "repo:"; then
+    pass "repo: field follows service name correctly"
+else
+    fail "repo: field should follow service name"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Test 30: Config without repos (backward compat)
+# ══════════════════════════════════════════════════════════════════════════════
+echo -e "\n${BOLD}Test 30: Config without repos (backward compat)${NC}"
+
+TEST30_DIR="$TMPDIR/test30"
+mkdir -p "$TEST30_DIR"
+(cd "$TEST30_DIR" && git init --quiet)
+
+bash "$ACCORD_DIR/init.sh" \
+    --role orchestrator \
+    --project-name "no-repo-test" \
+    --services "frontend,backend" \
+    --adapter none \
+    --target-dir "$TEST30_DIR" \
+    --force \
+    --no-interactive > /dev/null 2>&1
+
+assert_file "$TEST30_DIR/config.yaml" "Orchestrator config.yaml created (no repos)"
+assert_not_contains "$TEST30_DIR/config.yaml" "repo:" "No repo: fields when --service-repos not provided"
+assert_contains "$TEST30_DIR/config.yaml" "name: frontend" "frontend service exists"
+assert_contains "$TEST30_DIR/config.yaml" "name: backend" "backend service exists"
+
+# Also test --repo flag for service config
+TEST30_SVC="$TMPDIR/test30-svc"
+mkdir -p "$TEST30_SVC"
+(cd "$TEST30_SVC" && git init --quiet)
+
+bash "$ACCORD_DIR/init.sh" \
+    --project-name "svc-repo-test" \
+    --services "my-svc,other-svc" \
+    --repo "git@github.com:org/my-svc.git" \
+    --adapter none \
+    --target-dir "$TEST30_SVC" \
+    --force \
+    --no-interactive > /dev/null 2>&1
+
+assert_file "$TEST30_SVC/.accord/config.yaml" "Service config.yaml created with --repo"
+assert_contains "$TEST30_SVC/.accord/config.yaml" "repo: git@github.com:org/my-svc.git" "Service config has repo URL"
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Summary
 # ══════════════════════════════════════════════════════════════════════════════
 echo -e "\n${BOLD}=== Test Results ===${NC}"

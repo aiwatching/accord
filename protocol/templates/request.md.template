@@ -48,6 +48,12 @@ related_contract: {{RELATED_CONTRACT_PATH}}
 #   # Set when orchestrator re-routes an escalated request
 # originated_from: req-NNN-description
 #   # Original escalated request ID (when re-routed)
+
+# --- command fields (for type: command) ---
+# command: status
+#   # One of: status, scan, check-inbox, validate
+# command_args: ""
+#   # Optional arguments for the command
 ---
 
 ## What

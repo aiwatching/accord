@@ -31,6 +31,8 @@ HUB_SYNC_OK=false
 FORCE=false
 ROLE=""
 INIT_SERVICES=false
+SERVICE_REPOS=""
+REPO_URL=""
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -54,6 +56,8 @@ Options:
   --target-dir <path>         Target directory (default: current directory)
   --role <role>               orchestrator | service (default: service)
   --init-services             Also init all service repos (orchestrator only, dirs must be siblings)
+  --service-repos <mapping>   Repo URLs for services (format: name=url,name=url) — orchestrator only
+  --repo <git-url>            Git repo URL for this service (stored in config)
   --force                     Re-initialize even if .accord/config.yaml exists
   --no-interactive            Use auto-detected defaults without prompts
   --help                      Show this help message
@@ -197,6 +201,8 @@ parse_args() {
             --target-dir)     TARGET_DIR="$2"; shift 2 ;;
             --role)            ROLE="$2"; shift 2 ;;
             --init-services)  INIT_SERVICES=true; shift ;;
+            --service-repos)  SERVICE_REPOS="$2"; shift 2 ;;
+            --repo)           REPO_URL="$2"; shift 2 ;;
             --scan)           SCAN=true; shift ;;
             --force)          FORCE=true; shift ;;
             --no-interactive) INTERACTIVE=false; shift ;;
@@ -419,10 +425,18 @@ generate_config() {
     # Build services section for config.yaml
     local services_yaml=""
     IFS=',' read -ra svc_arr <<< "$SERVICES"
+    local own_svc="${svc_arr[0]}"
+    own_svc="$(echo "$own_svc" | xargs)"
     for svc in "${svc_arr[@]}"; do
         svc="$(echo "$svc" | xargs)"
         services_yaml="${services_yaml}
   - name: ${svc}"
+
+        # Add repo URL for own service if provided
+        if [[ -n "$REPO_URL" && "$svc" == "$own_svc" ]]; then
+            services_yaml="${services_yaml}
+    repo: ${REPO_URL}"
+        fi
 
         # If this service has modules, nest them
         if [[ "$svc" == "$SERVICE" && -n "$MODULES" ]]; then
@@ -929,12 +943,29 @@ generate_orchestrator_config() {
         return
     fi
 
+    # Parse SERVICE_REPOS into an associative-style lookup
+    # Format: name=url,name=url
     local services_yaml=""
     IFS=',' read -ra svc_arr <<< "$SERVICES"
     for svc in "${svc_arr[@]}"; do
         svc="$(echo "$svc" | xargs)"
         services_yaml="${services_yaml}
   - name: ${svc}"
+
+        # Check if this service has a repo URL in SERVICE_REPOS
+        if [[ -n "$SERVICE_REPOS" ]]; then
+            IFS=',' read -ra repo_pairs <<< "$SERVICE_REPOS"
+            for pair in "${repo_pairs[@]}"; do
+                local repo_name="${pair%%=*}"
+                local repo_url="${pair#*=}"
+                repo_name="$(echo "$repo_name" | xargs)"
+                if [[ "$repo_name" == "$svc" && -n "$repo_url" ]]; then
+                    services_yaml="${services_yaml}
+    repo: ${repo_url}"
+                    break
+                fi
+            done
+        fi
     done
 
     cat > "$config_file" <<EOF

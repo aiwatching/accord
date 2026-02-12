@@ -98,6 +98,14 @@ When an escalated request arrives in `comms/inbox/orchestrator/`:
 7. Commit and push if changes were made
 8. Report progress to the user with a summary table
 
+## ON_COMMAND (Remote Service Commands)
+
+Send diagnostic commands to services via the protocol:
+1. Use `/accord-remote-command` to send a command (status, scan, check-inbox, validate)
+2. Use `/accord-check-results` to check returned results
+3. Commands are fire-and-check-later — inherent latency from git push/pull
+4. Command requests use `type: command` and skip human approval on the service side
+
 ## State Machine (Directives)
 
 ```
@@ -118,6 +126,6 @@ pending → rejected
 orchestrator: {action} - {summary}
 ```
 
-Actions: `decompose`, `route`, `monitor`, `update`
+Actions: `decompose`, `route`, `monitor`, `update`, `command`
 
 <!-- ACCORD END -->

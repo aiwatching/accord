@@ -70,6 +70,14 @@ When a conversation starts:
 
 **If sync mode is `manual` or `auto-poll`:** Skip this — the user handles sync themselves.
 
+## ON_COMMAND (Auto-Execute Remote Commands)
+
+When checking inbox, if you find requests with `type: command`:
+- Execute automatically — NO human approval needed (read-only diagnostics)
+- Supported commands: `status`, `scan`, `check-inbox`, `validate`
+- Write results into a `## Result` section at the end of the request, complete and archive the request
+- If the command is unrecognized, set result to "Unknown command: {cmd}" and complete anyway
+
 ## Contract Rules
 
 ### External Contracts
