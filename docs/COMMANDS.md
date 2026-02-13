@@ -79,22 +79,22 @@ Autonomous request processing agent. TypeScript dispatcher + worker pool, powere
 #### Subcommands
 
 ```bash
-# Process all requests once and exit
-accord-agent.sh run-once --target-dir ./frontend
-
-# Dry-run: show what would be processed without executing
-accord-agent.sh run-once --dry-run --target-dir ./frontend
-
-# Start background daemon (polls every 30s by default)
-accord-agent.sh start --target-dir ./frontend --workers 4 --interval 30
+# Start the agent — single process, monitors all service inboxes
+accord-agent.sh start --target-dir ./hub --workers 4 --interval 30
 
 # Check daemon status
-accord-agent.sh status --target-dir ./frontend
+accord-agent.sh status --target-dir ./hub
 
 # Stop daemon
-accord-agent.sh stop --target-dir ./frontend
+accord-agent.sh stop --target-dir ./hub
 
-# Start/stop/status for ALL services (from hub directory)
+# Process all requests once and exit
+accord-agent.sh run-once --target-dir ./hub
+
+# Dry-run: show what would be processed without executing
+accord-agent.sh run-once --dry-run --target-dir ./hub
+
+# Multi-repo: start/stop/status per service (spawns separate processes)
 accord-agent.sh start-all --target-dir ./hub
 accord-agent.sh stop-all --target-dir ./hub
 accord-agent.sh status-all --target-dir ./hub
@@ -176,6 +176,21 @@ accord-agent.sh status-all --target-dir ./hub
 
 # Dry-run to verify inbox scanning and priority sorting
 accord-agent.sh run-once --dry-run --target-dir ./my-service
+```
+
+#### Testing
+
+```bash
+cd agent
+npm test                    # 67 unit + integration tests
+npm run test:watch          # re-run on file changes
+
+# Manual: dry-run against any project
+accord-agent.sh run-once --dry-run --target-dir ./my-service
+
+# Manual: process command requests only (safe, no AI agent invoked)
+# Place a type: command request in an inbox, then:
+accord-agent.sh run-once --target-dir ./my-service
 ```
 
 #### Legacy Fallback

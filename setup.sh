@@ -173,25 +173,27 @@ execute_setup() {
     local project_dir
     project_dir="$(pwd)"
 
-    # 0. Stop running daemons before re-init
+    # 0. Stop running agent daemon before re-init
+    # Check hub-level PID first, then per-service (legacy)
     local stopped_any=false
-    for i in "${!SVC_NAMES[@]}"; do
-        local dir="${SVC_DIRS[$i]}"
-        if [[ "$dir" != /* ]]; then dir="$project_dir/$dir"; fi
-        dir="$(cd "$dir" 2>/dev/null && pwd)" || continue
-        local pf="$dir/.accord/.agent.pid"
+    local hub_abs
+    hub_abs="$(cd "$HUB_DIR" 2>/dev/null && pwd)" || hub_abs="$HUB_DIR"
+    for check_dir in "$hub_abs" "${SVC_DIRS[@]}"; do
+        if [[ "$check_dir" != /* ]]; then check_dir="$project_dir/$check_dir"; fi
+        check_dir="$(cd "$check_dir" 2>/dev/null && pwd)" || continue
+        local pf="$check_dir/.accord/.agent.pid"
         if [[ -f "$pf" ]]; then
             local pid
             pid="$(cat "$pf")"
             if kill -0 "$pid" 2>/dev/null; then
-                log "Stopping agent daemon for ${SVC_NAMES[$i]} (pid $pid)"
-                bash "$ACCORD_DIR/accord-agent.sh" stop --target-dir "$dir" 2>/dev/null || true
+                log "Stopping agent daemon (pid $pid)"
+                bash "$ACCORD_DIR/accord-agent.sh" stop --target-dir "$check_dir" 2>/dev/null || true
                 stopped_any=true
             fi
         fi
     done
     if [[ "$stopped_any" == true ]]; then
-        log "All running daemons stopped"
+        log "Agent daemon(s) stopped"
     fi
 
     # 1. Clone hub if needed
@@ -272,20 +274,15 @@ execute_setup() {
         }
     done
 
-    # 4. Start agent daemons if requested
+    # 4. Start agent daemon if requested (single process monitors all services)
     if [[ "$START_DAEMONS" == true ]]; then
         echo ""
-        log "Starting agent daemons..."
-        for i in "${!SVC_NAMES[@]}"; do
-            local svc="${SVC_NAMES[$i]}"
-            local dir="${SVC_DIRS[$i]}"
-            if [[ "$dir" != /* ]]; then dir="$project_dir/$dir"; fi
-            dir="$(cd "$dir" 2>/dev/null && pwd)" || continue
-            log "Starting daemon for: $svc"
-            bash "$ACCORD_DIR/accord-agent.sh" start --target-dir "$dir" || {
-                warn "Failed to start daemon for: $svc"
-            }
-        done
+        log "Starting agent daemon..."
+        local hub_abs
+        hub_abs="$(cd "$HUB_DIR" 2>/dev/null && pwd)" || hub_abs="$HUB_DIR"
+        bash "$ACCORD_DIR/accord-agent.sh" start --target-dir "$hub_abs" || {
+            warn "Failed to start agent daemon"
+        }
     fi
 }
 
@@ -321,13 +318,16 @@ print_done() {
         echo "       cd ${SVC_DIRS[$i]} && claude"
     done
     echo ""
-    echo "    3. (Alternative) Start headless agent daemons instead:"
+    echo "    3. (Alternative) Start the autonomous agent daemon:"
     echo ""
-    echo "       accord-agent.sh start-all --target-dir $HUB_DIR"
-    echo -e "       ${DIM}# Or per-service:${NC}"
-    for i in "${!SVC_NAMES[@]}"; do
-        echo "       accord-agent.sh start --target-dir ${SVC_DIRS[$i]}"
-    done
+    echo "       accord-agent.sh start --target-dir $HUB_DIR"
+    echo -e "       ${DIM}# Single process, monitors all service inboxes${NC}"
+    echo ""
+    echo -e "       ${DIM}# Check status:${NC}"
+    echo "       accord-agent.sh status --target-dir $HUB_DIR"
+    echo ""
+    echo -e "       ${DIM}# Stop:${NC}"
+    echo "       accord-agent.sh stop --target-dir $HUB_DIR"
     echo ""
 }
 

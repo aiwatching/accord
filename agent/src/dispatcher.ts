@@ -1,10 +1,11 @@
+import * as path from 'node:path';
 import type { AccordConfig, AccordRequest, DispatcherConfig, DispatcherStatus, RequestResult } from './types.js';
 import { Worker } from './worker.js';
 import { SessionManager } from './session.js';
 import { logger } from './logger.js';
 import { scanInboxes, getPendingRequests, sortByPriority } from './request.js';
 import { syncPull, syncPush, gitCommit } from './sync.js';
-import { getAccordDir } from './config.js';
+import { getAccordDir, getServiceDir } from './config.js';
 
 export class Dispatcher {
   private workers: Worker[] = [];
@@ -19,6 +20,8 @@ export class Dispatcher {
   private pendingQueue = 0;
   // Track which services have a worker actively processing
   private activeServices = new Set<string>();
+  // Track which directories are in use — prevents concurrent access to same cwd
+  private activeDirectories = new Set<string>();
 
   constructor(
     config: DispatcherConfig,
@@ -118,10 +121,22 @@ export class Dispatcher {
     logger.info(`Found ${pending.length} pending request(s)`);
 
     if (dryRun) {
-      for (const req of pending) {
-        logger.info(`  [dry-run] ${req.frontmatter.id} → ${req.serviceName} (${req.frontmatter.priority})`);
+      // Show what would be assigned (respects directory constraint)
+      const assignments = this.assignRequests(pending);
+      const skipped = pending.length - assignments.length;
+      for (const { worker, request } of assignments) {
+        logger.info(`  [dry-run] ${request.frontmatter.id} → ${request.serviceName} (${request.frontmatter.priority}) → worker ${worker.id}`);
       }
-      return pending.length;
+      if (skipped > 0) {
+        logger.info(`  [dry-run] ${skipped} request(s) deferred (directory/service constraint)`);
+      }
+      // Clean up: release active services/directories since we didn't actually process
+      for (const { request } of assignments) {
+        const serviceDir = path.resolve(getServiceDir(this.accordConfig, request.serviceName, this.targetDir));
+        this.activeServices.delete(request.serviceName);
+        this.activeDirectories.delete(serviceDir);
+      }
+      return assignments.length;
     }
 
     // 3. Assign requests to workers
@@ -170,9 +185,17 @@ export class Dispatcher {
     for (const request of pending) {
       const serviceName = request.serviceName;
 
-      // Constraint: never assign two requests for the same service simultaneously
+      // Constraint 1: never assign two requests for the same service simultaneously
       if (this.activeServices.has(serviceName)) {
         logger.debug(`Skipping ${request.frontmatter.id}: service ${serviceName} already active`);
+        continue;
+      }
+
+      // Constraint 2: never assign two requests that resolve to the same directory
+      // (critical for monorepo where all services share one cwd)
+      const serviceDir = path.resolve(getServiceDir(this.accordConfig, serviceName, this.targetDir));
+      if (this.activeDirectories.has(serviceDir)) {
+        logger.debug(`Skipping ${request.frontmatter.id}: directory ${serviceDir} already in use by another service`);
         continue;
       }
 
@@ -184,6 +207,7 @@ export class Dispatcher {
 
       assignments.push({ worker, request });
       this.activeServices.add(serviceName);
+      this.activeDirectories.add(serviceDir);
     }
 
     return assignments;
@@ -191,27 +215,29 @@ export class Dispatcher {
 
   /**
    * Find the best idle worker for a given service:
-   * 1. Best: idle worker with existing session for this service (session affinity)
-   * 2. Good: idle worker with fewest sessions (load balance)
+   * 1. Best: idle worker that last processed this service (session affinity)
+   * 2. Good: any idle worker (first available)
    */
   private findBestWorker(serviceName: string): Worker | null {
     const idleWorkers = this.workers.filter(w => w.isIdle());
     if (idleWorkers.length === 0) return null;
 
-    // Prefer worker with existing session for this service
-    const withSession = idleWorkers.find(w => w.hasSessionFor(serviceName));
-    if (withSession) return withSession;
+    // Prefer worker that last processed this service (true session affinity)
+    const withAffinity = idleWorkers.find(w => w.lastServiceName === serviceName);
+    if (withAffinity) return withAffinity;
 
-    // Otherwise, pick the one with fewest active sessions
+    // Otherwise, pick any idle worker
     return idleWorkers[0];
   }
 
   private async processWithWorker(worker: Worker, request: AccordRequest): Promise<RequestResult> {
     const serviceName = request.serviceName;
+    const serviceDir = path.resolve(getServiceDir(this.accordConfig, serviceName, this.targetDir));
     try {
       return await worker.processRequest(request);
     } finally {
       this.activeServices.delete(serviceName);
+      this.activeDirectories.delete(serviceDir);
     }
   }
 }

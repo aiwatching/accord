@@ -98,17 +98,14 @@ Terminal 4:  cd frontend         && claude    (service)
 ### Option B: Autonomous daemon (headless)
 
 ```bash
-# Start all service agents from hub (one worker pool per service)
-accord-agent.sh start-all --target-dir ./my-project-hub
-
-# Or start a single service agent
-accord-agent.sh start --target-dir ./device-manager --workers 4 --interval 30
+# Start one agent process — monitors all service inboxes
+accord-agent.sh start --target-dir ./my-project-hub --workers 4 --interval 30
 
 # Check status
-accord-agent.sh status-all --target-dir ./my-project-hub
+accord-agent.sh status --target-dir ./my-project-hub
 
-# Stop all
-accord-agent.sh stop-all --target-dir ./my-project-hub
+# Stop
+accord-agent.sh stop --target-dir ./my-project-hub
 ```
 
 ### Option C: One-shot processing
@@ -157,6 +154,57 @@ accord-agent.sh run-once --dry-run --target-dir ./device-manager
   --adapter claude-code \
   --no-interactive
 ```
+
+## Testing the Agent
+
+### Unit & integration tests
+
+```bash
+cd ~/.accord/agent
+npm test                    # run all 67 tests
+npm run test:watch          # re-run on file changes
+```
+
+Test coverage:
+- `config.test.ts` — config loading, validation, dispatcher defaults merging
+- `request.test.ts` — parsing, status updates, priority sorting, inbox scanning, archiving
+- `session.test.ts` — session creation, rotation, disk persistence, crash-recovery checkpoints
+- `prompt.test.ts` — prompt building with registry/contracts/checkpoint context
+- `commands.test.ts` — command validation, status/check-inbox fast-path output
+- `history.test.ts` — JSONL audit log writing, append to same file
+- `dispatcher.test.ts` — worker init, dry-run scanning, command fast-path processing
+- `integration.test.ts` — full end-to-end lifecycle: place request → dispatch → process → archive → history
+
+### Manual verification
+
+```bash
+# Dry-run: show what would be processed (safe, no side-effects)
+accord-agent.sh run-once --dry-run --target-dir ./my-service
+
+# Process one tick against the example project
+accord-agent.sh run-once --target-dir ./examples/microservice-project
+
+# Check logs
+cat ./my-service/.accord/log/agent-$(date +%Y-%m-%d).log
+```
+
+### Debugging
+
+Enable debug logging in `.accord/config.yaml`:
+
+```yaml
+dispatcher:
+  debug: true
+```
+
+Or `settings.debug: true` for all components. Logs go to `.accord/log/agent-YYYY-MM-DD.log`.
+
+Key things to check:
+- `--dry-run` output shows correct request discovery and priority ordering
+- `status` / `status-all` shows daemon PID and state
+- Log file shows tick cycle: pull → scan → assign → process → commit → push
+- Archive directory gets completed requests with `## Result` sections
+- History directory gets JSONL audit entries
 
 ## Upgrade & Uninstall
 
