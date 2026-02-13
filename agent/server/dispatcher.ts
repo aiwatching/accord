@@ -1,11 +1,11 @@
 import * as path from 'node:path';
 import type { AccordConfig, AccordRequest, DispatcherConfig, DispatcherStatus, RequestResult } from './types.js';
-import { Worker } from './worker.js';
-import { SessionManager } from './session.js';
-import { createAdapter, type AgentAdapter } from './agent-adapter.js';
+import { Worker } from './worker-pool.js';
+import { SessionManager } from './session-manager.js';
+import { createAdapter, type AgentAdapter } from './adapters/adapter.js';
 import { logger } from './logger.js';
-import { getDependencyStatus } from './request.js';
-import { syncPush, gitCommit } from './sync.js';
+import { getDependencyStatus } from './scanner.js';
+import { syncPush, gitCommit } from './git-sync.js';
 import { getAccordDir, getServiceDir, loadRegistryYaml } from './config.js';
 
 export class Dispatcher {

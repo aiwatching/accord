@@ -5,7 +5,7 @@
 //   - shell: any CLI agent via child_process (e.g. "claude -p", "codex", custom scripts)
 
 import { execFileSync } from 'node:child_process';
-import { logger } from './logger.js';
+import { logger } from '../logger.js';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

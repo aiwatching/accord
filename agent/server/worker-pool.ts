@@ -1,6 +1,6 @@
 import type { AccordConfig, AccordRequest, DispatcherConfig, RequestResult, WorkerState } from './types.js';
-import type { AgentAdapter } from './agent-adapter.js';
-import { SessionManager } from './session.js';
+import type { AgentAdapter } from './adapters/adapter.js';
+import { SessionManager } from './session-manager.js';
 import { logger } from './logger.js';
 import { eventBus } from './event-bus.js';
 import { executeCommand, isValidCommand } from './commands.js';
@@ -11,8 +11,8 @@ import {
   archiveRequest,
   appendResultSection,
   createEscalation,
-} from './request.js';
-import { gitCommit } from './sync.js';
+} from './scanner.js';
+import { gitCommit } from './git-sync.js';
 import { writeHistory } from './history.js';
 import { getServiceDir, getAccordDir } from './config.js';
 

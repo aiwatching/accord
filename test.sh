@@ -1394,9 +1394,9 @@ fi
 echo -e "\n${BOLD}[Test 24] Hub Service (v4)${NC}"
 
 assert_file "$ACCORD_DIR/agent/package.json" "agent/package.json exists"
-assert_file "$ACCORD_DIR/agent/src/scheduler.ts" "Hub Service scheduler exists"
-assert_file "$ACCORD_DIR/agent/src/server.ts" "Hub Service server exists"
-assert_file "$ACCORD_DIR/agent/src/event-bus.ts" "Hub Service event bus exists"
+assert_file "$ACCORD_DIR/agent/server/scheduler.ts" "Hub Service scheduler exists"
+assert_file "$ACCORD_DIR/agent/server/http.ts" "Hub Service http server exists"
+assert_file "$ACCORD_DIR/agent/server/event-bus.ts" "Hub Service event bus exists"
 assert_contains "$ACCORD_DIR/agent/package.json" "fastify" "package.json includes fastify dependency"
 assert_contains "$ACCORD_DIR/agent/package.json" "1.0.0" "package.json version is 1.0.0"
 
@@ -1836,12 +1836,12 @@ assert_not_contains "$TEST31_DIR/CLAUDE.md" "/accord-remote-command" "Installed 
 # ══════════════════════════════════════════════════════════════════════════════
 echo -e "${BOLD}[Test 32] Hub Service structure${NC}"
 
-assert_file "$ACCORD_DIR/agent/src/server.ts" "Hub Service server.ts exists"
-assert_file "$ACCORD_DIR/agent/src/scheduler.ts" "Hub Service scheduler.ts exists"
-assert_file "$ACCORD_DIR/agent/src/event-bus.ts" "Hub Service event-bus.ts exists"
-assert_file "$ACCORD_DIR/agent/src/routes/services.ts" "API routes/services.ts exists"
-assert_file "$ACCORD_DIR/agent/src/routes/requests.ts" "API routes/requests.ts exists"
-assert_file "$ACCORD_DIR/agent/src/routes/hub.ts" "API routes/hub.ts exists"
+assert_file "$ACCORD_DIR/agent/server/http.ts" "Hub Service http.ts exists"
+assert_file "$ACCORD_DIR/agent/server/scheduler.ts" "Hub Service scheduler.ts exists"
+assert_file "$ACCORD_DIR/agent/server/event-bus.ts" "Hub Service event-bus.ts exists"
+assert_file "$ACCORD_DIR/agent/server/api/services.ts" "API api/services.ts exists"
+assert_file "$ACCORD_DIR/agent/server/api/requests.ts" "API api/requests.ts exists"
+assert_file "$ACCORD_DIR/agent/server/api/hub.ts" "API api/hub.ts exists"
 assert_file "$ACCORD_DIR/agent/ui/index.html" "UI index.html exists"
 assert_file "$ACCORD_DIR/agent/ui/src/App.tsx" "UI App.tsx exists"
 assert_contains "$ACCORD_DIR/agent/package.json" '"fastify"' "package.json has fastify"

@@ -70,20 +70,20 @@ Idempotent — re-running without `--force` exits with "Already initialized".
 
 ---
 
-### Hub Service (`agent/`)
+### Hub Service (`server/`)
 
-Unified Hub Service — API server, web UI, scheduler, dispatcher, and worker pool. Replaces the legacy `accord-agent.sh` daemon.
+Unified Hub Service — API server, web UI, scheduler, dispatcher, and worker pool. Each hub project is self-contained with its own `server/` and `ui/` directories, copied from the framework during `setup.sh` / `init.sh`.
 
-**Prerequisites:** Node.js >= 20, built agent (`cd ~/.accord/agent && npm install && npm run build`)
+**Prerequisites:** Node.js >= 20, built project (`npm install && npm run build`)
 
 #### Usage
 
 ```bash
 # Start the Hub Service — API + Web UI + automatic scheduling
-cd ~/.accord/agent && npm start -- --hub-dir ./hub --port 3000 --workers 4 --interval 30
+cd my-project-hub && npm start -- --port 3000 --workers 4 --interval 30
 
 # Or in development mode (auto-reload)
-cd ~/.accord/agent && npm run dev -- --hub-dir ./hub
+cd my-project-hub && npm run dev
 ```
 
 #### Web UI
@@ -122,7 +122,7 @@ Connect to `/ws` for real-time events:
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--hub-dir <path>` | Hub/project directory | `.` (current directory) |
+| `--hub-dir <path>` | Hub/project directory | project root (auto-detected) |
 | `--port <number>` | HTTP server port | `3000` |
 | `--workers <N>` | Number of concurrent workers | `4` |
 | `--interval <seconds>` | Scheduler polling interval | `30` |

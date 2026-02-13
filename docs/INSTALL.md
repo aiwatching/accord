@@ -61,14 +61,14 @@ git add .accord CLAUDE.md .claude && git commit -m "accord: init" && git push
 # Repeat for each service
 ```
 
-## Step 4. Build the Agent (optional — enables autonomous mode)
+## Step 4. Build the Hub Service (optional — enables autonomous mode)
 
-The TypeScript agent provides a dispatcher + worker pool for fully autonomous request processing, powered by the Claude Agent SDK.
+Each hub project is self-contained with its own server code and UI. The Hub Service provides a dispatcher + worker pool for fully autonomous request processing, powered by the Claude Agent SDK.
 
 **Prerequisites:** Node.js >= 20
 
 ```bash
-cd ~/.accord/agent
+cd my-project-hub
 npm install
 npm run build
 ```
@@ -76,7 +76,7 @@ npm run build
 Verify:
 
 ```bash
-cd ~/.accord/agent && npm start -- --help
+cd my-project-hub && npm start -- --help
 ```
 
 ---
@@ -96,8 +96,8 @@ Terminal 4:  cd frontend         && claude    (service)
 
 ```bash
 # Start the Hub Service — API server, web dashboard, automatic scheduler
-cd ~/.accord/agent
-npm start -- --hub-dir ./my-project-hub --port 3000 --workers 4 --interval 30
+cd my-project-hub
+npm start -- --port 3000 --workers 4 --interval 30
 
 # Opens http://localhost:3000 with:
 #   - Dashboard with live metrics
@@ -145,11 +145,11 @@ npm start -- --hub-dir ./my-project-hub --port 3000 --workers 4 --interval 30
 
 ## Testing the Agent
 
-### Unit & integration tests
+### Unit & integration tests (framework development only)
 
 ```bash
-cd ~/.accord/agent
-npm test                    # run all 67 tests
+cd <accord-framework>/agent
+npm test                    # run all 80 tests
 npm run test:watch          # re-run on file changes
 ```
 
@@ -167,13 +167,13 @@ Test coverage:
 
 ```bash
 # Start Hub Service and check the dashboard
-cd ~/.accord/agent && npm start -- --hub-dir ./my-service --port 3000
+cd my-project-hub && npm start -- --port 3000
 
 # Or trigger a manual sync via the API
 curl -X POST http://localhost:3000/api/hub/sync
 
 # Check logs
-cat ./my-service/.accord/log/agent-$(date +%Y-%m-%d).log
+cat teams/<team>/log/agent-$(date +%Y-%m-%d).log
 ```
 
 ### Debugging

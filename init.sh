@@ -1252,13 +1252,13 @@ print_orchestrator_summary() {
     echo "    1. Commit hub: git add . && git commit -m 'accord: init orchestrator hub'"
     echo "    2. Commit each service repo"
     echo "    3. Start agent sessions (one per repo) and begin working"
-    echo "    4. (Optional) Start the Hub Service: cd \$ACCORD_DIR/agent && npm start -- --hub-dir ."
+    echo "    4. (Optional) Start the Hub Service: npm install && npm run build && npm start"
     else
     echo "    1. git add . && git commit -m 'accord: init orchestrator hub'"
     echo "    2. Init service repos: re-run with --init-services, or init each service individually"
     echo "    3. Create directives in directives/ for feature decomposition"
     echo "    4. Start your orchestrator agent — it will read registries and process directives"
-    echo "    5. (Optional) Start the Hub Service: cd \$ACCORD_DIR/agent && npm start -- --hub-dir ."
+    echo "    5. (Optional) Start the Hub Service: npm install && npm run build && npm start"
     fi
     echo ""
 }
@@ -1350,6 +1350,53 @@ scaffold_orchestrator_v2() {
     fi
     mkdir -p "$team_dir/protocol/templates"
     cp "$ACCORD_DIR/protocol/templates/directive.md.template" "$team_dir/protocol/templates/directive.md.template"
+
+    # ── Hub Service (server + UI) ──────────────────────────────────────────
+    # Copy server code
+    if [[ -d "$ACCORD_DIR/agent/server" ]]; then
+        mkdir -p "$TARGET_DIR/server"
+        cp -r "$ACCORD_DIR/agent/server/"* "$TARGET_DIR/server/"
+        log "Copied server/ (Hub Service code)"
+    fi
+
+    # Copy UI source + pre-built dist (if available)
+    if [[ -d "$ACCORD_DIR/agent/ui" ]]; then
+        mkdir -p "$TARGET_DIR/ui"
+        cp -r "$ACCORD_DIR/agent/ui/src" "$TARGET_DIR/ui/src"
+        cp "$ACCORD_DIR/agent/ui/index.html" "$TARGET_DIR/ui/index.html"
+        cp "$ACCORD_DIR/agent/ui/vite.config.ts" "$TARGET_DIR/ui/vite.config.ts"
+        # Copy pre-built dist if it exists
+        if [[ -d "$ACCORD_DIR/agent/ui/dist" ]]; then
+            cp -r "$ACCORD_DIR/agent/ui/dist" "$TARGET_DIR/ui/dist"
+            log "Copied ui/ (source + pre-built dist)"
+        else
+            log "Copied ui/ (source only — run 'npm run build:ui' to build)"
+        fi
+    fi
+
+    # Copy build config files
+    if [[ -f "$ACCORD_DIR/agent/tsconfig.json" ]]; then
+        cp "$ACCORD_DIR/agent/tsconfig.json" "$TARGET_DIR/tsconfig.json"
+        log "Copied tsconfig.json"
+    fi
+
+    # Copy entry point
+    if [[ -f "$ACCORD_DIR/agent/accord-server.ts" ]]; then
+        cp "$ACCORD_DIR/agent/accord-server.ts" "$TARGET_DIR/accord-server.ts"
+        log "Copied accord-server.ts"
+    fi
+
+    # Generate package.json from template
+    if [[ -f "$ACCORD_DIR/agent/package.template.json" ]]; then
+        local pkg_file="$TARGET_DIR/package.json"
+        if [[ ! -f "$pkg_file" ]]; then
+            cp "$ACCORD_DIR/agent/package.template.json" "$pkg_file"
+            replace_vars "$pkg_file" "PROJECT_NAME" "$PROJECT_NAME"
+            log "Generated package.json"
+        else
+            warn "package.json already exists (skipping)"
+        fi
+    fi
 
     log "v2 orchestrator hub scaffolding complete"
 }
@@ -1549,7 +1596,7 @@ print_summary() {
     fi
     echo "    2. git add .accord && git commit -m 'accord: init project'"
     echo "    3. Start your agent — it will check the inbox on start"
-    echo "    4. (Optional) Start the Hub Service: cd \$ACCORD_DIR/agent && npm start -- --hub-dir ."
+    echo "    4. (Optional) Start the Hub Service from your hub project: cd <hub-dir> && npm start"
     if [[ "$SYNC_MODE" == "auto-poll" && "$ADAPTER" != "claude-code" ]]; then
         echo "    5. Run: .accord/accord-watch.sh &"
     fi
@@ -1722,7 +1769,7 @@ main() {
             log "Copied accord-sync.sh to .accord/"
         fi
 
-        # Note: agent/ is now the Hub Service (run from accord repo directly)
+        # Note: Hub Service (server/ + ui/) is copied into orchestrator projects by scaffold_orchestrator_v2
 
         install_adapter
         run_scan

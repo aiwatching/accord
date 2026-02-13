@@ -2,7 +2,7 @@
 
 import * as path from 'node:path';
 import { loadConfig, getDispatcherConfig } from './config.js';
-import { startServer, stopServer } from './server.js';
+import { startServer, stopServer } from './http.js';
 import { Scheduler } from './scheduler.js';
 import { Dispatcher } from './dispatcher.js';
 import { setHubState } from './hub-state.js';
@@ -20,8 +20,10 @@ interface CLIArgs {
 }
 
 function parseArgs(argv: string[]): CLIArgs {
+  // Default hubDir: project root (one level up from server/)
+  const projectRoot = path.resolve(import.meta.dirname, '..');
   const args: CLIArgs = {
-    hubDir: process.cwd(),
+    hubDir: projectRoot,
     port: 3000,
   };
 

@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { getHubState } from '../hub-state.js';
 import { getAccordDir, getInboxPath } from '../config.js';
-import { scanInboxes, scanArchives, parseRequest, setRequestStatus } from '../request.js';
+import { scanInboxes, scanArchives, parseRequest, setRequestStatus } from '../scanner.js';
 
 export function registerRequestRoutes(app: FastifyInstance): void {
   // GET /api/requests — list all requests, filterable by service/status

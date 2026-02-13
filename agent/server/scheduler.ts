@@ -1,8 +1,8 @@
 import type { AccordConfig } from './types.js';
 import type { Dispatcher } from './dispatcher.js';
 import { eventBus } from './event-bus.js';
-import { syncPull } from './sync.js';
-import { scanInboxes, getPendingRequests, sortByPriority } from './request.js';
+import { syncPull } from './git-sync.js';
+import { scanInboxes, getPendingRequests, sortByPriority } from './scanner.js';
 import { getAccordDir } from './config.js';
 import { logger } from './logger.js';
 

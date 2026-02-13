@@ -5,11 +5,11 @@ import fastifyStatic from '@fastify/static';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { eventBus } from './event-bus.js';
-import { registerServiceRoutes } from './routes/services.js';
-import { registerRequestRoutes } from './routes/requests.js';
-import { registerDirectiveRoutes } from './routes/directives.js';
-import { registerWorkerRoutes } from './routes/workers.js';
-import { registerHubRoutes } from './routes/hub.js';
+import { registerServiceRoutes } from './api/services.js';
+import { registerRequestRoutes } from './api/requests.js';
+import { registerDirectiveRoutes } from './api/directives.js';
+import { registerWorkerRoutes } from './api/workers.js';
+import { registerHubRoutes } from './api/hub.js';
 import { logger } from './logger.js';
 
 let app: FastifyInstance | null = null;

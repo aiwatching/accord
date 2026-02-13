@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { getHubState } from '../hub-state.js';
 import { getAccordDir, getServiceDir, loadRegistryYaml } from '../config.js';
-import { scanInboxes, scanArchives } from '../request.js';
+import { scanInboxes, scanArchives } from '../scanner.js';
 
 export function registerServiceRoutes(app: FastifyInstance): void {
   // GET /api/services — list all services with status
