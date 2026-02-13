@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { buildAgentPrompt, buildSessionSummary } from '../src/prompt.js';
-import type { AccordRequest, RequestResult } from '../src/types.js';
+import { buildAgentPrompt, buildSessionSummary } from '../server/prompt.js';
+import type { AccordRequest, RequestResult } from '../server/types.js';
 
 let tmpDir: string;
 

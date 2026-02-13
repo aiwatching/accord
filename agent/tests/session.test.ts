@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { SessionManager } from '../src/session.js';
-import type { DispatcherConfig } from '../src/types.js';
+import { SessionManager } from '../server/session-manager.js';
+import type { DispatcherConfig } from '../server/types.js';
 
 let tmpDir: string;
 

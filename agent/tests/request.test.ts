@@ -12,8 +12,8 @@ import {
   scanInboxes,
   getPendingRequests,
   sortByPriority,
-} from '../src/request.js';
-import type { AccordConfig, AccordRequest } from '../src/types.js';
+} from '../server/scanner.js';
+import type { AccordConfig, AccordRequest } from '../server/types.js';
 
 let tmpDir: string;
 

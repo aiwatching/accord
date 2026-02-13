@@ -3,19 +3,19 @@
   "version": "1.0.0",
   "description": "Accord Hub Service — unified API server, web UI, scheduler, dispatcher, and worker pool",
   "type": "module",
-  "main": "dist/index.js",
+  "main": "dist/server/index.js",
   "bin": {
-    "accord-agent": "dist/index.js"
+    "accord-hub": "dist/server/index.js"
   },
   "scripts": {
     "build:server": "tsc",
     "build:ui": "vite build --config ui/vite.config.ts",
     "build": "npm run build:server && npm run build:ui",
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch server/index.ts",
     "dev:ui": "vite dev --config ui/vite.config.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "start": "node dist/index.js"
+    "start": "node dist/server/index.js"
   },
   "engines": {
     "node": ">=20.0.0"

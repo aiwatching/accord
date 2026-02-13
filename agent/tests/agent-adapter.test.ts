@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createAdapter } from '../src/agent-adapter.js';
+import { createAdapter } from '../server/adapters/adapter.js';
 
 describe('createAdapter', () => {
   it('creates claude-code adapter', () => {

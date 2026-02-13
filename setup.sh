@@ -342,7 +342,7 @@ print_done() {
     echo ""
     echo "    3. (Alternative) Start the Hub Service (API + Web UI + scheduler):"
     echo ""
-    echo "       cd $ACCORD_DIR/agent && npm install && npm start -- --hub-dir $HUB_DIR"
+    echo "       cd $HUB_DIR && npm install && npm run build && npm start"
     echo -e "       ${DIM}# Opens on http://localhost:3000 — dashboard, API, live streaming${NC}"
     echo ""
 }

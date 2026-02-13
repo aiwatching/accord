@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { loadConfig, getDispatcherConfig, getServiceNames, getServiceDir, getAccordDir } from '../src/config.js';
+import { loadConfig, getDispatcherConfig, getServiceNames, getServiceDir, getAccordDir } from '../server/config.js';
 
 let tmpDir: string;
 

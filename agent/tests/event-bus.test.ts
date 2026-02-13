@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { eventBus } from '../src/event-bus.js';
+import { eventBus } from '../server/event-bus.js';
 
 describe('EventBus', () => {
   it('emits and receives typed events', () => {

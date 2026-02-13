@@ -3,9 +3,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { execFileSync } from 'node:child_process';
-import { Dispatcher } from '../src/dispatcher.js';
-import { scanInboxes, getPendingRequests, sortByPriority } from '../src/request.js';
-import type { AccordConfig, DispatcherConfig } from '../src/types.js';
+import { Dispatcher } from '../server/dispatcher.js';
+import { scanInboxes, getPendingRequests, sortByPriority } from '../server/scanner.js';
+import type { AccordConfig, DispatcherConfig } from '../server/types.js';
 
 let tmpDir: string;
 
