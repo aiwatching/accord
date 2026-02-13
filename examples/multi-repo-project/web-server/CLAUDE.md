@@ -7,11 +7,22 @@
 
 
 
+
+# web-server — Agent Memory
+
+## Service Info
+- Service: web-server
+- Team: accord-hub
+- Tech stack: Java (Maven project)
+
+## Recent Changes
+- 2026-02-13: req-000-service-joined-device-manager — Acknowledged device-manager joining the project. Hub contracts synced locally at .accord/.hub/accord_hub/contracts/device-manager.yaml
+
 <!-- ACCORD START — do not edit this block manually. Managed by accord. -->
 
 # Accord Protocol Rules — device-manager
 
-You are an AI coding agent for the **device-manager** service in team **default** (project: **accord-hub**).
+You are an AI coding agent for the **device-manager** service in team **default** (project: **demo-project**).
 
 ## Service Identity
 
@@ -191,13 +202,3 @@ maintainer: human
 ```
 
 <!-- ACCORD END -->
-
-# web-server — Agent Memory
-
-## Service Info
-- Service: web-server
-- Team: accord-hub
-- Tech stack: Java (Maven project)
-
-## Recent Changes
-- 2026-02-13: req-000-service-joined-device-manager — Acknowledged device-manager joining the project. Hub contracts synced locally at .accord/.hub/accord_hub/contracts/device-manager.yaml

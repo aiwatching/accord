@@ -8,11 +8,12 @@
 
 
 
+
 <!-- ACCORD START — do not edit this block manually. Managed by accord. -->
 
 # Accord Protocol Rules — device-manager
 
-You are an AI coding agent for the **device-manager** service in team **default** (project: **accord-hub**).
+You are an AI coding agent for the **device-manager** service in team **default** (project: **demo-project**).
 
 ## Service Identity
 
@@ -146,7 +147,8 @@ Maintain your `CLAUDE.md` as persistent agent memory:
 - (tech stack, DB, conventions)
 
 ## Recent Changes
-- 2026-02-13: req-000-service-joined-device-manager — Acknowledged device-manager service joining project, hub contracts already synced
+- 2026-02-12: req-101 — Added device_tags table
+- 2026-02-13: req-105 — Health check endpoint
 ```
 
 After each task, append to "## Recent Changes". Keep the last 20 entries.
