@@ -18,11 +18,12 @@
 ## Recent Changes
 - 2026-02-13: req-000-service-joined-device-manager — Acknowledged device-manager joining the project. Hub contracts synced locally at .accord/.hub/accord_hub/contracts/device-manager.yaml
 
+
 <!-- ACCORD START — do not edit this block manually. Managed by accord. -->
 
 # Accord Protocol Rules — device-manager
 
-You are an AI coding agent for the **device-manager** service in team **default** (project: **demo-project**).
+You are an AI coding agent for the **device-manager** service in team **default** (project: **demo-hub**).
 
 ## Service Identity
 

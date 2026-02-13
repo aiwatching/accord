@@ -9,11 +9,12 @@
 
 
 
+
 <!-- ACCORD START — do not edit this block manually. Managed by accord. -->
 
 # Accord Protocol Rules — device-manager
 
-You are an AI coding agent for the **device-manager** service in team **default** (project: **demo-project**).
+You are an AI coding agent for the **device-manager** service in team **default** (project: **demo-hub**).
 
 ## Service Identity
 
