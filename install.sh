@@ -83,6 +83,36 @@ fi
 
 chmod +x "$ACCORD_HOME/init.sh" "$ACCORD_HOME/setup.sh" "$ACCORD_HOME/uninstall.sh" "$ACCORD_HOME/upgrade.sh"
 
+# ── Build TypeScript agent (if Node.js available) ─────────────────────────────
+
+build_ts_agent() {
+    if ! command -v node >/dev/null 2>&1; then
+        log "Node.js not found — skipping TypeScript agent build (legacy bash agent will be used)"
+        return
+    fi
+
+    local node_ver
+    node_ver="$(node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1)"
+    if [[ -z "$node_ver" || "$node_ver" -lt 20 ]]; then
+        log "Node.js >= 20 required for TypeScript agent (found v${node_ver:-unknown}) — using legacy bash agent"
+        return
+    fi
+
+    if [[ ! -f "$ACCORD_HOME/agent/package.json" ]]; then
+        log "No agent/package.json found — skipping TypeScript agent build"
+        return
+    fi
+
+    log "Building TypeScript agent..."
+    if (cd "$ACCORD_HOME/agent" && npm install --quiet 2>/dev/null && npm run build 2>/dev/null); then
+        log "TypeScript agent built successfully"
+    else
+        log "TypeScript agent build failed — legacy bash agent will be used as fallback"
+    fi
+}
+
+build_ts_agent
+
 # ── Read installed version ────────────────────────────────────────────────────
 
 INSTALLED_VERSION="unknown"

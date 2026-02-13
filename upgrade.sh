@@ -400,6 +400,26 @@ upgrade_debug_viewer() {
     fi
 }
 
+# ── Rebuild TypeScript agent ─────────────────────────────────────────────────
+
+upgrade_ts_agent() {
+    if ! command -v node >/dev/null 2>&1; then return; fi
+
+    local node_ver
+    node_ver="$(node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1)"
+    if [[ -z "$node_ver" || "$node_ver" -lt 20 ]]; then return; fi
+
+    if [[ ! -f "$ACCORD_DIR/agent/package.json" ]]; then return; fi
+
+    log "Rebuilding TypeScript agent..."
+    if (cd "$ACCORD_DIR/agent" && npm install --quiet 2>/dev/null && npm run build 2>/dev/null); then
+        log "TypeScript agent rebuilt"
+        UPDATED=$((UPDATED + 1))
+    else
+        warn "TypeScript agent rebuild failed — legacy bash agent will be used"
+    fi
+}
+
 # ── Execute ──────────────────────────────────────────────────────────────────
 
 upgrade_protocol_files
@@ -407,6 +427,7 @@ upgrade_claude_code
 upgrade_generic
 upgrade_watch_script
 upgrade_debug_viewer
+upgrade_ts_agent
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 
