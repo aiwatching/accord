@@ -142,23 +142,11 @@ export function getAccordDir(targetDir: string, config: AccordConfig): string {
 }
 
 /**
- * Get all accord directories to scan (multi-team hubs may have root-level + team-level).
+ * Get all accord directories to scan.
  * Returns an array of directories, each containing comms/inbox/ structure.
  */
 export function getAllAccordDirs(targetDir: string, config: AccordConfig): string[] {
-  const dirs: string[] = [];
-  const primary = getAccordDir(targetDir, config);
-  dirs.push(primary);
-
-  // For multi-team hubs, also include root-level comms if it exists
-  if (config.teamDir && config.role === 'orchestrator') {
-    const rootComms = path.join(targetDir, 'comms', 'inbox');
-    if (fs.existsSync(rootComms)) {
-      dirs.push(targetDir);
-    }
-  }
-
-  return dirs;
+  return [getAccordDir(targetDir, config)];
 }
 
 /**

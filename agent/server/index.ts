@@ -20,10 +20,8 @@ interface CLIArgs {
 }
 
 function parseArgs(argv: string[]): CLIArgs {
-  // Default hubDir: project root (one level up from server/)
-  const projectRoot = path.resolve(import.meta.dirname, '..');
   const args: CLIArgs = {
-    hubDir: projectRoot,
+    hubDir: process.cwd(),
     port: 3000,
   };
 
