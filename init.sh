@@ -881,6 +881,10 @@ hub_sync_on_init() {
             warn "Failed to push hub init. Skipping hub sync."
             return
         fi
+        # Set bare repo HEAD to project branch (so future clones default to it)
+        if [[ -d "$HUB/HEAD" ]] || [[ -f "$HUB/HEAD" ]]; then
+            git -C "$HUB" symbolic-ref HEAD "refs/heads/$hub_branch" 2>/dev/null || true
+        fi
     fi
 
     # b. Pull: copy other services' contracts from hub → local

@@ -135,7 +135,7 @@ function runCheckInbox(accordDir: string): string {
 }
 
 function runValidate(targetDir: string, accordDir: string): string {
-  const results: string[] = ['## Validation Results', ''];
+  const results: string[] = ['## Validation Report', ''];
 
   const validatorsDir = findValidatorsDir();
   if (!validatorsDir) {
