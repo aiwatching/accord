@@ -75,12 +75,23 @@ export interface AccordSettings {
   agent_cmd?: string;
 }
 
+/** Root-level accord.yaml (multi-team hub) */
+export interface OrgConfig {
+  version: string;
+  org: string;
+  teams: Array<{ name: string; description?: string }>;
+}
+
 export interface AccordConfig {
   version: string;
   project: { name: string };
   repo_model: 'monorepo' | 'multi-repo';
   hub?: string;
   role?: 'orchestrator' | 'service';
+  /** For multi-team hubs: resolved team name */
+  team?: string;
+  /** For multi-team hubs: absolute path to the team directory (e.g. /path/hub/teams/my-team) */
+  teamDir?: string;
   services: ServiceConfig[];
   settings?: AccordSettings;
   dispatcher?: Partial<DispatcherConfig>;

@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import matter from 'gray-matter';
 import type { AccordConfig, AccordRequest, RequestFrontmatter, RequestPriority, RequestStatus } from './types.js';
-import { getInboxPath } from './config.js';
+import { getInboxPath, getAllAccordDirs } from './config.js';
 import { logger } from './logger.js';
 
 const PRIORITY_ORDER: Record<RequestPriority, number> = {
@@ -145,30 +145,66 @@ ${originalRequest.body}
 
 // ── Scanning ───────────────────────────────────────────────────────────────
 
-export function scanInboxes(accordDir: string, config: AccordConfig): AccordRequest[] {
+export function scanInboxes(accordDir: string, config: AccordConfig, hubDir?: string): AccordRequest[] {
   const requests: AccordRequest[] = [];
   const services = config.services;
 
-  for (const svc of services) {
-    const svcInbox = getInboxPath(accordDir, svc.name);
-    scanDirectory(svcInbox, requests);
-  }
+  // Determine all directories to scan (multi-team hubs may have root + team)
+  const dirs = hubDir ? getAllAccordDirs(hubDir, config) : [accordDir];
 
-  // Also scan orchestrator inbox if present
-  const orchInbox = getInboxPath(accordDir, 'orchestrator');
-  scanDirectory(orchInbox, requests);
+  // Only deduplicate when scanning multiple directories (same request in root + team)
+  const seen = dirs.length > 1 ? new Set<string>() : undefined;
+
+  for (const dir of dirs) {
+    for (const svc of services) {
+      const svcInbox = getInboxPath(dir, svc.name);
+      scanDirectory(svcInbox, requests, seen);
+    }
+
+    // Also scan orchestrator inbox if present
+    const orchInbox = getInboxPath(dir, 'orchestrator');
+    scanDirectory(orchInbox, requests, seen);
+
+    // Also scan _team inbox for cross-team requests
+    const teamInbox = getInboxPath(dir, '_team');
+    scanDirectory(teamInbox, requests, seen);
+  }
 
   return requests;
 }
 
-function scanDirectory(dir: string, results: AccordRequest[]): void {
+function scanDirectory(dir: string, results: AccordRequest[], seen?: Set<string>): void {
   if (!fs.existsSync(dir)) return;
 
   const files = fs.readdirSync(dir).filter(f => f.startsWith('req-') && f.endsWith('.md'));
   for (const file of files) {
     const req = parseRequest(path.join(dir, file));
-    if (req) results.push(req);
+    if (req) {
+      // Deduplicate by request ID (same request may exist in root + team inboxes)
+      if (seen && seen.has(req.frontmatter.id)) continue;
+      if (seen) seen.add(req.frontmatter.id);
+      results.push(req);
+    }
   }
+}
+
+// ── Archive scanning ──────────────────────────────────────────────────────
+
+/**
+ * Scan archive directories for completed/failed requests.
+ * For multi-team hubs, scans both root-level and team-level archives.
+ */
+export function scanArchives(accordDir: string, config: AccordConfig, hubDir?: string): AccordRequest[] {
+  const results: AccordRequest[] = [];
+  const seen = new Set<string>();
+
+  const dirs = hubDir ? getAllAccordDirs(hubDir, config) : [accordDir];
+  for (const dir of dirs) {
+    const archiveDir = path.join(dir, 'comms', 'archive');
+    scanDirectory(archiveDir, results, seen);
+  }
+
+  return results;
 }
 
 // ── Dependency Checking ─────────────────────────────────────────────────────

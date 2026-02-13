@@ -3,23 +3,17 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { getHubState } from '../hub-state.js';
 import { getAccordDir, getInboxPath } from '../config.js';
-import { scanInboxes, parseRequest, setRequestStatus } from '../request.js';
+import { scanInboxes, scanArchives, parseRequest, setRequestStatus } from '../request.js';
 
 export function registerRequestRoutes(app: FastifyInstance): void {
   // GET /api/requests — list all requests, filterable by service/status
   app.get<{ Querystring: { service?: string; status?: string } }>('/api/requests', async (req) => {
     const { config, hubDir } = getHubState();
     const accordDir = getAccordDir(hubDir, config);
-    let requests = scanInboxes(accordDir, config);
+    let requests = scanInboxes(accordDir, config, hubDir);
 
-    // Also scan archive
-    const archiveDir = path.join(accordDir, 'comms', 'archive');
-    if (fs.existsSync(archiveDir)) {
-      for (const file of fs.readdirSync(archiveDir).filter(f => f.endsWith('.md'))) {
-        const parsed = parseRequest(path.join(archiveDir, file));
-        if (parsed) requests.push(parsed);
-      }
-    }
+    // Also scan archive (root + team level for multi-team hubs)
+    requests.push(...scanArchives(accordDir, config, hubDir));
 
     // Filter
     if (req.query.service) {
@@ -51,16 +45,8 @@ export function registerRequestRoutes(app: FastifyInstance): void {
   app.get<{ Params: { id: string } }>('/api/requests/:id', async (req, reply) => {
     const { config, hubDir } = getHubState();
     const accordDir = getAccordDir(hubDir, config);
-    const allRequests = scanInboxes(accordDir, config);
-
-    // Also scan archive
-    const archiveDir = path.join(accordDir, 'comms', 'archive');
-    if (fs.existsSync(archiveDir)) {
-      for (const file of fs.readdirSync(archiveDir).filter(f => f.endsWith('.md'))) {
-        const parsed = parseRequest(path.join(archiveDir, file));
-        if (parsed) allRequests.push(parsed);
-      }
-    }
+    const allRequests = scanInboxes(accordDir, config, hubDir);
+    allRequests.push(...scanArchives(accordDir, config, hubDir));
 
     const found = allRequests.find(r => r.frontmatter.id === req.params.id);
     if (!found) return reply.status(404).send({ error: 'Request not found' });

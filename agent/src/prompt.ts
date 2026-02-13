@@ -35,9 +35,11 @@ export function buildAgentPrompt(params: {
   sections.push(request.body);
   sections.push('');
 
-  // 3. Service context — inline registry files if present
+  // 3. Service context — inline registry files if present (try .yaml first, then .md)
   const registryDir = path.join(accordDir, 'registry');
-  const registryFile = path.join(registryDir, `${serviceName}.md`);
+  const registryYaml = path.join(registryDir, `${serviceName}.yaml`);
+  const registryMd = path.join(registryDir, `${serviceName}.md`);
+  const registryFile = fs.existsSync(registryYaml) ? registryYaml : registryMd;
   if (fs.existsSync(registryFile)) {
     sections.push('## Service Registry');
     sections.push('');

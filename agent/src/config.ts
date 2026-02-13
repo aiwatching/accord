@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import YAML from 'yaml';
-import type { AccordConfig, DispatcherConfig, ServiceConfig, RegistryYaml } from './types.js';
+import type { AccordConfig, DispatcherConfig, OrgConfig, ServiceConfig, RegistryYaml } from './types.js';
 
 const DISPATCHER_DEFAULTS: DispatcherConfig = {
   workers: 4,
@@ -16,7 +16,7 @@ const DISPATCHER_DEFAULTS: DispatcherConfig = {
 };
 
 export function loadConfig(targetDir: string): AccordConfig {
-  // Try .accord/config.yaml (service repo / monorepo), then config.yaml (hub)
+  // Try direct config locations first: .accord/config.yaml (service), config.yaml (flat hub)
   const candidates = [
     path.join(targetDir, '.accord', 'config.yaml'),
     path.join(targetDir, 'config.yaml'),
@@ -30,8 +30,33 @@ export function loadConfig(targetDir: string): AccordConfig {
     }
   }
 
+  // If no direct config, try multi-team hub: accord.yaml → teams/{team}/config.yaml
+  let teamDir: string | undefined;
+  let teamName: string | undefined;
+
   if (!configPath) {
-    throw new Error(`No config.yaml found in ${targetDir} (checked .accord/config.yaml and config.yaml)`);
+    const orgPath = path.join(targetDir, 'accord.yaml');
+    if (fs.existsSync(orgPath)) {
+      const orgRaw = fs.readFileSync(orgPath, 'utf-8');
+      const orgConfig = YAML.parse(orgRaw) as OrgConfig;
+
+      if (orgConfig.teams && orgConfig.teams.length > 0) {
+        // Find the first team with a config.yaml
+        for (const t of orgConfig.teams) {
+          const candidate = path.join(targetDir, 'teams', t.name, 'config.yaml');
+          if (fs.existsSync(candidate)) {
+            configPath = candidate;
+            teamDir = path.join(targetDir, 'teams', t.name);
+            teamName = t.name;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  if (!configPath) {
+    throw new Error(`No config.yaml found in ${targetDir} (checked .accord/config.yaml, config.yaml, and accord.yaml → teams/*/config.yaml)`);
   }
 
   const raw = fs.readFileSync(configPath, 'utf-8');
@@ -52,6 +77,12 @@ export function loadConfig(targetDir: string): AccordConfig {
   // Default repo_model
   if (!config.repo_model) {
     config.repo_model = config.role === 'orchestrator' ? 'multi-repo' : 'monorepo';
+  }
+
+  // Store team info for multi-team hubs
+  if (teamDir) {
+    config.team = teamName;
+    config.teamDir = teamDir;
   }
 
   return config;
@@ -95,13 +126,39 @@ export function getServiceDir(config: AccordConfig, serviceName: string, hubDir:
 
 /**
  * Get the .accord directory for a given target.
- * Hub repos use root-level dirs (contracts/, comms/), service repos use .accord/
+ * - Multi-team hub: teams/{team}/ directory
+ * - Flat hub: root directory
+ * - Service repo: .accord/
  */
 export function getAccordDir(targetDir: string, config: AccordConfig): string {
   if (config.role === 'orchestrator') {
-    return targetDir; // hub: flat structure
+    // Multi-team hub: use team directory
+    if (config.teamDir) {
+      return config.teamDir;
+    }
+    return targetDir; // flat hub: root-level structure
   }
   return path.join(targetDir, '.accord');
+}
+
+/**
+ * Get all accord directories to scan (multi-team hubs may have root-level + team-level).
+ * Returns an array of directories, each containing comms/inbox/ structure.
+ */
+export function getAllAccordDirs(targetDir: string, config: AccordConfig): string[] {
+  const dirs: string[] = [];
+  const primary = getAccordDir(targetDir, config);
+  dirs.push(primary);
+
+  // For multi-team hubs, also include root-level comms if it exists
+  if (config.teamDir && config.role === 'orchestrator') {
+    const rootComms = path.join(targetDir, 'comms', 'inbox');
+    if (fs.existsSync(rootComms)) {
+      dirs.push(targetDir);
+    }
+  }
+
+  return dirs;
 }
 
 /**

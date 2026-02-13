@@ -3,14 +3,14 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { getHubState } from '../hub-state.js';
 import { getAccordDir, getServiceDir, loadRegistryYaml } from '../config.js';
-import { scanInboxes } from '../request.js';
+import { scanInboxes, scanArchives } from '../request.js';
 
 export function registerServiceRoutes(app: FastifyInstance): void {
   // GET /api/services — list all services with status
   app.get('/api/services', async () => {
     const { config, hubDir, dispatcher } = getHubState();
     const accordDir = getAccordDir(hubDir, config);
-    const allRequests = scanInboxes(accordDir, config);
+    const allRequests = scanInboxes(accordDir, config, hubDir);
     const workerStatuses = dispatcher.status.workers;
 
     return config.services.map(svc => {
@@ -46,15 +46,11 @@ export function registerServiceRoutes(app: FastifyInstance): void {
 
     const accordDir = getAccordDir(hubDir, config);
     const registry = loadRegistryYaml(accordDir, svc.name);
-    const allRequests = scanInboxes(accordDir, config);
+    const allRequests = scanInboxes(accordDir, config, hubDir);
     const serviceRequests = allRequests.filter(r => r.serviceName === svc.name);
 
-    // Check archive too
-    const archiveDir = path.join(accordDir, 'comms', 'archive');
-    const archivedFiles: string[] = [];
-    if (fs.existsSync(archiveDir)) {
-      archivedFiles.push(...fs.readdirSync(archiveDir).filter(f => f.endsWith('.md')));
-    }
+    // Check archive too (root + team level for multi-team hubs)
+    const archived = scanArchives(accordDir, config, hubDir);
 
     return {
       name: svc.name,
@@ -71,7 +67,7 @@ export function registerServiceRoutes(app: FastifyInstance): void {
         from: r.frontmatter.from,
         created: r.frontmatter.created,
       })),
-      archivedCount: archivedFiles.length,
+      archivedCount: archived.length,
     };
   });
 

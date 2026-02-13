@@ -167,7 +167,7 @@ Test coverage:
 
 ```bash
 # Start Hub Service and check the dashboard
-cd agent && npm start -- --hub-dir ./my-service --port 3000
+cd ~/.accord/agent && npm start -- --hub-dir ./my-service --port 3000
 
 # Or trigger a manual sync via the API
 curl -X POST http://localhost:3000/api/hub/sync

@@ -74,16 +74,16 @@ Idempotent — re-running without `--force` exits with "Already initialized".
 
 Unified Hub Service — API server, web UI, scheduler, dispatcher, and worker pool. Replaces the legacy `accord-agent.sh` daemon.
 
-**Prerequisites:** Node.js >= 20, built agent (`cd agent && npm install && npm run build`)
+**Prerequisites:** Node.js >= 20, built agent (`cd ~/.accord/agent && npm install && npm run build`)
 
 #### Usage
 
 ```bash
 # Start the Hub Service — API + Web UI + automatic scheduling
-cd agent && npm start -- --hub-dir ./hub --port 3000 --workers 4 --interval 30
+cd ~/.accord/agent && npm start -- --hub-dir ./hub --port 3000 --workers 4 --interval 30
 
 # Or in development mode (auto-reload)
-cd agent && npm run dev -- --hub-dir ./hub
+cd ~/.accord/agent && npm run dev -- --hub-dir ./hub
 ```
 
 #### Web UI

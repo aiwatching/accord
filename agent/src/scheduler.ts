@@ -70,9 +70,9 @@ export class Scheduler {
       syncPull(this.hubDir, this.config);
       eventBus.emit('sync:pull', { direction: 'pull', success: true });
 
-      // 2. Scan inboxes
+      // 2. Scan inboxes (pass hubDir for multi-team support)
       const accordDir = getAccordDir(this.hubDir, this.config);
-      const allRequests = scanInboxes(accordDir, this.config);
+      const allRequests = scanInboxes(accordDir, this.config, this.hubDir);
       const pending = sortByPriority(getPendingRequests(allRequests));
 
       // 3. Dispatch
