@@ -61,15 +61,64 @@ git add .accord CLAUDE.md .claude && git commit -m "accord: init" && git push
 # Repeat for each service
 ```
 
-## Step 4. Start Agents
+## Step 4. Build the Agent (optional — enables autonomous mode)
 
-Open a terminal per repo, start Claude Code:
+The TypeScript agent provides a dispatcher + worker pool for fully autonomous request processing, powered by the Claude Agent SDK.
+
+**Prerequisites:** Node.js >= 20
+
+```bash
+cd ~/.accord/agent
+npm install
+npm run build
+```
+
+Verify:
+
+```bash
+accord-agent.sh --help
+accord-agent.sh run-once --dry-run --target-dir ./my-service
+```
+
+If Node.js is unavailable, `accord-agent.sh` falls back to the legacy bash agent automatically.
+
+---
+
+## Step 5. Start Agents
+
+### Option A: Interactive (one terminal per repo)
 
 ```
 Terminal 1:  cd my-project-hub   && claude    (orchestrator)
 Terminal 2:  cd device-manager   && claude    (service)
 Terminal 3:  cd web-server       && claude    (service)
 Terminal 4:  cd frontend         && claude    (service)
+```
+
+### Option B: Autonomous daemon (headless)
+
+```bash
+# Start all service agents from hub (one worker pool per service)
+accord-agent.sh start-all --target-dir ./my-project-hub
+
+# Or start a single service agent
+accord-agent.sh start --target-dir ./device-manager --workers 4 --interval 30
+
+# Check status
+accord-agent.sh status-all --target-dir ./my-project-hub
+
+# Stop all
+accord-agent.sh stop-all --target-dir ./my-project-hub
+```
+
+### Option C: One-shot processing
+
+```bash
+# Process all pending requests once, then exit
+accord-agent.sh run-once --target-dir ./device-manager
+
+# Dry-run: see what would be processed without executing
+accord-agent.sh run-once --dry-run --target-dir ./device-manager
 ```
 
 ---

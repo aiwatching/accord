@@ -1,0 +1,320 @@
+import type { AccordConfig, AccordRequest, DispatcherConfig, RequestResult, WorkerState } from './types.js';
+import { SessionManager } from './session.js';
+import { logger } from './logger.js';
+import { executeCommand, isValidCommand } from './commands.js';
+import { buildAgentPrompt } from './prompt.js';
+import {
+  setRequestStatus,
+  incrementAttempts,
+  archiveRequest,
+  appendResultSection,
+  createEscalation,
+} from './request.js';
+import { gitCommit } from './sync.js';
+import { writeHistory } from './history.js';
+import { getServiceDir, getAccordDir } from './config.js';
+
+export class Worker {
+  readonly id: number;
+  private state: WorkerState = 'idle';
+  private currentRequestId: string | null = null;
+  private config: DispatcherConfig;
+  private accordConfig: AccordConfig;
+  private sessionManager: SessionManager;
+  private targetDir: string;
+
+  constructor(
+    id: number,
+    config: DispatcherConfig,
+    accordConfig: AccordConfig,
+    sessionManager: SessionManager,
+    targetDir: string,
+  ) {
+    this.id = id;
+    this.config = config;
+    this.accordConfig = accordConfig;
+    this.sessionManager = sessionManager;
+    this.targetDir = targetDir;
+  }
+
+  get status(): { state: WorkerState; currentRequest: string | null } {
+    return { state: this.state, currentRequest: this.currentRequestId };
+  }
+
+  isIdle(): boolean {
+    return this.state === 'idle';
+  }
+
+  hasSessionFor(serviceName: string): boolean {
+    return this.sessionManager.getSession(serviceName) !== undefined;
+  }
+
+  async processRequest(request: AccordRequest): Promise<RequestResult> {
+    const startTime = Date.now();
+    this.state = 'busy';
+    this.currentRequestId = request.frontmatter.id;
+    const reqId = request.frontmatter.id;
+    const serviceName = request.serviceName;
+
+    logger.info(`Worker ${this.id}: processing ${reqId} for ${serviceName}`);
+
+    const serviceDir = getServiceDir(this.accordConfig, serviceName, this.targetDir);
+    const accordDir = getAccordDir(serviceDir, this.accordConfig);
+    const historyDir = `${accordDir}/comms/history`;
+
+    try {
+      // Command fast-path: no AI agent needed
+      if (request.frontmatter.type === 'command' && request.frontmatter.command) {
+        return await this.processCommand(request, serviceDir, accordDir, historyDir, startTime);
+      }
+
+      // Full AI agent invocation
+      return await this.processWithAgent(request, serviceDir, accordDir, historyDir, startTime);
+    } catch (err) {
+      const error = String(err);
+      logger.error(`Worker ${this.id}: unexpected error processing ${reqId}: ${error}`);
+      return {
+        requestId: reqId,
+        success: false,
+        durationMs: Date.now() - startTime,
+        error,
+      };
+    } finally {
+      this.state = 'idle';
+      this.currentRequestId = null;
+    }
+  }
+
+  private async processCommand(
+    request: AccordRequest,
+    serviceDir: string,
+    accordDir: string,
+    historyDir: string,
+    startTime: number,
+  ): Promise<RequestResult> {
+    const reqId = request.frontmatter.id;
+    const command = request.frontmatter.command!;
+
+    logger.info(`Worker ${this.id}: command fast-path "${command}" for ${reqId}`);
+
+    if (!isValidCommand(command)) {
+      const error = `Invalid command: ${command}`;
+      appendResultSection(request.filePath, error);
+      setRequestStatus(request.filePath, 'completed');
+      archiveRequest(request.filePath, accordDir);
+      return { requestId: reqId, success: false, durationMs: Date.now() - startTime, error };
+    }
+
+    const result = executeCommand(command, serviceDir, accordDir);
+
+    // Update request: append result, set completed, archive
+    appendResultSection(request.filePath, result);
+    setRequestStatus(request.filePath, 'completed');
+
+    writeHistory({
+      historyDir,
+      requestId: reqId,
+      fromStatus: 'pending',
+      toStatus: 'completed',
+      actor: request.serviceName,
+      detail: `command: ${command}`,
+    });
+
+    archiveRequest(request.filePath, accordDir);
+
+    gitCommit(serviceDir, `accord: command "${command}" completed for ${reqId}`);
+
+    return {
+      requestId: reqId,
+      success: true,
+      durationMs: Date.now() - startTime,
+    };
+  }
+
+  private async processWithAgent(
+    request: AccordRequest,
+    serviceDir: string,
+    accordDir: string,
+    historyDir: string,
+    startTime: number,
+  ): Promise<RequestResult> {
+    const reqId = request.frontmatter.id;
+    const serviceName = request.serviceName;
+
+    // Step 1: Check session rotation
+    if (this.sessionManager.shouldRotate(serviceName)) {
+      this.sessionManager.rotateSession(serviceName);
+    }
+
+    // Step 2: Claim — set in-progress, commit + push
+    setRequestStatus(request.filePath, 'in-progress');
+    const attempts = incrementAttempts(request.filePath);
+    gitCommit(serviceDir, `accord: claim ${reqId} (attempt ${attempts})`);
+
+    writeHistory({
+      historyDir,
+      requestId: reqId,
+      fromStatus: 'pending',
+      toStatus: 'in-progress',
+      actor: serviceName,
+      directiveId: request.frontmatter.directive,
+    });
+
+    // Step 3: Build prompt
+    const checkpoint = this.sessionManager.readCheckpoint(accordDir, reqId);
+    const prompt = buildAgentPrompt({
+      request,
+      serviceName,
+      targetDir: serviceDir,
+      accordDir,
+      checkpoint: checkpoint ?? undefined,
+    });
+
+    // Step 4: Invoke Claude Agent SDK
+    const existingSession = this.sessionManager.getSession(serviceName);
+    const resumeId = existingSession?.sessionId;
+
+    try {
+      const result = await this.invokeAgent(prompt, serviceDir, resumeId);
+
+      // Step 5: Success
+      this.sessionManager.updateSession(serviceName, result.sessionId!);
+      this.sessionManager.clearCheckpoint(accordDir, reqId);
+      this.sessionManager.saveToDisk(accordDir);
+
+      setRequestStatus(request.filePath, 'completed');
+      archiveRequest(request.filePath, accordDir);
+
+      writeHistory({
+        historyDir,
+        requestId: reqId,
+        fromStatus: 'in-progress',
+        toStatus: 'completed',
+        actor: serviceName,
+        directiveId: request.frontmatter.directive,
+        detail: `cost=$${result.costUsd?.toFixed(4)}, turns=${result.numTurns}`,
+      });
+
+      gitCommit(serviceDir, `accord: completed ${reqId}`);
+
+      return { ...result, requestId: reqId, success: true };
+    } catch (err) {
+      // Step 6: Failure handling
+      const error = String(err);
+      logger.error(`Worker ${this.id}: agent failed for ${reqId}: ${error}`);
+
+      // Write checkpoint for crash recovery
+      this.sessionManager.writeCheckpoint(accordDir, reqId, `Error: ${error}\nAttempt: ${attempts}`);
+
+      if (attempts >= this.config.max_attempts) {
+        // Max attempts reached: set failed, escalate
+        setRequestStatus(request.filePath, 'failed');
+
+        writeHistory({
+          historyDir,
+          requestId: reqId,
+          fromStatus: 'in-progress',
+          toStatus: 'failed',
+          actor: serviceName,
+          detail: `max attempts (${this.config.max_attempts}) reached: ${error}`,
+        });
+
+        createEscalation({
+          accordDir,
+          originalRequest: request,
+          error,
+          serviceName,
+        });
+
+        gitCommit(serviceDir, `accord: failed ${reqId} after ${attempts} attempts`);
+      } else {
+        // Revert to pending for retry
+        setRequestStatus(request.filePath, 'pending');
+
+        writeHistory({
+          historyDir,
+          requestId: reqId,
+          fromStatus: 'in-progress',
+          toStatus: 'pending',
+          actor: serviceName,
+          detail: `attempt ${attempts}/${this.config.max_attempts} failed: ${error}`,
+        });
+
+        gitCommit(serviceDir, `accord: revert ${reqId} to pending (attempt ${attempts}/${this.config.max_attempts})`);
+      }
+
+      return {
+        requestId: reqId,
+        success: false,
+        durationMs: Date.now() - startTime,
+        error,
+      };
+    }
+  }
+
+  private async invokeAgent(
+    prompt: string,
+    cwd: string,
+    resumeSessionId?: string,
+  ): Promise<{ durationMs: number; costUsd?: number; numTurns?: number; sessionId?: string }> {
+    // Dynamic import to allow the module to be optional (for testing without SDK)
+    const { query } = await import('@anthropic-ai/claude-agent-sdk');
+
+    const abortController = new AbortController();
+    const timeout = setTimeout(() => {
+      abortController.abort();
+    }, this.config.request_timeout * 1000);
+
+    const startTime = Date.now();
+
+    try {
+      const response = query({
+        prompt,
+        options: {
+          model: this.config.model,
+          resume: resumeSessionId,
+          cwd,
+          allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
+          permissionMode: 'bypassPermissions',
+          allowDangerouslySkipPermissions: true,
+          maxTurns: 50,
+          maxBudgetUsd: this.config.max_budget_usd,
+          abortController,
+          systemPrompt: { type: 'preset', preset: 'claude_code' },
+          settingSources: ['project'],
+        },
+      });
+
+      let sessionId: string | undefined;
+      let costUsd: number | undefined;
+      let numTurns: number | undefined;
+
+      for await (const msg of response) {
+        if (msg.type === 'system' && msg.subtype === 'init') {
+          sessionId = msg.session_id;
+          logger.debug(`Agent session started: ${sessionId}`);
+        } else if (msg.type === 'result') {
+          sessionId = msg.session_id;
+          costUsd = msg.total_cost_usd;
+          numTurns = msg.num_turns;
+
+          if (msg.is_error) {
+            const errors = (msg as Record<string, unknown>).errors as string[] | undefined;
+            throw new Error(`Agent error (${msg.subtype}): ${errors?.join(', ') ?? 'unknown'}`);
+          }
+
+          logger.info(`Agent completed: ${numTurns} turns, $${costUsd?.toFixed(4)}`);
+        }
+      }
+
+      return {
+        durationMs: Date.now() - startTime,
+        costUsd,
+        numTurns,
+        sessionId,
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}

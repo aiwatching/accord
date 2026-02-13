@@ -1,0 +1,30 @@
+{
+  "name": "@accord/agent",
+  "version": "0.1.0",
+  "description": "Accord Agent — TypeScript dispatcher + worker pool for autonomous request processing",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "accord-agent": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "start": "node dist/index.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.1.0",
+    "gray-matter": "^4.0.3",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
