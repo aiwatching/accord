@@ -322,6 +322,9 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // Set process title for easy identification in ps/top
+  process.title = `accord-agent ${args.command}`;
+
   switch (args.command) {
     case 'start':
       await doStart(args);

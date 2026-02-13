@@ -50,11 +50,30 @@ get_command() {
     echo ""
 }
 
+# ── Create a node symlink for process name visibility ───────────────────────
+
+get_node_exec() {
+    # Create a symlink to node named "accord-agent" so ps shows the right name
+    local link_dir="$SCRIPT_DIR/agent/.bin"
+    local link_path="$link_dir/accord-agent"
+    local node_path
+    node_path="$(command -v node)"
+
+    if [[ ! -L "$link_path" ]] || [[ "$(readlink "$link_path")" != "$node_path" ]]; then
+        mkdir -p "$link_dir"
+        ln -sf "$node_path" "$link_path"
+    fi
+
+    echo "$link_path"
+}
+
 # ── Dispatch ────────────────────────────────────────────────────────────────
 
 CMD="$(get_command "$@")"
 
 if use_ts_agent; then
+    NODE_EXEC="$(get_node_exec)"
+
     if [[ "$CMD" == "start" ]]; then
         # Check if already running before backgrounding
         # Extract --target-dir from args
@@ -76,12 +95,12 @@ if use_ts_agent; then
         fi
 
         # Fork to background: `start` is a daemon command
-        nohup node "$AGENT_JS" "$@" > /dev/null 2>&1 &
+        nohup "$NODE_EXEC" "$AGENT_JS" "$@" > /dev/null 2>&1 &
         disown
         # Wait briefly for PID file to be written by the TS process
         sleep 0.5
     else
-        exec node "$AGENT_JS" "$@"
+        exec "$NODE_EXEC" "$AGENT_JS" "$@"
     fi
 else
     if [[ -f "$LEGACY" ]]; then
