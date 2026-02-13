@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import type { AccordConfig, AccordRequest, DispatcherConfig, DispatcherStatus, RequestResult } from './types.js';
 import { Worker } from './worker.js';
 import { SessionManager } from './session.js';
+import { createAdapter, type AgentAdapter } from './agent-adapter.js';
 import { logger } from './logger.js';
 import { scanInboxes, getPendingRequests, sortByPriority } from './request.js';
 import { syncPull, syncPush, gitCommit } from './sync.js';
@@ -10,6 +11,7 @@ import { getAccordDir, getServiceDir } from './config.js';
 export class Dispatcher {
   private workers: Worker[] = [];
   private sessionManager: SessionManager;
+  private adapter: AgentAdapter;
   private config: DispatcherConfig;
   private accordConfig: AccordConfig;
   private targetDir: string;
@@ -33,16 +35,25 @@ export class Dispatcher {
     this.targetDir = targetDir;
     this.sessionManager = new SessionManager(config);
 
-    // Load sessions from disk for resume
+    // Create agent adapter
+    this.adapter = createAdapter({
+      agent: config.agent,
+      agent_cmd: config.agent_cmd,
+      model: config.model,
+    });
+
+    // Load sessions from disk for resume (only meaningful for adapters that support it)
     const accordDir = getAccordDir(targetDir, accordConfig);
-    this.sessionManager.loadFromDisk(accordDir);
+    if (this.adapter.supportsResume) {
+      this.sessionManager.loadFromDisk(accordDir);
+    }
 
     // Create worker pool
     for (let i = 0; i < config.workers; i++) {
-      this.workers.push(new Worker(i, config, accordConfig, this.sessionManager, targetDir));
+      this.workers.push(new Worker(i, config, accordConfig, this.sessionManager, this.adapter, targetDir));
     }
 
-    logger.info(`Dispatcher initialized: ${config.workers} workers, poll interval ${config.poll_interval}s`);
+    logger.info(`Dispatcher initialized: ${config.workers} workers, agent=${this.adapter.name}, poll interval ${config.poll_interval}s`);
   }
 
   async start(intervalOverride?: number): Promise<void> {

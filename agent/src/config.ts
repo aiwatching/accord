@@ -12,6 +12,7 @@ const DISPATCHER_DEFAULTS: DispatcherConfig = {
   max_attempts: 3,
   model: 'claude-sonnet-4-5-20250929',
   debug: false,
+  agent: 'claude-code',
 };
 
 export function loadConfig(targetDir: string): AccordConfig {
@@ -49,7 +50,9 @@ export function loadConfig(targetDir: string): AccordConfig {
 export function getDispatcherConfig(config: AccordConfig): DispatcherConfig {
   const userDispatcher = config.dispatcher ?? {};
   const debug = userDispatcher.debug ?? config.settings?.debug ?? DISPATCHER_DEFAULTS.debug;
-  return { ...DISPATCHER_DEFAULTS, ...userDispatcher, debug };
+  // agent_cmd fallback: dispatcher.agent_cmd > settings.agent_cmd
+  const agent_cmd = userDispatcher.agent_cmd ?? config.settings?.agent_cmd;
+  return { ...DISPATCHER_DEFAULTS, ...userDispatcher, debug, ...(agent_cmd ? { agent_cmd } : {}) };
 }
 
 export function getServiceNames(config: AccordConfig): string[] {

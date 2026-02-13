@@ -1,4 +1,5 @@
 import type { AccordConfig, AccordRequest, DispatcherConfig, RequestResult, WorkerState } from './types.js';
+import type { AgentAdapter } from './agent-adapter.js';
 import { SessionManager } from './session.js';
 import { logger } from './logger.js';
 import { executeCommand, isValidCommand } from './commands.js';
@@ -21,6 +22,7 @@ export class Worker {
   private config: DispatcherConfig;
   private accordConfig: AccordConfig;
   private sessionManager: SessionManager;
+  private adapter: AgentAdapter;
   private targetDir: string;
   /** Last service this worker processed — used for session affinity */
   lastServiceName: string | null = null;
@@ -30,12 +32,14 @@ export class Worker {
     config: DispatcherConfig,
     accordConfig: AccordConfig,
     sessionManager: SessionManager,
+    adapter: AgentAdapter,
     targetDir: string,
   ) {
     this.id = id;
     this.config = config;
     this.accordConfig = accordConfig;
     this.sessionManager = sessionManager;
+    this.adapter = adapter;
     this.targetDir = targetDir;
   }
 
@@ -169,15 +173,27 @@ export class Worker {
       checkpoint: checkpoint ?? undefined,
     });
 
-    // Step 4: Invoke Claude Agent SDK
-    const existingSession = this.sessionManager.getSession(serviceName);
+    // Step 4: Invoke agent via adapter
+    const existingSession = this.adapter.supportsResume
+      ? this.sessionManager.getSession(serviceName)
+      : undefined;
     const resumeId = existingSession?.sessionId;
 
     try {
-      const result = await this.invokeAgent(prompt, serviceDir, resumeId);
+      const result = await this.adapter.invoke({
+        prompt,
+        cwd: serviceDir,
+        resumeSessionId: resumeId,
+        timeout: this.config.request_timeout,
+        model: this.config.model,
+        maxTurns: 50,
+        maxBudgetUsd: this.config.max_budget_usd,
+      });
 
       // Step 5: Success
-      this.sessionManager.updateSession(serviceName, result.sessionId!);
+      if (result.sessionId) {
+        this.sessionManager.updateSession(serviceName, result.sessionId);
+      }
       this.sessionManager.clearCheckpoint(accordDir, reqId);
       this.sessionManager.saveToDisk(accordDir);
 
@@ -251,69 +267,4 @@ export class Worker {
     }
   }
 
-  private async invokeAgent(
-    prompt: string,
-    cwd: string,
-    resumeSessionId?: string,
-  ): Promise<{ durationMs: number; costUsd?: number; numTurns?: number; sessionId?: string }> {
-    // Dynamic import to allow the module to be optional (for testing without SDK)
-    const { query } = await import('@anthropic-ai/claude-agent-sdk');
-
-    const abortController = new AbortController();
-    const timeout = setTimeout(() => {
-      abortController.abort();
-    }, this.config.request_timeout * 1000);
-
-    const startTime = Date.now();
-
-    try {
-      const response = query({
-        prompt,
-        options: {
-          model: this.config.model,
-          resume: resumeSessionId,
-          cwd,
-          allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
-          permissionMode: 'bypassPermissions',
-          allowDangerouslySkipPermissions: true,
-          maxTurns: 50,
-          maxBudgetUsd: this.config.max_budget_usd,
-          abortController,
-          systemPrompt: { type: 'preset', preset: 'claude_code' },
-          settingSources: ['project'],
-        },
-      });
-
-      let sessionId: string | undefined;
-      let costUsd: number | undefined;
-      let numTurns: number | undefined;
-
-      for await (const msg of response) {
-        if (msg.type === 'system' && msg.subtype === 'init') {
-          sessionId = msg.session_id;
-          logger.debug(`Agent session started: ${sessionId}`);
-        } else if (msg.type === 'result') {
-          sessionId = msg.session_id;
-          costUsd = msg.total_cost_usd;
-          numTurns = msg.num_turns;
-
-          if (msg.is_error) {
-            const errors = (msg as Record<string, unknown>).errors as string[] | undefined;
-            throw new Error(`Agent error (${msg.subtype}): ${errors?.join(', ') ?? 'unknown'}`);
-          }
-
-          logger.info(`Agent completed: ${numTurns} turns, $${costUsd?.toFixed(4)}`);
-        }
-      }
-
-      return {
-        durationMs: Date.now() - startTime,
-        costUsd,
-        numTurns,
-        sessionId,
-      };
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
 }
