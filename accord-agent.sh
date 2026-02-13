@@ -604,7 +604,6 @@ Agent processing failed for request \`${rid}\`.
 Manual review needed. The original request has been marked as \`failed\`.
 ESCALATION
 
-    log "Escalated failure to orchestrator: $esc_id"
     log_to_file "Escalated failure to orchestrator: $esc_id (reason: $reason)"
 }
 
@@ -636,7 +635,6 @@ process_with_agent() {
     local archive_dir="$TARGET_DIR/.accord/comms/archive"
     mkdir -p "$archive_dir"
 
-    log "Processing via agent: $rid (attempt $((attempts + 1))/$MAX_ATTEMPTS)"
     log_to_file "Processing via agent: $rid (attempt $((attempts + 1))/$MAX_ATTEMPTS)"
 
     # Set status: in-progress
@@ -684,7 +682,6 @@ process_with_agent() {
                 --detail "Processed by AI agent (accord-agent.sh)" 2>/dev/null || true
         fi
 
-        log "Agent completed: $rid"
         log_to_file "Agent completed: $rid → archive"
     else
         # Failure or timeout
@@ -710,7 +707,6 @@ process_with_agent() {
             if [[ $attempts -ge $MAX_ATTEMPTS ]]; then
                 # Max attempts exhausted — mark as failed permanently
                 sed "s/^status:[[:space:]]*.*/status: failed/" "$req_file" > "$req_file.tmp" && mv "$req_file.tmp" "$req_file"
-                log "Max attempts ($MAX_ATTEMPTS) reached for: $rid — marking failed"
                 log_to_file "Max attempts ($MAX_ATTEMPTS) reached for: $rid — status: failed"
 
                 if [[ -f "$history_script" ]]; then
@@ -792,7 +788,6 @@ process_requests() {
                 rid="$(req_field "id" "$req_file")"
                 rcmd="$(req_field "command" "$req_file")"
 
-                log "Processing: $rid (command: $rcmd)"
                 log_to_file "Processing: $rid (command: $rcmd)"
 
                 # Set status: in-progress
@@ -836,7 +831,6 @@ process_requests() {
                 fi
 
                 processed=$((processed + 1))
-                log "Completed: $rid"
                 log_to_file "Completed: $rid → archive"
             else
                 # ── Agent path (non-command requests) ──
