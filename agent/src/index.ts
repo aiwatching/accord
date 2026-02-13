@@ -15,6 +15,7 @@ interface CLIArgs {
   workers?: number;
   interval?: number;
   timeout?: number;
+  agentCmd?: string;
   dryRun: boolean;
 }
 
@@ -48,6 +49,9 @@ function parseArgs(argv: string[]): CLIArgs {
       case '--timeout':
         args.timeout = parseInt(argv[++i] ?? '600', 10);
         break;
+      case '--agent-cmd':
+        args.agentCmd = argv[++i] ?? '';
+        break;
       case '--dry-run':
         args.dryRun = true;
         break;
@@ -72,7 +76,7 @@ function printUsage(): void {
   console.log(`
 Usage: accord-agent <command> [options]
 
-Autonomous request processing agent for Accord services.
+Autonomous request processing daemon for Accord services.
 TypeScript dispatcher with worker pool, powered by Claude Agent SDK.
 
 Commands:
@@ -89,6 +93,7 @@ Options:
   --workers <N>           Number of concurrent workers (default: 4)
   --interval <seconds>    Polling interval for start (default: 30)
   --timeout <seconds>     Per-request timeout (default: 600)
+  --agent-cmd <cmd>       Shell command to use as agent (instead of Claude SDK)
   --dry-run               Show what would be processed without executing
   --help                  Show this help message
 `);
@@ -132,8 +137,8 @@ function isProcessRunning(pid: number): boolean {
 async function doStart(args: CLIArgs): Promise<void> {
   const existingPid = readPid(args.targetDir);
   if (existingPid && isProcessRunning(existingPid)) {
-    logger.error(`Agent already running (PID ${existingPid})`);
-    process.exit(1);
+    console.log(`Already running (PID ${existingPid})`);
+    process.exit(0);
   }
 
   const config = loadConfig(args.targetDir);
@@ -143,6 +148,10 @@ async function doStart(args: CLIArgs): Promise<void> {
   if (args.workers) dispatcherConfig.workers = args.workers;
   if (args.interval) dispatcherConfig.poll_interval = args.interval;
   if (args.timeout) dispatcherConfig.request_timeout = args.timeout;
+  if (args.agentCmd) {
+    dispatcherConfig.agent = 'shell';
+    dispatcherConfig.agent_cmd = args.agentCmd;
+  }
 
   logger.init(args.targetDir, dispatcherConfig.debug);
   writePid(args.targetDir);
@@ -165,7 +174,7 @@ async function doStart(args: CLIArgs): Promise<void> {
 async function doStop(args: CLIArgs): Promise<void> {
   const pid = readPid(args.targetDir);
   if (!pid) {
-    console.log('No agent running.');
+    console.log('Not running');
     return;
   }
 
@@ -183,14 +192,14 @@ async function doStop(args: CLIArgs): Promise<void> {
 async function doStatus(args: CLIArgs): Promise<void> {
   const pid = readPid(args.targetDir);
   if (!pid) {
-    console.log('Agent: not running');
+    console.log('Not running');
     return;
   }
 
   if (isProcessRunning(pid)) {
-    console.log(`Agent: running (PID ${pid})`);
+    console.log(`Running (PID ${pid})`);
   } else {
-    console.log(`Agent: not running (stale PID ${pid})`);
+    console.log(`Not running (stale PID ${pid})`);
     removePid(args.targetDir);
   }
 }
@@ -201,6 +210,10 @@ async function doRunOnce(args: CLIArgs): Promise<void> {
 
   if (args.workers) dispatcherConfig.workers = args.workers;
   if (args.timeout) dispatcherConfig.request_timeout = args.timeout;
+  if (args.agentCmd) {
+    dispatcherConfig.agent = 'shell';
+    dispatcherConfig.agent_cmd = args.agentCmd;
+  }
 
   logger.init(args.targetDir, dispatcherConfig.debug);
 
@@ -239,6 +252,7 @@ async function doStartAll(args: CLIArgs): Promise<void> {
         ...(args.workers ? ['--workers', String(args.workers)] : []),
         ...(args.interval ? ['--interval', String(args.interval)] : []),
         ...(args.timeout ? ['--timeout', String(args.timeout)] : []),
+        ...(args.agentCmd ? ['--agent-cmd', args.agentCmd] : []),
       ],
       {
         detached: true,

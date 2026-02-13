@@ -88,7 +88,7 @@ export function archiveRequest(filePath: string, accordDir: string): string {
 
 export function appendResultSection(filePath: string, result: string): void {
   const content = fs.readFileSync(filePath, 'utf-8');
-  const resultSection = `\n\n## Result\n\n\`\`\`\n${result}\n\`\`\`\n`;
+  const resultSection = `\n\n## Result\n\n\`\`\`\n${result}\n\`\`\`\n\n*Executed by: accord-agent.sh (TypeScript)*\n`;
   fs.writeFileSync(filePath, content + resultSection, 'utf-8');
 }
 
@@ -101,7 +101,10 @@ export function createEscalation(params: {
   serviceName: string;
 }): string {
   const { accordDir, originalRequest, error, serviceName } = params;
-  const orchInbox = path.join(accordDir, 'comms', 'inbox', 'orchestrator');
+  // Prefer hub directory for escalation (multi-repo: .accord/hub/ is the hub clone)
+  const hubDir = path.join(accordDir, 'hub');
+  const baseDir = fs.existsSync(hubDir) ? hubDir : accordDir;
+  const orchInbox = path.join(baseDir, 'comms', 'inbox', 'orchestrator');
   fs.mkdirSync(orchInbox, { recursive: true });
 
   const epoch = Date.now();
@@ -121,9 +124,9 @@ updated: ${new Date().toISOString()}
 originated_from: ${originalRequest.frontmatter.id}
 ---
 
-## Escalation: Failed Request
+## Escalation: Agent processing failed
 
-The following request failed after maximum attempts:
+The following request failed after max attempts:
 
 - **Original request**: ${originalRequest.frontmatter.id}
 - **Service**: ${serviceName}

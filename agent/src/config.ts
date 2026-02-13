@@ -37,11 +37,21 @@ export function loadConfig(targetDir: string): AccordConfig {
   const raw = fs.readFileSync(configPath, 'utf-8');
   const config = YAML.parse(raw) as AccordConfig;
 
+  // Normalize: project can be string or { name: string }
+  if (typeof config.project === 'string') {
+    (config as any).project = { name: config.project };
+  }
+
   if (!config.project?.name) {
     throw new Error('config.yaml: project.name is required');
   }
   if (!config.services || config.services.length === 0) {
     throw new Error('config.yaml: services array is required and must be non-empty');
+  }
+
+  // Default repo_model
+  if (!config.repo_model) {
+    config.repo_model = config.role === 'orchestrator' ? 'multi-repo' : 'monorepo';
   }
 
   return config;
@@ -52,7 +62,9 @@ export function getDispatcherConfig(config: AccordConfig): DispatcherConfig {
   const debug = userDispatcher.debug ?? config.settings?.debug ?? DISPATCHER_DEFAULTS.debug;
   // agent_cmd fallback: dispatcher.agent_cmd > settings.agent_cmd
   const agent_cmd = userDispatcher.agent_cmd ?? config.settings?.agent_cmd;
-  return { ...DISPATCHER_DEFAULTS, ...userDispatcher, debug, ...(agent_cmd ? { agent_cmd } : {}) };
+  // Auto-detect agent type: if agent_cmd is set and agent not explicitly configured, use shell
+  const agent = userDispatcher.agent ?? (agent_cmd ? 'shell' : DISPATCHER_DEFAULTS.agent);
+  return { ...DISPATCHER_DEFAULTS, ...userDispatcher, debug, agent, ...(agent_cmd ? { agent_cmd } : {}) };
 }
 
 export function getServiceNames(config: AccordConfig): string[] {

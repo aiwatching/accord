@@ -1212,7 +1212,7 @@ fi
 
 # Validate example directive
 assert_validator "$ACCORD_DIR/protocol/scan/validators/validate-directive.sh" \
-    "$ACCORD_DIR/examples/multi-repo-project/hub/.accord/directives/dir-001-device-reboot.md" \
+    "$ACCORD_DIR/examples/multi-repo-project/accord_hub/directives/dir-001-device-reboot.md" \
     "Example directive passes validation"
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1351,7 +1351,7 @@ assert_contains "$ACCORD_DIR/protocol/templates/request.md.template" "originated
 
 # Existing request validator still works with v1 requests (backward-compat)
 assert_validator "$ACCORD_DIR/protocol/scan/validators/validate-request.sh" \
-    "$ACCORD_DIR/examples/multi-repo-project/hub/.accord/comms/archive/req-001-list-devices.md" \
+    "$ACCORD_DIR/examples/multi-repo-project/accord_hub/comms/archive/req-001-list-devices.md" \
     "v1 request still validates after template update"
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1359,7 +1359,7 @@ assert_validator "$ACCORD_DIR/protocol/scan/validators/validate-request.sh" \
 # ══════════════════════════════════════════════════════════════════════════════
 echo -e "\n${BOLD}[Test 23] Example hub v2 files${NC}"
 
-HUB_EXAMPLE="$ACCORD_DIR/examples/multi-repo-project/hub/.accord"
+HUB_EXAMPLE="$ACCORD_DIR/examples/multi-repo-project/accord_hub"
 
 assert_file "$HUB_EXAMPLE/config.yaml"                              "Hub config.yaml exists"
 assert_contains "$HUB_EXAMPLE/config.yaml" "role: orchestrator"     "Hub config has role: orchestrator"
