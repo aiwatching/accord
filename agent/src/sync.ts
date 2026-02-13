@@ -27,13 +27,18 @@ export function syncPull(targetDir: string, config: AccordConfig): void {
   if (config.repo_model === 'multi-repo') {
     const script = findSyncScript();
     if (script) {
-      logger.debug(`Sync pull via ${script}`);
-      execFileSync('bash', [script, 'pull', '--target-dir', targetDir], {
-        cwd: targetDir,
-        stdio: 'pipe',
-        timeout: 30_000,
-      });
-      return;
+      try {
+        logger.debug(`Sync pull via ${script}`);
+        execFileSync('bash', [script, 'pull', '--target-dir', targetDir], {
+          cwd: targetDir,
+          stdio: 'pipe',
+          timeout: 30_000,
+        });
+        return;
+      } catch (err) {
+        logger.warn(`Sync pull failed: ${err}`);
+        return;
+      }
     }
   }
 
@@ -54,13 +59,18 @@ export function syncPush(targetDir: string, config: AccordConfig): void {
   if (config.repo_model === 'multi-repo') {
     const script = findSyncScript();
     if (script) {
-      logger.debug(`Sync push via ${script}`);
-      execFileSync('bash', [script, 'push', '--target-dir', targetDir], {
-        cwd: targetDir,
-        stdio: 'pipe',
-        timeout: 30_000,
-      });
-      return;
+      try {
+        logger.debug(`Sync push via ${script}`);
+        execFileSync('bash', [script, 'push', '--target-dir', targetDir], {
+          cwd: targetDir,
+          stdio: 'pipe',
+          timeout: 30_000,
+        });
+        return;
+      } catch (err) {
+        logger.warn(`Sync push failed: ${err}`);
+        return;
+      }
     }
   }
 

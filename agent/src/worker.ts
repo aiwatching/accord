@@ -22,6 +22,8 @@ export class Worker {
   private accordConfig: AccordConfig;
   private sessionManager: SessionManager;
   private targetDir: string;
+  /** Last service this worker processed — used for session affinity */
+  lastServiceName: string | null = null;
 
   constructor(
     id: number,
@@ -43,10 +45,6 @@ export class Worker {
 
   isIdle(): boolean {
     return this.state === 'idle';
-  }
-
-  hasSessionFor(serviceName: string): boolean {
-    return this.sessionManager.getSession(serviceName) !== undefined;
   }
 
   async processRequest(request: AccordRequest): Promise<RequestResult> {
@@ -80,6 +78,7 @@ export class Worker {
         error,
       };
     } finally {
+      this.lastServiceName = serviceName;
       this.state = 'idle';
       this.currentRequestId = null;
     }

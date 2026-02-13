@@ -1151,15 +1151,15 @@ print_orchestrator_summary() {
     echo "    1. Commit hub: git add . && git commit -m 'accord: init orchestrator hub'"
     echo "    2. Commit each service repo"
     echo "    3. Start agent sessions (one per repo) and begin working"
-    echo "    4. (Optional) Start headless agent daemons for all services:"
-    echo "       accord-agent.sh start-all --target-dir ."
+    echo "    4. (Optional) Start the autonomous agent daemon (single process, all services):"
+    echo "       accord-agent.sh start --target-dir ."
     else
     echo "    1. git add . && git commit -m 'accord: init orchestrator hub'"
     echo "    2. Init service repos: re-run with --init-services, or init each service individually"
     echo "    3. Create directives in directives/ for feature decomposition"
     echo "    4. Start your orchestrator agent — it will read registries and process directives"
-    echo "    5. (Optional) Start headless agent daemons for all services:"
-    echo "       accord-agent.sh start-all --target-dir ."
+    echo "    5. (Optional) Start the autonomous agent daemon (single process, all services):"
+    echo "       accord-agent.sh start --target-dir ."
     fi
     echo ""
 }
@@ -1253,7 +1253,7 @@ print_summary() {
     fi
     echo "    2. git add .accord && git commit -m 'accord: init project'"
     echo "    3. Start your agent — it will check the inbox on start"
-    echo "    4. (Optional) Start the headless agent daemon for autonomous processing:"
+    echo "    4. (Optional) Start the autonomous agent daemon:"
     echo "       .accord/accord-agent.sh start"
     if [[ "$SYNC_MODE" == "auto-poll" && "$ADAPTER" != "claude-code" ]]; then
         echo "    5. Run: .accord/accord-watch.sh &"
@@ -1399,11 +1399,23 @@ main() {
             log "Copied accord-sync.sh to .accord/"
         fi
 
-        # Copy accord-agent.sh to .accord/ for local use
+        # Copy accord-agent.sh + legacy fallback to .accord/ for local use
         if [[ -f "$ACCORD_DIR/accord-agent.sh" ]]; then
             cp "$ACCORD_DIR/accord-agent.sh" "$TARGET_DIR/.accord/accord-agent.sh"
             chmod +x "$TARGET_DIR/.accord/accord-agent.sh"
             log "Copied accord-agent.sh to .accord/"
+        fi
+        if [[ -f "$ACCORD_DIR/accord-agent-legacy.sh" ]]; then
+            cp "$ACCORD_DIR/accord-agent-legacy.sh" "$TARGET_DIR/.accord/accord-agent-legacy.sh"
+            chmod +x "$TARGET_DIR/.accord/accord-agent-legacy.sh"
+        fi
+        # Copy TS agent if built
+        if [[ -d "$ACCORD_DIR/agent/dist" ]]; then
+            mkdir -p "$TARGET_DIR/.accord/agent"
+            cp -r "$ACCORD_DIR/agent/dist" "$TARGET_DIR/.accord/agent/dist"
+            cp -r "$ACCORD_DIR/agent/node_modules" "$TARGET_DIR/.accord/agent/node_modules" 2>/dev/null || true
+            cp "$ACCORD_DIR/agent/package.json" "$TARGET_DIR/.accord/agent/package.json"
+            log "Copied TypeScript agent to .accord/agent/"
         fi
 
         install_adapter

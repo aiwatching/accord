@@ -146,4 +146,151 @@ describe('Dispatcher', () => {
     const status = dispatcher.status;
     expect(status.totalProcessed).toBe(1);
   });
+
+  it('monorepo: only one service processed per tick (shared directory constraint)', async () => {
+    // In monorepo, svc-a and svc-b share the same directory.
+    // Only one should be processed per tick — the other must wait.
+    const cmdForA = `---
+id: req-cmd-a
+from: orchestrator
+to: svc-a
+scope: external
+type: command
+priority: medium
+status: pending
+created: "2026-02-12T10:00:00Z"
+updated: "2026-02-12T10:00:00Z"
+command: status
+---
+
+## What
+
+Status check for A.
+`;
+    const cmdForB = `---
+id: req-cmd-b
+from: orchestrator
+to: svc-b
+scope: external
+type: command
+priority: medium
+status: pending
+created: "2026-02-12T10:00:00Z"
+updated: "2026-02-12T10:00:00Z"
+command: status
+---
+
+## What
+
+Status check for B.
+`;
+    fs.writeFileSync(
+      path.join(tmpDir, '.accord', 'comms', 'inbox', 'svc-a', 'req-cmd-a.md'),
+      cmdForA,
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, '.accord', 'comms', 'inbox', 'svc-b', 'req-cmd-b.md'),
+      cmdForB,
+      'utf-8',
+    );
+
+    // Monorepo — both services resolve to the same directory
+    const config = makeConfig();
+    expect(config.repo_model).toBe('monorepo');
+
+    const dispatcher = new Dispatcher(
+      makeDispatcherConfig({ workers: 4 }),
+      config,
+      tmpDir,
+    );
+
+    // First tick: only one should be processed (shared directory)
+    const count1 = await dispatcher.runOnce(false);
+    expect(count1).toBe(1);
+
+    // Second tick: the other one should now be processed
+    const count2 = await dispatcher.runOnce(false);
+    expect(count2).toBe(1);
+
+    // Both should now be archived
+    const archiveFiles = fs.readdirSync(path.join(tmpDir, '.accord', 'comms', 'archive'));
+    expect(archiveFiles).toContain('req-cmd-a.md');
+    expect(archiveFiles).toContain('req-cmd-b.md');
+  });
+
+  it('multi-repo dry-run: different services both assignable (separate directories)', async () => {
+    // In multi-repo, svc-a resolves to ../svc-a and svc-b to ../svc-b.
+    // Since they have different directories, both should be assigned in one tick.
+    const cmdForA = `---
+id: req-cmd-ma
+from: orchestrator
+to: svc-a
+scope: external
+type: command
+priority: medium
+status: pending
+created: "2026-02-12T10:00:00Z"
+updated: "2026-02-12T10:00:00Z"
+command: status
+---
+
+## What
+
+Status check.
+`;
+    const cmdForB = `---
+id: req-cmd-mb
+from: orchestrator
+to: svc-b
+scope: external
+type: command
+priority: medium
+status: pending
+created: "2026-02-12T10:00:00Z"
+updated: "2026-02-12T10:00:00Z"
+command: status
+---
+
+## What
+
+Status check.
+`;
+    // Place requests in hub inbox
+    fs.writeFileSync(
+      path.join(tmpDir, '.accord', 'comms', 'inbox', 'svc-a', 'req-cmd-ma.md'),
+      cmdForA,
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, '.accord', 'comms', 'inbox', 'svc-b', 'req-cmd-mb.md'),
+      cmdForB,
+      'utf-8',
+    );
+
+    const multiRepoConfig: AccordConfig = {
+      version: '0.1',
+      project: { name: 'test' },
+      repo_model: 'multi-repo',
+      services: [{ name: 'svc-a' }, { name: 'svc-b' }],
+    };
+
+    // Multi-repo dry-run: both assigned (different directories)
+    const multiDispatcher = new Dispatcher(
+      makeDispatcherConfig({ workers: 4 }),
+      multiRepoConfig,
+      tmpDir,
+    );
+    const multiCount = await multiDispatcher.runOnce(true);
+    expect(multiCount).toBe(2);
+
+    // Monorepo dry-run: only 1 assigned (shared directory constraint)
+    const monoDispatcher = new Dispatcher(
+      makeDispatcherConfig({ workers: 4 }),
+      makeConfig(), // monorepo
+      tmpDir,
+    );
+    const monoCount = await monoDispatcher.runOnce(true);
+    expect(monoCount).toBe(1);
+  });
 });
