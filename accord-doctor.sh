@@ -305,6 +305,112 @@ for f in "$PROJECT_DIR/.accord/contracts"/*.yaml; do
     fi
 done
 
+# ── 8. v2 Multi-Team Checks ──────────────────────────────────────────────────
+
+# Check v2 hub structure
+if [[ -f "$PROJECT_DIR/accord.yaml" ]]; then
+    echo -e "\n${BOLD}[v2 Hub Structure]${NC}"
+    ok "accord.yaml exists (v2 hub)"
+
+    # Check for teams
+    team_dirs=()
+    if [[ -d "$PROJECT_DIR/teams" ]]; then
+        for td in "$PROJECT_DIR/teams"/*/; do
+            [[ -d "$td" ]] || continue
+            team_dirs+=("$td")
+        done
+    fi
+
+    if [[ ${#team_dirs[@]} -gt 0 ]]; then
+        ok "Found ${#team_dirs[@]} team(s)"
+        for td in "${team_dirs[@]}"; do
+            team_name="$(basename "$td")"
+
+            if [[ -f "$td/config.yaml" ]]; then
+                ok "Team '$team_name': config.yaml exists"
+            else
+                fail "Team '$team_name': missing config.yaml"
+            fi
+
+            if [[ -f "$td/dependencies.yaml" ]]; then
+                ok "Team '$team_name': dependencies.yaml exists"
+            else
+                warn "Team '$team_name': missing dependencies.yaml"
+            fi
+
+            if [[ -d "$td/registry" ]]; then
+                reg_count=0
+                for rf in "$td/registry"/*.yaml; do
+                    [[ -f "$rf" ]] || continue
+                    reg_count=$((reg_count + 1))
+                    # Validate each registry YAML
+                    validator_reg="$ACCORD_DIR/protocol/scan/validators/validate-registry-yaml.sh"
+                    if [[ -f "$validator_reg" ]]; then
+                        reg_fname="$(basename "$rf")"
+                        if bash "$validator_reg" "$rf" 2>/dev/null; then
+                            ok "Team '$team_name': registry/$reg_fname valid"
+                        else
+                            fail "Team '$team_name': registry/$reg_fname has errors"
+                            [[ "$VERBOSE" == true ]] && bash "$validator_reg" "$rf" 2>&1 | sed 's/^/       /'
+                        fi
+                    fi
+                done
+                if [[ $reg_count -eq 0 ]]; then
+                    warn "Team '$team_name': registry/ has no YAML files"
+                fi
+            else
+                warn "Team '$team_name': missing registry/ directory"
+            fi
+
+            if [[ -d "$td/comms/inbox" ]]; then
+                ok "Team '$team_name': comms/inbox exists"
+                if [[ -d "$td/comms/inbox/_team" ]]; then
+                    ok "Team '$team_name': _team/ inbox exists"
+                else
+                    warn "Team '$team_name': missing _team/ inbox for cross-team requests"
+                fi
+            else
+                fail "Team '$team_name': missing comms/inbox/"
+            fi
+        done
+    else
+        fail "No team directories found under teams/"
+    fi
+fi
+
+# Check v2 service structure
+if [[ -f "$PROJECT_DIR/.accord/service.yaml" ]]; then
+    echo -e "\n${BOLD}[v2 Service Structure]${NC}"
+    ok ".accord/service.yaml exists (v2 service)"
+
+    validator_svc="$ACCORD_DIR/protocol/scan/validators/validate-service-yaml.sh"
+    if [[ -f "$validator_svc" ]]; then
+        if bash "$validator_svc" "$PROJECT_DIR/.accord/service.yaml" 2>/dev/null; then
+            ok "service.yaml is valid"
+        else
+            fail "service.yaml has errors"
+            [[ "$VERBOSE" == true ]] && bash "$validator_svc" "$PROJECT_DIR/.accord/service.yaml" 2>&1 | sed 's/^/       /'
+        fi
+    fi
+
+    # Check hub clone
+    if [[ -d "$PROJECT_DIR/.accord/.hub" ]]; then
+        hub_found=false
+        for hd in "$PROJECT_DIR/.accord/.hub"/*/; do
+            if [[ -d "$hd/.git" ]]; then
+                hub_found=true
+                ok "Hub clone found: $(basename "$hd")"
+                break
+            fi
+        done
+        if [[ "$hub_found" == false ]]; then
+            fail "No hub clone found in .accord/.hub/"
+        fi
+    else
+        fail ".accord/.hub/ directory not found — run init with --v2"
+    fi
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}=== Summary ===${NC}"
 echo -e "  ${GREEN}$PASS passed${NC}, ${RED}$FAIL failed${NC}, ${YELLOW}$WARN warnings${NC}"

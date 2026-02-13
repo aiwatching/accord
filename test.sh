@@ -179,9 +179,9 @@ assert_not_contains "$TEST4_DIR/CLAUDE.md" "{{PROJECT_NAME}}" "No unresolved var
 assert_contains "$TEST4_DIR/CLAUDE.md" "ACCORD START"    "Has ACCORD START marker"
 assert_contains "$TEST4_DIR/CLAUDE.md" "ACCORD END"      "Has ACCORD END marker"
 
-# Check centralized paths in CLAUDE.md
-assert_contains "$TEST4_DIR/CLAUDE.md" ".accord/contracts/" "CLAUDE.md uses centralized contract path"
-assert_contains "$TEST4_DIR/CLAUDE.md" ".accord/comms/"     "CLAUDE.md uses centralized comms path"
+# Check hub-centric paths in CLAUDE.md
+assert_contains "$TEST4_DIR/CLAUDE.md" "contracts/" "CLAUDE.md references contracts"
+assert_contains "$TEST4_DIR/CLAUDE.md" "comms/"     "CLAUDE.md references comms"
 
 # Idempotency — run install again
 bash "$ACCORD_DIR/adapters/claude-code/install.sh" \

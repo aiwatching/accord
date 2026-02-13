@@ -33,6 +33,10 @@ ROLE=""
 INIT_SERVICES=false
 SERVICE_REPOS=""
 REPO_URL=""
+V2=false
+TEAM=""
+ORG=""
+SERVICE_V2_NAME=""
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -58,6 +62,9 @@ Options:
   --init-services             Also init all service repos (orchestrator only, dirs must be siblings)
   --service-repos <mapping>   Repo URLs for services (format: name=url,name=url) — orchestrator only
   --repo <git-url>            Git repo URL for this service (stored in config)
+  --v2                        Use v2 multi-team hub structure
+  --team <name>               Team name (v2 only)
+  --org <name>                Organization name (v2 only)
   --force                     Re-initialize even if .accord/config.yaml exists
   --no-interactive            Use auto-detected defaults without prompts
   --help                      Show this help message
@@ -203,6 +210,9 @@ parse_args() {
             --init-services)  INIT_SERVICES=true; shift ;;
             --service-repos)  SERVICE_REPOS="$2"; shift 2 ;;
             --repo)           REPO_URL="$2"; shift 2 ;;
+            --v2)             V2=true; shift ;;
+            --team)           TEAM="$2"; shift 2 ;;
+            --org)            ORG="$2"; shift 2 ;;
             --scan)           SCAN=true; shift ;;
             --force)          FORCE=true; shift ;;
             --no-interactive) INTERACTIVE=false; shift ;;
@@ -488,6 +498,70 @@ settings:
 EOF
 
     log "Created $config_file"
+}
+
+generate_accord_yaml() {
+    local output="$TARGET_DIR/accord.yaml"
+    if [[ -f "$output" ]]; then
+        warn "accord.yaml already exists: $output (skipping)"
+        return
+    fi
+    cp "$ACCORD_DIR/protocol/templates/accord.yaml.template" "$output"
+    replace_vars "$output" \
+        "ORG_NAME" "$ORG" \
+        "TEAM_NAME" "$TEAM" \
+        "TEAM_DESCRIPTION" ""
+    log "Created accord.yaml"
+}
+
+generate_team_config() {
+    local team_dir="$TARGET_DIR/teams/$TEAM"
+    local config_file="$team_dir/config.yaml"
+    if [[ -f "$config_file" ]]; then
+        warn "Team config already exists: $config_file (skipping)"
+        return
+    fi
+    mkdir -p "$team_dir"
+
+    # Build services section
+    local services_yaml=""
+    IFS=',' read -ra svc_arr <<< "$SERVICES"
+    for svc in "${svc_arr[@]}"; do
+        svc="$(echo "$svc" | xargs)"
+        services_yaml="${services_yaml}
+  - name: ${svc}
+    maintainer: ai"
+        # Check if this service has a repo URL in SERVICE_REPOS
+        if [[ -n "$SERVICE_REPOS" ]]; then
+            IFS=',' read -ra repo_pairs <<< "$SERVICE_REPOS"
+            for pair in "${repo_pairs[@]}"; do
+                local repo_name="${pair%%=*}"
+                local repo_url="${pair#*=}"
+                repo_name="$(echo "$repo_name" | xargs)"
+                if [[ "$repo_name" == "$svc" && -n "$repo_url" ]]; then
+                    services_yaml="${services_yaml}
+    repo: ${repo_url}"
+                    break
+                fi
+            done
+        fi
+    done
+
+    cat > "$config_file" <<EOF
+version: "1.0"
+role: orchestrator
+team: ${TEAM}
+project:
+  name: ${PROJECT_NAME}
+services:${services_yaml}
+
+settings:
+  sync_mode: ${SYNC_MODE}
+  require_human_approval: true
+  archive_completed: true
+  history_enabled: true
+EOF
+    log "Created teams/$TEAM/config.yaml"
 }
 
 # ── Directory Scaffolding ────────────────────────────────────────────────────
@@ -1191,6 +1265,203 @@ print_orchestrator_summary() {
     echo ""
 }
 
+# ── v2 Orchestrator Scaffolding ──────────────────────────────────────────
+
+scaffold_orchestrator_v2() {
+    log "Scaffolding v2 orchestrator hub: $PROJECT_NAME (team: $TEAM)"
+
+    local team_dir="$TARGET_DIR/teams/$TEAM"
+
+    # Root-level accord.yaml
+    generate_accord_yaml
+
+    # Team config
+    generate_team_config
+
+    # Dependencies
+    if [[ ! -f "$team_dir/dependencies.yaml" ]]; then
+        cp "$ACCORD_DIR/protocol/templates/dependencies.yaml.template" "$team_dir/dependencies.yaml"
+        replace_vars "$team_dir/dependencies.yaml" "TEAM_NAME" "$TEAM"
+        log "Created teams/$TEAM/dependencies.yaml"
+    fi
+
+    # Registry (per service)
+    mkdir -p "$team_dir/registry"
+    IFS=',' read -ra svc_arr <<< "$SERVICES"
+    for svc in "${svc_arr[@]}"; do
+        svc="$(echo "$svc" | xargs)"
+        local reg_file="$team_dir/registry/${svc}.yaml"
+        if [[ ! -f "$reg_file" ]]; then
+            cp "$ACCORD_DIR/protocol/templates/registry.yaml.template" "$reg_file"
+            replace_vars "$reg_file" \
+                "SERVICE_NAME" "$svc" \
+                "MAINTAINER" "ai"
+            log "Created teams/$TEAM/registry/${svc}.yaml"
+        fi
+    done
+
+    # Contracts
+    mkdir -p "$team_dir/contracts"
+    mkdir -p "$team_dir/contracts/internal"
+    for svc in "${svc_arr[@]}"; do
+        svc="$(echo "$svc" | xargs)"
+        local contract_file="$team_dir/contracts/${svc}.yaml"
+        if [[ ! -f "$contract_file" ]]; then
+            cp "$ACCORD_DIR/protocol/templates/contract.yaml.template" "$contract_file"
+            replace_vars "$contract_file" \
+                "SERVICE_NAME" "$svc" \
+                "SCANNED_TIMESTAMP" "" \
+                "RESOURCE" "example" \
+                "RESOURCE_PASCAL" "Example"
+            log "Created teams/$TEAM/contracts/${svc}.yaml"
+        fi
+    done
+
+    # Directives
+    mkdir -p "$team_dir/directives"
+    touch "$team_dir/directives/.gitkeep"
+
+    # Skills
+    mkdir -p "$team_dir/skills"
+    touch "$team_dir/skills/.gitkeep"
+
+    # Comms structure
+    mkdir -p "$team_dir/comms/archive"
+    mkdir -p "$team_dir/comms/history"
+    mkdir -p "$team_dir/comms/sessions"
+    mkdir -p "$team_dir/comms/inbox/_team"
+    touch "$team_dir/comms/inbox/_team/.gitkeep"
+    for svc in "${svc_arr[@]}"; do
+        svc="$(echo "$svc" | xargs)"
+        mkdir -p "$team_dir/comms/inbox/${svc}"
+        touch "$team_dir/comms/inbox/${svc}/.gitkeep"
+    done
+
+    # PROTOCOL.md + TEMPLATE.md
+    generate_comms_protocol "$team_dir/comms/PROTOCOL.md"
+    if [[ ! -f "$team_dir/comms/TEMPLATE.md" ]]; then
+        cp "$ACCORD_DIR/protocol/templates/request.md.template" "$team_dir/comms/TEMPLATE.md"
+        log "Created teams/$TEAM/comms/TEMPLATE.md"
+    fi
+
+    # Copy protocol helpers
+    mkdir -p "$team_dir/protocol/history"
+    if [[ -f "$ACCORD_DIR/protocol/history/write-history.sh" ]]; then
+        cp "$ACCORD_DIR/protocol/history/write-history.sh" "$team_dir/protocol/history/write-history.sh"
+        chmod +x "$team_dir/protocol/history/write-history.sh"
+    fi
+    mkdir -p "$team_dir/protocol/templates"
+    cp "$ACCORD_DIR/protocol/templates/directive.md.template" "$team_dir/protocol/templates/directive.md.template"
+
+    log "v2 orchestrator hub scaffolding complete"
+}
+
+# ── v2 Service Scaffolding ──────────────────────────────────────────────
+
+generate_service_yaml() {
+    local accord_dir="$TARGET_DIR/.accord"
+    local service_file="$accord_dir/service.yaml"
+
+    if [[ -f "$service_file" ]]; then
+        warn "service.yaml already exists: $service_file (skipping)"
+        return
+    fi
+
+    mkdir -p "$accord_dir"
+    cp "$ACCORD_DIR/protocol/templates/service.yaml.template" "$service_file"
+    replace_vars "$service_file" \
+        "SERVICE_NAME" "$SERVICE_V2_NAME" \
+        "TEAM_NAME" "$TEAM" \
+        "HUB_URL" "$HUB"
+    log "Created .accord/service.yaml"
+}
+
+scaffold_service_v2() {
+    log "Scaffolding v2 service: $SERVICE_V2_NAME (team: $TEAM)"
+
+    local accord_dir="$TARGET_DIR/.accord"
+    mkdir -p "$accord_dir/.hub"
+
+    generate_service_yaml
+
+    # .gitignore for runtime files
+    if [[ ! -f "$accord_dir/.gitignore" ]]; then
+        cat > "$accord_dir/.gitignore" <<'GI'
+.hub/
+.last-sync-pull
+.agent.pid
+GI
+        log "Created .accord/.gitignore"
+    fi
+
+    log "v2 service scaffolding complete"
+}
+
+hub_sync_on_init_v2() {
+    [[ -z "$HUB" ]] && return
+
+    local hub_clone_dir="$TARGET_DIR/.accord/.hub"
+
+    # Clone hub
+    if [[ -d "$hub_clone_dir" ]] && ls "$hub_clone_dir"/*/.git >/dev/null 2>&1; then
+        log "Hub already cloned, pulling latest..."
+        for d in "$hub_clone_dir"/*/; do
+            [[ -d "$d/.git" ]] && (cd "$d" && git pull --rebase --quiet) || true
+        done
+    else
+        local hub_basename
+        hub_basename="$(basename "$HUB" .git)"
+        local clone_target="$hub_clone_dir/$hub_basename"
+        log "Cloning hub: $HUB → $clone_target"
+        if ! git clone "$HUB" "$clone_target" 2>/dev/null; then
+            warn "Hub clone failed. Skipping hub sync."
+            return
+        fi
+        # Configure git user
+        (cd "$clone_target" && git config user.email "accord-init@local" && git config user.name "Accord Init") 2>/dev/null || true
+    fi
+
+    # Find the hub clone directory
+    local hub_repo_dir=""
+    for d in "$hub_clone_dir"/*/; do
+        if [[ -d "$d/.git" ]]; then
+            hub_repo_dir="$d"
+            break
+        fi
+    done
+    [[ -z "$hub_repo_dir" ]] && { warn "No hub clone found"; return; }
+
+    # Create registry entry for this service if missing
+    local team_dir="$hub_repo_dir/teams/$TEAM"
+    if [[ -d "$team_dir" ]]; then
+        local reg_file="$team_dir/registry/${SERVICE_V2_NAME}.yaml"
+        if [[ ! -f "$reg_file" ]]; then
+            mkdir -p "$team_dir/registry"
+            cp "$ACCORD_DIR/protocol/templates/registry.yaml.template" "$reg_file"
+            replace_vars "$reg_file" \
+                "SERVICE_NAME" "$SERVICE_V2_NAME" \
+                "MAINTAINER" "ai"
+            log "Created registry entry for $SERVICE_V2_NAME in hub"
+        fi
+
+        # Create inbox if missing
+        mkdir -p "$team_dir/comms/inbox/${SERVICE_V2_NAME}"
+        touch "$team_dir/comms/inbox/${SERVICE_V2_NAME}/.gitkeep"
+
+        # Commit + push
+        (cd "$hub_repo_dir" && git add -A)
+        if ! (cd "$hub_repo_dir" && git diff --cached --quiet); then
+            if (cd "$hub_repo_dir" && git commit -m "accord-sync($SERVICE_V2_NAME): v2 init — joined team $TEAM" && git push) 2>/dev/null; then
+                log "Hub synced: service registered"
+            else
+                warn "Failed to push to hub. Service registered locally only."
+            fi
+        fi
+    else
+        warn "Team directory not found in hub: teams/$TEAM"
+    fi
+}
+
 # ── Registry Generation ──────────────────────────────────────────────────
 
 generate_registry() {
@@ -1366,10 +1637,16 @@ main() {
     # Idempotency: skip if already initialized (unless --force)
     # Orchestrator uses flat config.yaml; service uses .accord/config.yaml
     if [[ "$FORCE" != "true" ]]; then
-        if [[ "$ROLE" == "orchestrator" && -f "$TARGET_DIR/config.yaml" ]]; then
+        if [[ "$V2" == true && "$ROLE" == "orchestrator" && -f "$TARGET_DIR/accord.yaml" ]]; then
+            log "Already initialized ($TARGET_DIR/accord.yaml exists). Use --force to re-initialize."
+            exit 0
+        elif [[ "$V2" == true && "$ROLE" != "orchestrator" && -f "$TARGET_DIR/.accord/service.yaml" ]]; then
+            log "Already initialized ($TARGET_DIR/.accord/service.yaml exists). Use --force to re-initialize."
+            exit 0
+        elif [[ "$V2" != true && "$ROLE" == "orchestrator" && -f "$TARGET_DIR/config.yaml" ]]; then
             log "Already initialized ($TARGET_DIR/config.yaml exists). Use --force to re-initialize."
             exit 0
-        elif [[ "$ROLE" != "orchestrator" && -f "$TARGET_DIR/.accord/config.yaml" ]]; then
+        elif [[ "$V2" != true && "$ROLE" != "orchestrator" && -f "$TARGET_DIR/.accord/config.yaml" ]]; then
             log "Already initialized ($TARGET_DIR/.accord/config.yaml exists). Use --force to re-initialize."
             exit 0
         fi
@@ -1406,7 +1683,29 @@ main() {
 
     validate_inputs
 
-    if [[ "$ROLE" == "orchestrator" ]]; then
+    if [[ "$V2" == true ]]; then
+        # v2 multi-team path
+        if [[ "$ROLE" == "orchestrator" ]]; then
+            [[ -z "$TEAM" ]] && TEAM="$(echo "$PROJECT_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')"
+            [[ -z "$ORG" ]] && ORG="$TEAM"
+            scaffold_orchestrator_v2
+            install_orchestrator_adapter
+            print_orchestrator_summary
+            if [[ "$INIT_SERVICES" == true ]]; then
+                init_service_repos
+            fi
+        else
+            # v2 service init
+            IFS=',' read -ra svc_arr <<< "$SERVICES"
+            SERVICE_V2_NAME="${svc_arr[0]}"
+            SERVICE_V2_NAME="$(echo "$SERVICE_V2_NAME" | xargs)"
+            [[ -z "$TEAM" ]] && err "--team is required for v2 service init"
+            scaffold_service_v2
+            hub_sync_on_init_v2
+            install_adapter
+            print_summary
+        fi
+    elif [[ "$ROLE" == "orchestrator" ]]; then
         scaffold_orchestrator
         install_orchestrator_adapter
         print_orchestrator_summary
@@ -1431,10 +1730,6 @@ main() {
             cp "$ACCORD_DIR/accord-agent.sh" "$TARGET_DIR/.accord/accord-agent.sh"
             chmod +x "$TARGET_DIR/.accord/accord-agent.sh"
             log "Copied accord-agent.sh to .accord/"
-        fi
-        if [[ -f "$ACCORD_DIR/accord-agent-legacy.sh" ]]; then
-            cp "$ACCORD_DIR/accord-agent-legacy.sh" "$TARGET_DIR/.accord/accord-agent-legacy.sh"
-            chmod +x "$TARGET_DIR/.accord/accord-agent-legacy.sh"
         fi
         # Copy TS agent if built
         if [[ -d "$ACCORD_DIR/agent/dist" ]]; then

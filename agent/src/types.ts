@@ -3,7 +3,7 @@
 // ── Request types ──────────────────────────────────────────────────────────
 
 export type RequestStatus = 'pending' | 'approved' | 'rejected' | 'in-progress' | 'completed' | 'failed';
-export type RequestScope = 'external' | 'internal';
+export type RequestScope = 'external' | 'internal' | 'cross-team';
 export type RequestPriority = 'low' | 'medium' | 'high' | 'critical';
 
 export interface RequestFrontmatter {
@@ -27,6 +27,10 @@ export interface RequestFrontmatter {
   command_args?: string;
   // retry tracking
   attempts?: number;
+  // cascade fields (v2)
+  parent_request?: string;
+  child_requests?: string[];
+  depends_on_requests?: string[];
 }
 
 export interface AccordRequest {
@@ -128,3 +132,23 @@ export interface DispatcherStatus {
 // ── Logger types ───────────────────────────────────────────────────────────
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+// ── Registry types ──────────────────────────────────────────────────────
+
+export type MaintainerType = 'ai' | 'human' | 'hybrid' | 'external';
+
+/** YAML registry entry at registry/{name}.yaml */
+export interface RegistryYaml {
+  name: string;
+  type?: 'service' | 'module';
+  description?: string;
+  maintainer: MaintainerType;
+  owner?: string;
+  language?: string;
+  directory?: string;
+  contract?: string;
+  owns?: string[];
+  exposes?: string[];
+  depends_on?: (string | { service: string; contract: string } | { team: string; contract: string })[];
+  responsibility?: string;
+}

@@ -564,6 +564,215 @@ join_project() {
     echo ""
 }
 
+# ── v2 Multi-Team Setup ──────────────────────────────────────────────────────
+
+collect_info_v2() {
+    echo ""
+    echo -e "${BOLD}=== Accord v2 Multi-Team Project Setup ===${NC}"
+    echo ""
+
+    # 1. Org name
+    local detected_name
+    detected_name="$(basename "$(pwd)")"
+    read -r -p "  Organization name [$detected_name]: " input
+    V2_ORG="${input:-$detected_name}"
+
+    # 2. Team name
+    echo ""
+    read -r -p "  Team name: " V2_TEAM
+    if [[ -z "$V2_TEAM" ]]; then err "Team name is required"; fi
+
+    # 3. Project name (defaults to team name)
+    read -r -p "  Project name [$V2_TEAM]: " input
+    V2_PROJECT="${input:-$V2_TEAM}"
+    if ! validate_project_name "$V2_PROJECT"; then
+        err "Invalid project name"
+    fi
+
+    # 4. Hub
+    echo ""
+    read -r -p "  Hub git URL: " V2_HUB_URL
+    if [[ -z "$V2_HUB_URL" ]]; then err "Hub git URL is required"; fi
+
+    local hub_basename
+    hub_basename="$(basename "$V2_HUB_URL" .git)"
+    if [[ -d "$hub_basename" ]]; then
+        echo -e "  ${DIM}Found existing directory: $hub_basename/${NC}"
+        V2_HUB_DIR="$(cd "$hub_basename" && pwd)"
+        V2_HUB_CLONE=false
+    else
+        V2_HUB_DIR="$(pwd)/$hub_basename"
+        V2_HUB_CLONE=true
+    fi
+
+    # 5. Services
+    echo ""
+    echo "  Services (comma-separated):"
+    read -r -p "  Service names: " svc_input
+    if [[ -z "$svc_input" ]]; then err "At least one service is required"; fi
+
+    V2_SVC_NAMES=()
+    V2_SVC_REPOS=()
+    IFS=',' read -ra _names <<< "$svc_input"
+    for name in "${_names[@]}"; do
+        name="$(echo "$name" | xargs)"
+        if [[ -n "$name" ]]; then V2_SVC_NAMES+=("$name"); fi
+    done
+
+    echo ""
+    for svc in "${V2_SVC_NAMES[@]}"; do
+        read -r -p "  $svc repo URL (optional) []: " repo_input
+        V2_SVC_REPOS+=("${repo_input:-}")
+    done
+
+    # 6. Adapter
+    echo ""
+    V2_ADAPTER="claude-code"
+    read -r -p "  Adapter [$V2_ADAPTER]: " input
+    V2_ADAPTER="${input:-$V2_ADAPTER}"
+}
+
+confirm_setup_v2() {
+    echo ""
+    echo -e "${BOLD}  ── Summary (v2 Multi-Team) ──${NC}"
+    echo ""
+    echo -e "  Organization: ${GREEN}$V2_ORG${NC}"
+    echo -e "  Team:         ${GREEN}$V2_TEAM${NC}"
+    echo -e "  Project:      ${GREEN}$V2_PROJECT${NC}"
+    echo -e "  Hub:          ${GREEN}$V2_HUB_URL${NC}"
+    echo -e "  Adapter:      ${GREEN}$V2_ADAPTER${NC}"
+    echo -e "  Services:"
+    for i in "${!V2_SVC_NAMES[@]}"; do
+        local repo_info=""
+        if [[ -n "${V2_SVC_REPOS[$i]:-}" ]]; then
+            repo_info=" (repo: ${V2_SVC_REPOS[$i]})"
+        fi
+        echo -e "    ${GREEN}${V2_SVC_NAMES[$i]}${NC}${repo_info}"
+    done
+    echo ""
+    echo "  Hub structure:"
+    echo "    accord.yaml"
+    echo "    teams/$V2_TEAM/"
+    echo "      ├── config.yaml"
+    echo "      ├── dependencies.yaml"
+    echo "      ├── registry/{service}.yaml"
+    echo "      ├── contracts/"
+    echo "      ├── directives/"
+    echo "      ├── skills/"
+    echo "      └── comms/inbox/{service}/ + _team/"
+    echo ""
+
+    read -r -p "  Proceed? (Y/n): " confirm
+    if [[ "${confirm:-Y}" =~ ^[Nn]$ ]]; then
+        echo "  Aborted."
+        exit 0
+    fi
+}
+
+execute_setup_v2() {
+    echo ""
+    echo -e "${BOLD}  ── Initializing v2 Hub ──${NC}"
+    echo ""
+
+    # Clone hub if needed
+    if [[ "$V2_HUB_CLONE" == true ]]; then
+        log "Cloning hub → $V2_HUB_DIR"
+        git clone "$V2_HUB_URL" "$V2_HUB_DIR"
+    fi
+
+    local services_csv
+    services_csv="$(IFS=','; echo "${V2_SVC_NAMES[*]}")"
+
+    # Build service-repos mapping
+    local service_repos_csv=""
+    for i in "${!V2_SVC_NAMES[@]}"; do
+        if [[ -n "${V2_SVC_REPOS[$i]:-}" ]]; then
+            if [[ -n "$service_repos_csv" ]]; then
+                service_repos_csv="${service_repos_csv},${V2_SVC_NAMES[$i]}=${V2_SVC_REPOS[$i]}"
+            else
+                service_repos_csv="${V2_SVC_NAMES[$i]}=${V2_SVC_REPOS[$i]}"
+            fi
+        fi
+    done
+
+    # Init hub as v2 orchestrator
+    local init_args=(
+        --v2
+        --role orchestrator
+        --project-name "$V2_PROJECT"
+        --org "$V2_ORG"
+        --team "$V2_TEAM"
+        --services "$services_csv"
+        --adapter "$V2_ADAPTER"
+        --target-dir "$V2_HUB_DIR"
+        --no-interactive
+        --force
+    )
+    if [[ -n "$service_repos_csv" ]]; then
+        init_args+=(--service-repos "$service_repos_csv")
+    fi
+    bash "$ACCORD_DIR/init.sh" "${init_args[@]}"
+
+    # Init each service (clone if repo URL given)
+    local project_dir
+    project_dir="$(pwd)"
+    for i in "${!V2_SVC_NAMES[@]}"; do
+        local svc="${V2_SVC_NAMES[$i]}"
+        local repo="${V2_SVC_REPOS[$i]:-}"
+        local svc_dir="$project_dir/$svc"
+
+        if [[ -n "$repo" && ! -d "$svc" ]]; then
+            log "Cloning $svc → $svc_dir"
+            git clone "$repo" "$svc_dir" || { warn "Failed to clone $svc"; continue; }
+        elif [[ ! -d "$svc" ]]; then
+            warn "$svc: no repo URL and directory not found — skipping"
+            continue
+        else
+            svc_dir="$(cd "$svc" && pwd)"
+        fi
+
+        if [[ "$FORCE" == true && -d "$svc_dir/.accord" ]]; then
+            rm -rf "$svc_dir/.accord"
+        fi
+
+        log "Initializing v2 service: $svc"
+        bash "$ACCORD_DIR/init.sh" \
+            --v2 \
+            --target-dir "$svc_dir" \
+            --project-name "$V2_PROJECT" \
+            --team "$V2_TEAM" \
+            --hub "$V2_HUB_URL" \
+            --services "$services_csv" \
+            --adapter "$V2_ADAPTER" \
+            --no-interactive \
+            --force || {
+            warn "Failed to initialize: $svc"
+            continue
+        }
+    done
+}
+
+print_done_v2() {
+    echo ""
+    echo -e "${BOLD}=== v2 Multi-Team Setup Complete ===${NC}"
+    echo ""
+    echo -e "  Organization: ${GREEN}$V2_ORG${NC}"
+    echo -e "  Team:         ${GREEN}$V2_TEAM${NC}"
+    echo -e "  Hub:          ${GREEN}$V2_HUB_DIR${NC}"
+    echo ""
+    echo "  Next steps:"
+    echo ""
+    echo "    1. Commit hub:"
+    echo "       cd $V2_HUB_DIR && git add . && git commit -m 'accord: init v2 hub' && git push"
+    echo ""
+    for i in "${!V2_SVC_NAMES[@]}"; do
+        echo "       cd ${V2_SVC_NAMES[$i]} && git add .accord && git commit -m 'accord: init v2 service'"
+    done
+    echo ""
+    echo "    2. Start agent sessions or the autonomous daemon"
+    echo ""
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 main() {
@@ -587,8 +796,9 @@ main() {
     echo ""
     echo -e "${BOLD}Accord Setup${NC}"
     echo ""
-    echo "  1. Create new project"
+    echo "  1. Create new project (v1 hub-and-spoke)"
     echo "  2. Join existing project"
+    echo "  3. Create new project (v2 multi-team)"
     echo ""
     read -r -p "  Choice [1]: " mode_choice
 
@@ -601,6 +811,12 @@ main() {
             ;;
         2|join)
             join_project
+            ;;
+        3|v2)
+            collect_info_v2
+            confirm_setup_v2
+            execute_setup_v2
+            print_done_v2
             ;;
         *)
             collect_info

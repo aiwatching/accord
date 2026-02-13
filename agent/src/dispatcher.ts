@@ -4,9 +4,9 @@ import { Worker } from './worker.js';
 import { SessionManager } from './session.js';
 import { createAdapter, type AgentAdapter } from './agent-adapter.js';
 import { logger } from './logger.js';
-import { scanInboxes, getPendingRequests, sortByPriority } from './request.js';
+import { scanInboxes, getPendingRequests, sortByPriority, getDependencyStatus } from './request.js';
 import { syncPull, syncPush, gitCommit } from './sync.js';
-import { getAccordDir, getServiceDir } from './config.js';
+import { getAccordDir, getServiceDir, loadRegistryYaml } from './config.js';
 
 export class Dispatcher {
   private workers: Worker[] = [];
@@ -192,9 +192,38 @@ export class Dispatcher {
 
   private assignRequests(pending: AccordRequest[]): Array<{ worker: Worker; request: AccordRequest }> {
     const assignments: Array<{ worker: Worker; request: AccordRequest }> = [];
+    const accordDir = getAccordDir(this.targetDir, this.accordConfig);
 
     for (const request of pending) {
       const serviceName = request.serviceName;
+
+      // Constraint 0: check depends_on_requests — skip if dependencies are unmet
+      const depStatus = getDependencyStatus(request, accordDir);
+      if (!depStatus.ready) {
+        logger.info(`Deferred ${request.frontmatter.id}: waiting for ${depStatus.pending.join(', ')}`);
+        continue;
+      }
+
+      // Constraint 0b: check maintainer type from registry (v2)
+      // maintainer: human → skip (leave pending)
+      // maintainer: hybrid → skip unless status: approved
+      // maintainer: external → skip (cross-team routing handled elsewhere)
+      const registryDir = path.join(accordDir, 'registry');
+      const registry = loadRegistryYaml(accordDir, serviceName);
+      if (registry) {
+        if (registry.maintainer === 'human') {
+          logger.debug(`Skipping ${request.frontmatter.id}: service ${serviceName} has maintainer: human`);
+          continue;
+        }
+        if (registry.maintainer === 'hybrid' && request.frontmatter.status !== 'approved') {
+          logger.debug(`Skipping ${request.frontmatter.id}: service ${serviceName} requires human approval (hybrid)`);
+          continue;
+        }
+        if (registry.maintainer === 'external') {
+          logger.debug(`Skipping ${request.frontmatter.id}: service ${serviceName} is external (owned by another team)`);
+          continue;
+        }
+      }
 
       // Constraint 1: never assign two requests for the same service simultaneously
       if (this.activeServices.has(serviceName)) {

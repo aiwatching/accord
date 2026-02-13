@@ -216,16 +216,6 @@ accord-agent.sh run-once --dry-run --target-dir ./my-service
 accord-agent.sh run-once --target-dir ./my-service
 ```
 
-#### Legacy Fallback
-
-If Node.js >= 20 is not available or the TypeScript agent is not built, `accord-agent.sh` automatically falls back to `accord-agent-legacy.sh` (the original bash agent). The legacy agent supports the same subcommands but uses `--agent-cmd` instead of the Claude Agent SDK:
-
-```bash
-# Legacy agent command resolution:
-# --agent-cmd flag > settings.agent_cmd in config.yaml > "claude --dangerously-skip-permissions -p"
-accord-agent.sh run-once --target-dir ./frontend --agent-cmd "claude --dangerously-skip-permissions -p"
-```
-
 ---
 
 ## Service Commands

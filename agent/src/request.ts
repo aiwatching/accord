@@ -171,6 +171,46 @@ function scanDirectory(dir: string, results: AccordRequest[]): void {
   }
 }
 
+// ── Dependency Checking ─────────────────────────────────────────────────────
+
+/**
+ * Check if a request's depends_on_requests are all completed.
+ */
+export function isRequestCompleted(accordDir: string, requestId: string): boolean {
+  const archiveDir = path.join(accordDir, 'comms', 'archive');
+  if (!fs.existsSync(archiveDir)) return false;
+
+  const files = fs.readdirSync(archiveDir).filter(f => f.endsWith('.md'));
+  for (const file of files) {
+    const filePath = path.join(archiveDir, file);
+    const req = parseRequest(filePath);
+    if (req && req.frontmatter.id === requestId && req.frontmatter.status === 'completed') {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Get the dependency status for a request.
+ * Returns which dependencies are ready and which are still pending.
+ */
+export function getDependencyStatus(request: AccordRequest, accordDir: string): { ready: boolean; pending: string[] } {
+  const deps = request.frontmatter.depends_on_requests;
+  if (!deps || deps.length === 0) {
+    return { ready: true, pending: [] };
+  }
+
+  const pending: string[] = [];
+  for (const depId of deps) {
+    if (!isRequestCompleted(accordDir, depId)) {
+      pending.push(depId);
+    }
+  }
+
+  return { ready: pending.length === 0, pending };
+}
+
 // ── Filtering & Sorting ────────────────────────────────────────────────────
 
 export function getPendingRequests(requests: AccordRequest[]): AccordRequest[] {

@@ -114,6 +114,7 @@ export class Worker {
     appendResultSection(request.filePath, result);
     setRequestStatus(request.filePath, 'completed');
 
+    const durationMs = Date.now() - startTime;
     writeHistory({
       historyDir,
       requestId: reqId,
@@ -121,6 +122,7 @@ export class Worker {
       toStatus: 'completed',
       actor: request.serviceName,
       detail: `command: ${command}`,
+      durationMs,
     });
 
     archiveRequest(request.filePath, accordDir);
@@ -130,7 +132,7 @@ export class Worker {
     return {
       requestId: reqId,
       success: true,
-      durationMs: Date.now() - startTime,
+      durationMs,
     };
   }
 
@@ -200,6 +202,7 @@ export class Worker {
       setRequestStatus(request.filePath, 'completed');
       archiveRequest(request.filePath, accordDir);
 
+      const durationMs = Date.now() - startTime;
       writeHistory({
         historyDir,
         requestId: reqId,
@@ -208,11 +211,14 @@ export class Worker {
         actor: serviceName,
         directiveId: request.frontmatter.directive,
         detail: `cost=$${result.costUsd?.toFixed(4)}, turns=${result.numTurns}`,
+        durationMs,
+        costUsd: result.costUsd,
+        numTurns: result.numTurns,
       });
 
       gitCommit(serviceDir, `accord: completed ${reqId}`);
 
-      return { ...result, requestId: reqId, success: true };
+      return { ...result, requestId: reqId, success: true, durationMs };
     } catch (err) {
       // Step 6: Failure handling
       const error = String(err);
@@ -221,6 +227,7 @@ export class Worker {
       // Write checkpoint for crash recovery
       this.sessionManager.writeCheckpoint(accordDir, reqId, `Error: ${error}\nAttempt: ${attempts}`);
 
+      const failDurationMs = Date.now() - startTime;
       if (attempts >= this.config.max_attempts) {
         // Max attempts reached: set failed, escalate
         setRequestStatus(request.filePath, 'failed');
@@ -232,6 +239,7 @@ export class Worker {
           toStatus: 'failed',
           actor: serviceName,
           detail: `max attempts (${this.config.max_attempts}) reached: ${error}`,
+          durationMs: failDurationMs,
         });
 
         createEscalation({
@@ -253,6 +261,7 @@ export class Worker {
           toStatus: 'pending',
           actor: serviceName,
           detail: `attempt ${attempts}/${this.config.max_attempts} failed: ${error}`,
+          durationMs: failDurationMs,
         });
 
         gitCommit(serviceDir, `accord: revert ${reqId} to pending (attempt ${attempts}/${this.config.max_attempts})`);
