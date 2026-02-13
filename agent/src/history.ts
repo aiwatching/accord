@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { logger } from './logger.js';
 
-interface HistoryEntry {
+export interface HistoryEntry {
   historyDir: string;
   requestId: string;
   fromStatus: string;
@@ -11,6 +11,9 @@ interface HistoryEntry {
   actor: string;
   directiveId?: string;
   detail?: string;
+  durationMs?: number;
+  costUsd?: number;
+  numTurns?: number;
 }
 
 /**
@@ -63,7 +66,7 @@ function writeHistoryDirect(entry: HistoryEntry): void {
   const filename = `${date}-${entry.actor}.jsonl`;
   const filepath = path.join(entry.historyDir, filename);
 
-  const record: Record<string, string> = {
+  const record: Record<string, string | number> = {
     ts: new Date().toISOString(),
     request_id: entry.requestId,
     from_status: entry.fromStatus,
@@ -72,6 +75,9 @@ function writeHistoryDirect(entry: HistoryEntry): void {
   };
   if (entry.directiveId) record['directive_id'] = entry.directiveId;
   if (entry.detail) record['detail'] = entry.detail;
+  if (entry.durationMs !== undefined) record['duration_ms'] = entry.durationMs;
+  if (entry.costUsd !== undefined) record['cost_usd'] = entry.costUsd;
+  if (entry.numTurns !== undefined) record['num_turns'] = entry.numTurns;
 
   fs.appendFileSync(filepath, JSON.stringify(record) + '\n', 'utf-8');
 }

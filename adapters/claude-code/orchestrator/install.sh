@@ -17,6 +17,7 @@ ADAPTER_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR=""
 PROJECT_NAME=""
 SERVICE_LIST=""
+TEAM_NAME=""
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -49,6 +50,7 @@ while [[ $# -gt 0 ]]; do
         --project-dir)    PROJECT_DIR="$2"; shift 2 ;;
         --project-name)   PROJECT_NAME="$2"; shift 2 ;;
         --service-list)   SERVICE_LIST="$2"; shift 2 ;;
+        --team)           TEAM_NAME="$2"; shift 2 ;;
         *)                err "Unknown option: $1" ;;
     esac
 done
@@ -78,7 +80,8 @@ inject_claude_md() {
     echo "$accord_block" > "$tmp_block"
     replace_vars "$tmp_block" \
         "PROJECT_NAME" "$PROJECT_NAME" \
-        "SERVICE_LIST" "$SERVICE_LIST"
+        "SERVICE_LIST" "$SERVICE_LIST" \
+        "TEAM_NAME" "${TEAM_NAME:-default}"
     accord_block="$(cat "$tmp_block")"
     rm -f "$tmp_block"
 

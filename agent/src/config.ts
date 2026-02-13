@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import YAML from 'yaml';
-import type { AccordConfig, DispatcherConfig, ServiceConfig } from './types.js';
+import type { AccordConfig, DispatcherConfig, ServiceConfig, RegistryYaml } from './types.js';
 
 const DISPATCHER_DEFAULTS: DispatcherConfig = {
   workers: 4,
@@ -109,4 +109,41 @@ export function getAccordDir(targetDir: string, config: AccordConfig): string {
  */
 export function getInboxPath(accordDir: string, name: string): string {
   return path.join(accordDir, 'comms', 'inbox', name);
+}
+
+/**
+ * Load a YAML registry entry for a service.
+ * Tries v2 YAML first, falls back to v1 markdown (returns null if not found).
+ */
+export function loadRegistryYaml(teamDir: string, serviceName: string): RegistryYaml | null {
+  const yamlPath = path.join(teamDir, 'registry', `${serviceName}.yaml`);
+  if (fs.existsSync(yamlPath)) {
+    return YAML.parse(fs.readFileSync(yamlPath, 'utf-8')) as RegistryYaml;
+  }
+  // v1 fallback: markdown registry (parse name + frontmatter-like fields)
+  const mdPath = path.join(teamDir, 'registry', `${serviceName}.md`);
+  if (fs.existsSync(mdPath)) {
+    return parseMarkdownRegistry(mdPath);
+  }
+  return null;
+}
+
+function parseMarkdownRegistry(filePath: string): RegistryYaml | null {
+  try {
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    // Markdown registry has YAML-like frontmatter between --- markers
+    const match = raw.match(/^---\n([\s\S]*?)\n---/m);
+    if (!match) return null;
+    const data = YAML.parse(match[1]);
+    return {
+      name: data.name ?? path.basename(filePath, '.md'),
+      type: data.type,
+      maintainer: data.maintainer ?? 'ai',
+      language: data.language,
+      directory: data.directory,
+      contract: data.contract,
+    } as RegistryYaml;
+  } catch {
+    return null;
+  }
 }

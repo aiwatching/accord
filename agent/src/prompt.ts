@@ -91,6 +91,7 @@ export function buildAgentPrompt(params: {
 
 /**
  * Load the skill index file if it exists.
+ * Checks .accord/skills, then .claude/skills.
  */
 function loadSkillIndex(targetDir: string): string | null {
   const candidates = [

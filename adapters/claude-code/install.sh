@@ -24,6 +24,7 @@ CONTRACTS_DIR=".accord/contracts/"
 INTERNAL_CONTRACTS_DIR=".accord/contracts/internal/"
 COMMS_DIR=".accord/comms/"
 SYNC_MODE="on-action"
+TEAM_NAME=""
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -62,6 +63,7 @@ while [[ $# -gt 0 ]]; do
         --internal-contracts-dir) INTERNAL_CONTRACTS_DIR="$2"; shift 2 ;;
         --comms-dir)              COMMS_DIR="$2"; shift 2 ;;
         --sync-mode)              SYNC_MODE="$2"; shift 2 ;;
+        --team)                   TEAM_NAME="$2"; shift 2 ;;
         *)                        err "Unknown option: $1" ;;
     esac
 done
@@ -96,7 +98,9 @@ inject_claude_md() {
         "CONTRACTS_DIR" "$CONTRACTS_DIR" \
         "INTERNAL_CONTRACTS_DIR" "${INTERNAL_CONTRACTS_DIR:-N/A}" \
         "COMMS_DIR" "$COMMS_DIR" \
-        "SYNC_MODE" "$SYNC_MODE"
+        "SYNC_MODE" "$SYNC_MODE" \
+        "TEAM_NAME" "${TEAM_NAME:-default}" \
+        "SERVICE_NAME" "${SERVICE_NAME:-${SERVICE_LIST%%,*}}"
     accord_block="$(cat "$tmp_block")"
     rm -f "$tmp_block"
 

@@ -89,6 +89,35 @@ parse_args() {
     done
 }
 
+# ── v2 Detection ─────────────────────────────────────────────────────────────
+
+V2_MODE=false
+V2_HUB_CLONE_DIR=""
+
+detect_v2() {
+    # v2 service: has .accord/service.yaml
+    if [[ -f "$TARGET_DIR/.accord/service.yaml" ]]; then
+        V2_MODE=true
+        return
+    fi
+    # v2 hub: has accord.yaml at root
+    if [[ -f "$TARGET_DIR/accord.yaml" ]]; then
+        V2_MODE=true
+        return
+    fi
+}
+
+# Find the hub clone directory for v2 service repos
+find_v2_hub_clone() {
+    for d in "$TARGET_DIR/.accord/.hub"/*/; do
+        if [[ -d "$d/.git" ]]; then
+            V2_HUB_CLONE_DIR="$d"
+            return
+        fi
+    done
+    err "No hub clone found in .accord/.hub/ — run init with --v2 first"
+}
+
 # ── Read Config ──────────────────────────────────────────────────────────────
 
 read_config() {
@@ -436,6 +465,58 @@ do_push() {
     log "Push complete"
 }
 
+# ── v2 Pull (simplified) ─────────────────────────────────────────────────────
+
+do_pull_v2() {
+    find_v2_hub_clone
+    log "v2 pull: updating hub clone..."
+    if ! (cd "$V2_HUB_CLONE_DIR" && git pull --rebase --quiet 2>/dev/null); then
+        warn "Hub pull failed (network issue or rebase conflict)"
+        return 1
+    fi
+    log "v2 pull complete"
+}
+
+# ── v2 Push (simplified) ─────────────────────────────────────────────────────
+
+do_push_v2() {
+    find_v2_hub_clone
+    log "v2 push: committing and pushing hub clone..."
+
+    (cd "$V2_HUB_CLONE_DIR" && git add -A)
+    if (cd "$V2_HUB_CLONE_DIR" && git diff --cached --quiet); then
+        log "No changes to push"
+        return
+    fi
+
+    local svc_name="v2"
+    if [[ -f "$TARGET_DIR/.accord/service.yaml" ]]; then
+        svc_name="$(yaml_val "service" "$TARGET_DIR/.accord/service.yaml")"
+    fi
+
+    (cd "$V2_HUB_CLONE_DIR" && git commit -m "accord-sync($svc_name): v2 push")
+
+    local max_retries=3
+    local attempt=0
+    while [[ $attempt -lt $max_retries ]]; do
+        if (cd "$V2_HUB_CLONE_DIR" && git push 2>/dev/null); then
+            break
+        fi
+        attempt=$((attempt + 1))
+        log "Push conflict, pulling with rebase (attempt $attempt/$max_retries)..."
+        if ! (cd "$V2_HUB_CLONE_DIR" && git pull --rebase 2>/dev/null); then
+            log "ERROR: Rebase failed, manual resolution needed"
+            return 1
+        fi
+    done
+    if [[ $attempt -eq $max_retries ]]; then
+        log "ERROR: Push failed after $max_retries attempts"
+        return 1
+    fi
+
+    log "v2 push complete"
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 main() {
@@ -443,13 +524,23 @@ main() {
 
     TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
 
-    read_config
+    detect_v2
 
-    case "$SUBCOMMAND" in
-        init) do_init ;;
-        pull) do_pull ;;
-        push) do_push ;;
-    esac
+    if [[ "$V2_MODE" == true ]]; then
+        case "$SUBCOMMAND" in
+            init) log "v2 mode: hub clone is managed by init.sh --v2. Nothing to do." ;;
+            pull) do_pull_v2 ;;
+            push) do_push_v2 ;;
+        esac
+    else
+        read_config
+
+        case "$SUBCOMMAND" in
+            init) do_init ;;
+            pull) do_pull ;;
+            push) do_push ;;
+        esac
+    fi
 }
 
 main "$@"
