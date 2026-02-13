@@ -56,11 +56,11 @@ collect_info() {
     echo -e "${BOLD}=== Accord Project Setup ===${NC}"
     echo ""
 
-    # 1. Project name (must be valid as git branch: accord/<name>)
+    # 1. Project name (hub name, used as git branch: accord/<name>)
     local detected_name
     detected_name="$(basename "$(pwd)")"
     while true; do
-        read -r -p "  Project name [$detected_name]: " input
+        read -r -p "  Hub name [$detected_name]: " input
         PROJECT_NAME="${input:-$detected_name}"
         if validate_project_name "$PROJECT_NAME"; then
             break
@@ -68,7 +68,7 @@ collect_info() {
         echo ""
     done
 
-    # 2. Hub
+    # 2. Hub git URL
     echo ""
     read -r -p "  Hub git URL: " HUB_URL
     if [[ -z "$HUB_URL" ]]; then err "Hub git URL is required"; fi
@@ -76,7 +76,6 @@ collect_info() {
     # Determine hub local directory name from URL
     local hub_basename
     hub_basename="$(basename "$HUB_URL" .git)"
-    local default_hub_dir="./$hub_basename"
 
     if [[ -d "$hub_basename" ]]; then
         echo -e "  ${DIM}Found existing directory: $hub_basename/${NC}"
@@ -87,13 +86,19 @@ collect_info() {
         HUB_CLONE=true
     fi
 
-    # 3. Services
+    # 3. Team name (defaults to project name)
+    echo ""
+    local default_team
+    default_team="$(echo "$PROJECT_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')"
+    read -r -p "  Team name [$default_team]: " input
+    TEAM_NAME="${input:-$default_team}"
+
+    # 4. Services
     echo ""
     echo "  Services — enter names (comma-separated) or one per line (empty to finish):"
     echo ""
 
     SVC_NAMES=()
-    SVC_DIRS=()
     SVC_REPOS=()
 
     read -r -p "  Service names: " svc_input
@@ -117,36 +122,27 @@ collect_info() {
         done
     fi
 
-    # Ask directory and repo URL for each service
+    # Ask repo URL for each service
     echo ""
     for svc in "${SVC_NAMES[@]}"; do
-        local default_dir="./$svc"
-        if [[ -d "$svc" ]]; then
-            echo -e "  ${DIM}Found: $svc/${NC}"
-            read -r -p "  $svc directory [$default_dir]: " dir_input
-            SVC_DIRS+=("${dir_input:-$default_dir}")
-        else
-            read -r -p "  $svc directory [$default_dir]: " dir_input
-            SVC_DIRS+=("${dir_input:-$default_dir}")
-        fi
         read -r -p "  $svc repo URL (optional) []: " repo_input
         SVC_REPOS+=("${repo_input:-}")
     done
 
-    # 4. Adapter
+    # 5. Adapter
     echo ""
     ADAPTER="claude-code"
     read -r -p "  Adapter [$ADAPTER]: " input
     ADAPTER="${input:-$ADAPTER}"
 
-    # 5. Auto-scan
+    # 6. Auto-scan
     read -r -p "  Auto-scan source code for contracts? (y/N): " scan_input
     SCAN=false
     if [[ "$scan_input" =~ ^[Yy]$ ]]; then
         SCAN=true
     fi
 
-    # 6. Agent daemons
+    # 7. Agent daemons
     read -r -p "  Start agent daemons for all services? (y/N): " daemon_input
     START_DAEMONS=false
     if [[ "$daemon_input" =~ ^[Yy]$ ]]; then
@@ -160,22 +156,34 @@ confirm_setup() {
     echo ""
     echo -e "${BOLD}  ── Summary ──${NC}"
     echo ""
-    echo -e "  Project:   ${GREEN}$PROJECT_NAME${NC}"
-    echo -e "  Hub:       ${GREEN}$HUB_URL${NC}"
+    echo -e "  Hub:       ${GREEN}$PROJECT_NAME${NC}"
+    echo -e "  Hub URL:   ${GREEN}$HUB_URL${NC}"
     if [[ "$HUB_CLONE" == true ]]; then
         echo -e "             → clone to ${GREEN}$HUB_DIR${NC}"
     else
         echo -e "             → existing ${GREEN}$HUB_DIR${NC}"
     fi
+    echo -e "  Team:      ${GREEN}$TEAM_NAME${NC}"
     echo -e "  Adapter:   ${GREEN}$ADAPTER${NC}"
     echo -e "  Services:"
     for i in "${!SVC_NAMES[@]}"; do
         local repo_info=""
         if [[ -n "${SVC_REPOS[$i]:-}" ]]; then
-            repo_info=" (repo: ${SVC_REPOS[$i]})"
+            repo_info=" (${SVC_REPOS[$i]})"
         fi
-        echo -e "    ${GREEN}${SVC_NAMES[$i]}${NC} → ${SVC_DIRS[$i]}${repo_info}"
+        echo -e "    ${GREEN}${SVC_NAMES[$i]}${NC}${repo_info}"
     done
+    echo ""
+    echo "  Hub structure:"
+    echo "    accord.yaml"
+    echo "    teams/$TEAM_NAME/"
+    echo "      ├── config.yaml"
+    echo "      ├── dependencies.yaml"
+    echo "      ├── registry/{service}.yaml"
+    echo "      ├── contracts/"
+    echo "      ├── directives/"
+    echo "      ├── skills/"
+    echo "      └── comms/inbox/{service}/ + _team/"
     echo ""
 
     read -r -p "  Proceed? (Y/n): " confirm
@@ -196,11 +204,11 @@ execute_setup() {
     project_dir="$(pwd)"
 
     # 0. Stop running agent daemon before re-init
-    # Check hub-level PID first, then per-service (legacy)
     local stopped_any=false
     local hub_abs
     hub_abs="$(cd "$HUB_DIR" 2>/dev/null && pwd)" || hub_abs="$HUB_DIR"
-    for check_dir in "$hub_abs" "${SVC_DIRS[@]}"; do
+    for check_dir in "$hub_abs" "${SVC_NAMES[@]}"; do
+        # Resolve to absolute path
         if [[ "$check_dir" != /* ]]; then check_dir="$project_dir/$check_dir"; fi
         check_dir="$(cd "$check_dir" 2>/dev/null && pwd)" || continue
         local pf="$check_dir/.accord/.agent.pid"
@@ -255,8 +263,10 @@ execute_setup() {
 
     log "Initializing hub (orchestrator)"
     local init_args=(
+        --v2
         --role orchestrator
         --project-name "$PROJECT_NAME"
+        --team "$TEAM_NAME"
         --services "$services_csv"
         --adapter "$ADAPTER"
         --target-dir "$HUB_DIR"
@@ -271,28 +281,33 @@ execute_setup() {
     # 3. Init each service
     for i in "${!SVC_NAMES[@]}"; do
         local svc="${SVC_NAMES[$i]}"
-        local dir="${SVC_DIRS[$i]}"
+        local repo="${SVC_REPOS[$i]:-}"
+        local svc_dir="$project_dir/$svc"
 
-        # Resolve relative paths
-        if [[ "$dir" != /* ]]; then dir="$project_dir/$dir"; fi
-        # Normalize (remove trailing ./ prefix artifacts)
-        dir="$(cd "$dir" 2>/dev/null && pwd)" || {
-            warn "Directory not found: ${SVC_DIRS[$i]} (skipping $svc)"
+        # Clone if repo URL is available and directory doesn't exist
+        if [[ -n "$repo" && ! -d "$svc_dir" ]]; then
+            log "Cloning $svc → $svc_dir"
+            git clone "$repo" "$svc_dir" || { warn "Failed to clone $svc"; continue; }
+        elif [[ ! -d "$svc_dir" ]]; then
+            warn "$svc: no repo URL and directory not found — skipping"
             continue
-        }
-
-        # --force: delete .accord/ entirely for a clean slate
-        if [[ "$FORCE" == true && -d "$dir/.accord" ]]; then
-            log "Removing $dir/.accord/ (clean re-init)"
-            rm -rf "$dir/.accord"
         fi
 
-        log "Initializing service: $svc → $dir"
+        svc_dir="$(cd "$svc_dir" && pwd)"
+
+        # --force: delete .accord/ entirely for a clean slate
+        if [[ "$FORCE" == true && -d "$svc_dir/.accord" ]]; then
+            log "Removing $svc_dir/.accord/ (clean re-init)"
+            rm -rf "$svc_dir/.accord"
+        fi
+
+        log "Initializing service: $svc → $svc_dir"
 
         local svc_args=(
-            --target-dir "$dir"
+            --v2
+            --target-dir "$svc_dir"
             --project-name "$PROJECT_NAME"
-            --repo-model multi-repo
+            --team "$TEAM_NAME"
             --hub "$HUB_URL"
             --services "$services_csv"
             --adapter "$ADAPTER"
@@ -327,8 +342,9 @@ print_done() {
     echo ""
     echo -e "${BOLD}=== Setup Complete ===${NC}"
     echo ""
-    echo -e "  Project:  ${GREEN}$PROJECT_NAME${NC}"
-    echo -e "  Hub:      ${GREEN}$HUB_DIR${NC}"
+    echo -e "  Hub:   ${GREEN}$PROJECT_NAME${NC}"
+    echo -e "  Team:  ${GREEN}$TEAM_NAME${NC}"
+    echo -e "  Dir:   ${GREEN}$HUB_DIR${NC}"
     echo ""
     echo "  Next steps:"
     echo ""
@@ -337,9 +353,8 @@ print_done() {
     echo "       cd $HUB_DIR"
     echo "       git add . && git commit -m 'accord: init hub' && git push"
     echo ""
-    for i in "${!SVC_NAMES[@]}"; do
-        local dir="${SVC_DIRS[$i]}"
-        echo "       cd $dir"
+    for svc in "${SVC_NAMES[@]}"; do
+        echo "       cd $svc"
         echo "       git add .accord CLAUDE.md .claude && git commit -m 'accord: init' && git push"
         echo ""
     done
@@ -348,9 +363,9 @@ print_done() {
     echo -e "       ${DIM}# Hub (orchestrator)${NC}"
     echo "       cd $HUB_DIR && claude"
     echo ""
-    for i in "${!SVC_NAMES[@]}"; do
-        echo -e "       ${DIM}# ${SVC_NAMES[$i]}${NC}"
-        echo "       cd ${SVC_DIRS[$i]} && claude"
+    for svc in "${SVC_NAMES[@]}"; do
+        echo -e "       ${DIM}# $svc${NC}"
+        echo "       cd $svc && claude"
     done
     echo ""
     echo "    3. (Alternative) Start the autonomous agent daemon:"
@@ -803,7 +818,7 @@ main() {
     read -r -p "  Choice [1]: " mode_choice
 
     case "${mode_choice:-1}" in
-        1|new)
+        1|new|create)
             collect_info
             confirm_setup
             execute_setup
