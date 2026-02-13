@@ -76,11 +76,8 @@ npm run build
 Verify:
 
 ```bash
-accord-agent.sh --help
-accord-agent.sh run-once --dry-run --target-dir ./my-service
+cd ~/.accord/agent && npm start -- --help
 ```
-
-If Node.js is unavailable, `accord-agent.sh` falls back to the legacy bash agent automatically.
 
 ---
 
@@ -95,27 +92,18 @@ Terminal 3:  cd web-server       && claude    (service)
 Terminal 4:  cd frontend         && claude    (service)
 ```
 
-### Option B: Autonomous daemon (headless)
+### Option B: Hub Service (API + Web UI + scheduler)
 
 ```bash
-# Start one agent process — monitors all service inboxes
-accord-agent.sh start --target-dir ./my-project-hub --workers 4 --interval 30
+# Start the Hub Service — API server, web dashboard, automatic scheduler
+cd ~/.accord/agent
+npm start -- --hub-dir ./my-project-hub --port 3000 --workers 4 --interval 30
 
-# Check status
-accord-agent.sh status --target-dir ./my-project-hub
-
-# Stop
-accord-agent.sh stop --target-dir ./my-project-hub
-```
-
-### Option C: One-shot processing
-
-```bash
-# Process all pending requests once, then exit
-accord-agent.sh run-once --target-dir ./device-manager
-
-# Dry-run: see what would be processed without executing
-accord-agent.sh run-once --dry-run --target-dir ./device-manager
+# Opens http://localhost:3000 with:
+#   - Dashboard with live metrics
+#   - Service/request/worker status
+#   - WebSocket streaming of agent output
+#   - REST API at /api/*
 ```
 
 ---
@@ -178,11 +166,11 @@ Test coverage:
 ### Manual verification
 
 ```bash
-# Dry-run: show what would be processed (safe, no side-effects)
-accord-agent.sh run-once --dry-run --target-dir ./my-service
+# Start Hub Service and check the dashboard
+cd agent && npm start -- --hub-dir ./my-service --port 3000
 
-# Process one tick against the example project
-accord-agent.sh run-once --target-dir ./examples/microservice-project
+# Or trigger a manual sync via the API
+curl -X POST http://localhost:3000/api/hub/sync
 
 # Check logs
 cat ./my-service/.accord/log/agent-$(date +%Y-%m-%d).log

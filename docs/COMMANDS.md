@@ -70,45 +70,64 @@ Idempotent — re-running without `--force` exits with "Already initialized".
 
 ---
 
-### `accord-agent.sh`
+### Hub Service (`agent/`)
 
-Autonomous request processing agent. TypeScript dispatcher + worker pool, powered by the Claude Agent SDK. Falls back to legacy bash agent if Node.js is unavailable.
+Unified Hub Service — API server, web UI, scheduler, dispatcher, and worker pool. Replaces the legacy `accord-agent.sh` daemon.
 
 **Prerequisites:** Node.js >= 20, built agent (`cd agent && npm install && npm run build`)
 
-#### Subcommands
+#### Usage
 
 ```bash
-# Start the agent — single process, monitors all service inboxes
-accord-agent.sh start --target-dir ./hub --workers 4 --interval 30
+# Start the Hub Service — API + Web UI + automatic scheduling
+cd agent && npm start -- --hub-dir ./hub --port 3000 --workers 4 --interval 30
 
-# Check daemon status
-accord-agent.sh status --target-dir ./hub
-
-# Stop daemon
-accord-agent.sh stop --target-dir ./hub
-
-# Process all requests once and exit
-accord-agent.sh run-once --target-dir ./hub
-
-# Dry-run: show what would be processed without executing
-accord-agent.sh run-once --dry-run --target-dir ./hub
-
-# Multi-repo: start/stop/status per service (spawns separate processes)
-accord-agent.sh start-all --target-dir ./hub
-accord-agent.sh stop-all --target-dir ./hub
-accord-agent.sh status-all --target-dir ./hub
+# Or in development mode (auto-reload)
+cd agent && npm run dev -- --hub-dir ./hub
 ```
 
-#### Flags
+#### Web UI
+
+Open `http://localhost:3000` for:
+- **Dashboard**: overview cards, live event feed, agent output stream
+- **Services**: grid of services with status, registry info
+- **Requests**: filterable table of all requests (inbox + archive)
+- **Workers**: worker pool status with live streaming output
+
+#### REST API
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/services` | GET | List all services with status |
+| `/api/services/:name` | GET | Service detail + recent requests |
+| `/api/services/:name/registry` | GET | Registry YAML content |
+| `/api/requests` | GET | List requests (filter: `?service=&status=`) |
+| `/api/requests/:id` | GET | Request detail (frontmatter + body) |
+| `/api/requests` | POST | Create new request |
+| `/api/requests/:id/retry` | POST | Reset failed request to pending |
+| `/api/directives` | GET | List directives |
+| `/api/directives` | POST | Create new directive |
+| `/api/workers` | GET | Worker pool status |
+| `/api/hub/status` | GET | Hub status, metrics, scheduler info |
+| `/api/hub/sync` | POST | Trigger manual sync (pull + push) |
+
+#### WebSocket
+
+Connect to `/ws` for real-time events:
+- `request:claimed`, `request:completed`, `request:failed`
+- `worker:started`, `worker:output`, `worker:finished`
+- `sync:pull`, `sync:push`, `scheduler:tick`
+
+#### CLI Flags
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--target-dir <path>` | Project directory | `.` (current directory) |
+| `--hub-dir <path>` | Hub/project directory | `.` (current directory) |
+| `--port <number>` | HTTP server port | `3000` |
 | `--workers <N>` | Number of concurrent workers | `4` |
-| `--interval <seconds>` | Polling interval for `start` | `30` |
+| `--interval <seconds>` | Scheduler polling interval | `30` |
 | `--timeout <seconds>` | Per-request agent timeout | `600` |
-| `--dry-run` | Show what would be processed without executing | — |
+| `--agent-cmd <cmd>` | Shell command for agent (instead of Claude SDK) | — |
 
 #### Configuration via `config.yaml`
 
@@ -191,14 +210,12 @@ The dispatcher runs a tick loop: sync pull → scan all inboxes → assign pendi
 # Log files written to:
 .accord/log/agent-YYYY-MM-DD.log
 
-# Check daemon status
-accord-agent.sh status --target-dir ./my-service
+# Check status via API
+curl http://localhost:3000/api/hub/status
+curl http://localhost:3000/api/workers
 
-# Dashboard for all services
-accord-agent.sh status-all --target-dir ./hub
-
-# Dry-run to verify inbox scanning and priority sorting
-accord-agent.sh run-once --dry-run --target-dir ./my-service
+# Trigger manual sync
+curl -X POST http://localhost:3000/api/hub/sync
 ```
 
 #### Testing

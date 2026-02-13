@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { Dispatcher } from '../src/dispatcher.js';
+import { scanInboxes, getPendingRequests, sortByPriority } from '../src/request.js';
 import type { AccordConfig, DispatcherConfig } from '../src/types.js';
 
 let tmpDir: string;
@@ -19,7 +20,6 @@ function initGitRepo(dir: string): void {
 
 function writeAccordStructure(dir: string): void {
   const accord = path.join(dir, '.accord');
-  // Config
   fs.mkdirSync(accord, { recursive: true });
   fs.writeFileSync(path.join(accord, 'config.yaml'), `
 version: "0.1"
@@ -33,7 +33,6 @@ settings:
   debug: false
 `.trimStart(), 'utf-8');
 
-  // Directories
   fs.mkdirSync(path.join(accord, 'contracts', 'internal'), { recursive: true });
   fs.mkdirSync(path.join(accord, 'comms', 'inbox', 'backend'), { recursive: true });
   fs.mkdirSync(path.join(accord, 'comms', 'inbox', 'frontend'), { recursive: true });
@@ -42,7 +41,6 @@ settings:
   fs.mkdirSync(path.join(accord, 'log'), { recursive: true });
   fs.mkdirSync(path.join(accord, 'registry'), { recursive: true });
 
-  // A contract
   fs.writeFileSync(path.join(accord, 'contracts', 'backend.yaml'), `
 openapi: "3.0.0"
 info:
@@ -54,7 +52,6 @@ paths:
       summary: List users
 `.trimStart(), 'utf-8');
 
-  // A registry
   fs.writeFileSync(path.join(accord, 'registry', 'backend.md'), `
 # backend
 Handles user management and authentication.
@@ -94,9 +91,14 @@ function makeAccordConfig(): AccordConfig {
   };
 }
 
+function scanPending(config: AccordConfig) {
+  const accordDir = path.join(tmpDir, '.accord');
+  return sortByPriority(getPendingRequests(scanInboxes(accordDir, config)));
+}
+
 describe('Integration: command request lifecycle', () => {
   it('processes a status command end-to-end', async () => {
-    // Place a command request in the backend inbox
+    const config = makeAccordConfig();
     fs.writeFileSync(
       path.join(tmpDir, '.accord', 'comms', 'inbox', 'backend', 'req-cmd-status.md'),
       `---
@@ -119,28 +121,24 @@ Run status check on backend service.
       'utf-8',
     );
 
-    const dispatcher = new Dispatcher(makeDispatcherConfig(), makeAccordConfig(), tmpDir);
-    const count = await dispatcher.runOnce(false);
+    const dispatcher = new Dispatcher(makeDispatcherConfig(), config, tmpDir);
+    const count = await dispatcher.dispatch(scanPending(config));
 
     expect(count).toBe(1);
 
-    // Request should be archived
     const archiveFiles = fs.readdirSync(path.join(tmpDir, '.accord', 'comms', 'archive'));
     expect(archiveFiles).toContain('req-cmd-status.md');
 
-    // Inbox should be empty
     const inboxFiles = fs.readdirSync(path.join(tmpDir, '.accord', 'comms', 'inbox', 'backend'));
     expect(inboxFiles.filter(f => f.startsWith('req-'))).toHaveLength(0);
 
-    // Archived request should have ## Result section
     const archived = fs.readFileSync(
       path.join(tmpDir, '.accord', 'comms', 'archive', 'req-cmd-status.md'),
       'utf-8',
     );
     expect(archived).toContain('## Result');
-    expect(archived).toContain('external');  // from status output
+    expect(archived).toContain('external');
 
-    // History should be written
     const historyFiles = fs.readdirSync(path.join(tmpDir, '.accord', 'comms', 'history'));
     expect(historyFiles.length).toBeGreaterThan(0);
 
@@ -153,7 +151,7 @@ Run status check on backend service.
   });
 
   it('processes check-inbox command and result includes inbox listing', async () => {
-    // Place a non-pending request (won't be processed) just so check-inbox has something to list
+    const config = makeAccordConfig();
     fs.writeFileSync(
       path.join(tmpDir, '.accord', 'comms', 'inbox', 'frontend', 'req-010-add-button.md'),
       `---
@@ -175,7 +173,6 @@ Add a logout button.
       'utf-8',
     );
 
-    // Place a command request to check-inbox
     fs.writeFileSync(
       path.join(tmpDir, '.accord', 'comms', 'inbox', 'backend', 'req-cmd-inbox.md'),
       `---
@@ -198,8 +195,8 @@ Check inbox.
       'utf-8',
     );
 
-    const dispatcher = new Dispatcher(makeDispatcherConfig(), makeAccordConfig(), tmpDir);
-    const count = await dispatcher.runOnce(false);
+    const dispatcher = new Dispatcher(makeDispatcherConfig(), config, tmpDir);
+    const count = await dispatcher.dispatch(scanPending(config));
 
     expect(count).toBeGreaterThanOrEqual(1);
 
@@ -212,8 +209,7 @@ Check inbox.
   });
 
   it('monorepo: processes different-service requests sequentially (shared directory)', async () => {
-    // In monorepo, backend and frontend share the same directory.
-    // The directory constraint ensures only one is processed per tick.
+    const config = makeAccordConfig();
     fs.writeFileSync(
       path.join(tmpDir, '.accord', 'comms', 'inbox', 'backend', 'req-cmd-s1.md'),
       `---
@@ -258,23 +254,21 @@ Status check.
       'utf-8',
     );
 
-    const dispatcher = new Dispatcher(makeDispatcherConfig(), makeAccordConfig(), tmpDir);
+    const dispatcher = new Dispatcher(makeDispatcherConfig(), config, tmpDir);
 
-    // First tick: only one processed (shared directory constraint)
-    const count1 = await dispatcher.runOnce(false);
+    const count1 = await dispatcher.dispatch(scanPending(config));
     expect(count1).toBe(1);
 
-    // Second tick: the other one
-    const count2 = await dispatcher.runOnce(false);
+    const count2 = await dispatcher.dispatch(scanPending(config));
     expect(count2).toBe(1);
 
-    // Both should now be archived
     const archiveFiles = fs.readdirSync(path.join(tmpDir, '.accord', 'comms', 'archive'));
     expect(archiveFiles).toContain('req-cmd-s1.md');
     expect(archiveFiles).toContain('req-cmd-s2.md');
   });
 
   it('dry-run does not modify any files', async () => {
+    const config = makeAccordConfig();
     fs.writeFileSync(
       path.join(tmpDir, '.accord', 'comms', 'inbox', 'backend', 'req-cmd-dry.md'),
       `---
@@ -297,21 +291,20 @@ Status check.
       'utf-8',
     );
 
-    const dispatcher = new Dispatcher(makeDispatcherConfig(), makeAccordConfig(), tmpDir);
-    const count = await dispatcher.runOnce(true);
+    const dispatcher = new Dispatcher(makeDispatcherConfig(), config, tmpDir);
+    const count = await dispatcher.dispatch(scanPending(config), true);
 
     expect(count).toBe(1);
 
-    // Request should still be in inbox (not archived)
     const inboxFiles = fs.readdirSync(path.join(tmpDir, '.accord', 'comms', 'inbox', 'backend'));
     expect(inboxFiles).toContain('req-cmd-dry.md');
 
-    // Archive should be empty
     const archiveFiles = fs.readdirSync(path.join(tmpDir, '.accord', 'comms', 'archive'));
     expect(archiveFiles).toHaveLength(0);
   });
 
   it('priority sorting: critical processed before medium', async () => {
+    const config = makeAccordConfig();
     fs.writeFileSync(
       path.join(tmpDir, '.accord', 'comms', 'inbox', 'backend', 'req-cmd-low.md'),
       `---
@@ -352,19 +345,15 @@ Critical priority.
       'utf-8',
     );
 
-    // With same-service constraint, only one can run per tick
-    // The critical one should be picked first
     const dispatcher = new Dispatcher(
       { ...makeDispatcherConfig(), workers: 1 },
-      makeAccordConfig(),
+      config,
       tmpDir,
     );
-    const count = await dispatcher.runOnce(false);
+    const count = await dispatcher.dispatch(scanPending(config));
 
-    // At least one processed
     expect(count).toBeGreaterThanOrEqual(1);
 
-    // The critical one should be archived (processed first)
     const archiveFiles = fs.readdirSync(path.join(tmpDir, '.accord', 'comms', 'archive'));
     expect(archiveFiles).toContain('req-cmd-crit.md');
   });

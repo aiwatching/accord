@@ -4,8 +4,8 @@ import { Worker } from './worker.js';
 import { SessionManager } from './session.js';
 import { createAdapter, type AgentAdapter } from './agent-adapter.js';
 import { logger } from './logger.js';
-import { scanInboxes, getPendingRequests, sortByPriority, getDependencyStatus } from './request.js';
-import { syncPull, syncPush, gitCommit } from './sync.js';
+import { getDependencyStatus } from './request.js';
+import { syncPush, gitCommit } from './sync.js';
 import { getAccordDir, getServiceDir, loadRegistryYaml } from './config.js';
 
 export class Dispatcher {
@@ -15,8 +15,6 @@ export class Dispatcher {
   private config: DispatcherConfig;
   private accordConfig: AccordConfig;
   private targetDir: string;
-  private interval: ReturnType<typeof setInterval> | null = null;
-  private running = false;
   private totalProcessed = 0;
   private totalFailed = 0;
   private pendingQueue = 0;
@@ -53,75 +51,15 @@ export class Dispatcher {
       this.workers.push(new Worker(i, config, accordConfig, this.sessionManager, this.adapter, targetDir));
     }
 
-    logger.info(`Dispatcher initialized: ${config.workers} workers, agent=${this.adapter.name}, poll interval ${config.poll_interval}s`);
+    logger.info(`Dispatcher initialized: ${config.workers} workers, agent=${this.adapter.name}`);
   }
 
-  async start(intervalOverride?: number): Promise<void> {
-    if (this.running) {
-      logger.warn('Dispatcher is already running');
-      return;
-    }
-
-    this.running = true;
-    const pollInterval = (intervalOverride ?? this.config.poll_interval) * 1000;
-
-    logger.info('Dispatcher starting...');
-
-    // Run immediately, then on interval
-    await this.tick();
-
-    this.interval = setInterval(async () => {
-      if (!this.running) return;
-      try {
-        await this.tick();
-      } catch (err) {
-        logger.error(`Tick error: ${err}`);
-      }
-    }, pollInterval);
-  }
-
-  stop(): void {
-    this.running = false;
-    if (this.interval) {
-      clearInterval(this.interval);
-      this.interval = null;
-    }
-    logger.info('Dispatcher stopped');
-  }
-
-  async runOnce(dryRun = false): Promise<number> {
-    return await this.tick(dryRun);
-  }
-
-  get status(): DispatcherStatus {
-    return {
-      running: this.running,
-      workers: this.workers.map(w => ({
-        workerId: w.id,
-        state: w.status.state,
-        currentRequest: w.status.currentRequest,
-        sessions: this.sessionManager.getAllSessions(),
-      })),
-      pendingQueue: this.pendingQueue,
-      totalProcessed: this.totalProcessed,
-      totalFailed: this.totalFailed,
-    };
-  }
-
-  // ── Core tick cycle ──────────────────────────────────────────────────────
-
-  private async tick(dryRun = false): Promise<number> {
-    logger.debug('--- Tick start ---');
-
-    // 1. Sync pull
-    if (!dryRun) {
-      syncPull(this.targetDir, this.accordConfig);
-    }
-
-    // 2. Scan inboxes
-    const accordDir = getAccordDir(this.targetDir, this.accordConfig);
-    const allRequests = scanInboxes(accordDir, this.accordConfig);
-    const pending = sortByPriority(getPendingRequests(allRequests));
+  /**
+   * Dispatch a batch of pending requests to available workers.
+   * Called by the Scheduler each tick.
+   * Returns the number of requests processed.
+   */
+  async dispatch(pending: AccordRequest[], dryRun = false): Promise<number> {
     this.pendingQueue = pending.length;
 
     if (pending.length === 0) {
@@ -129,10 +67,9 @@ export class Dispatcher {
       return 0;
     }
 
-    logger.info(`Found ${pending.length} pending request(s)`);
+    logger.info(`Dispatching: ${pending.length} pending request(s)`);
 
     if (dryRun) {
-      // Show what would be assigned (respects directory constraint)
       const assignments = this.assignRequests(pending);
       const skipped = pending.length - assignments.length;
       for (const { worker, request } of assignments) {
@@ -150,7 +87,7 @@ export class Dispatcher {
       return assignments.length;
     }
 
-    // 3. Assign requests to workers
+    // Assign requests to workers
     const assignments = this.assignRequests(pending);
 
     if (assignments.length === 0) {
@@ -158,7 +95,7 @@ export class Dispatcher {
       return 0;
     }
 
-    // 4. Process in parallel
+    // Process in parallel
     const promises = assignments.map(({ worker, request }) =>
       this.processWithWorker(worker, request)
     );
@@ -178,14 +115,34 @@ export class Dispatcher {
       }
     }
 
-    // 5. Commit and push any remaining changes
+    // Commit and push any remaining changes
     if (processed > 0) {
       gitCommit(this.targetDir, `accord: dispatcher processed ${processed} request(s)`);
       syncPush(this.targetDir, this.accordConfig);
     }
 
-    logger.debug(`--- Tick end: processed ${processed} ---`);
+    logger.debug(`Dispatch complete: processed ${processed}`);
     return processed;
+  }
+
+  get status(): DispatcherStatus {
+    return {
+      running: true,
+      workers: this.workers.map(w => ({
+        workerId: w.id,
+        state: w.status.state,
+        currentRequest: w.status.currentRequest,
+        sessions: this.sessionManager.getAllSessions(),
+      })),
+      pendingQueue: this.pendingQueue,
+      totalProcessed: this.totalProcessed,
+      totalFailed: this.totalFailed,
+    };
+  }
+
+  /** Get the underlying worker pool for route handlers. */
+  getWorkers(): Worker[] {
+    return this.workers;
   }
 
   // ── Worker assignment ────────────────────────────────────────────────────
@@ -205,10 +162,6 @@ export class Dispatcher {
       }
 
       // Constraint 0b: check maintainer type from registry (v2)
-      // maintainer: human → skip (leave pending)
-      // maintainer: hybrid → skip unless status: approved
-      // maintainer: external → skip (cross-team routing handled elsewhere)
-      const registryDir = path.join(accordDir, 'registry');
       const registry = loadRegistryYaml(accordDir, serviceName);
       if (registry) {
         if (registry.maintainer === 'human') {
@@ -232,7 +185,6 @@ export class Dispatcher {
       }
 
       // Constraint 2: never assign two requests that resolve to the same directory
-      // (critical for monorepo where all services share one cwd)
       const serviceDir = path.resolve(getServiceDir(this.accordConfig, serviceName, this.targetDir));
       if (this.activeDirectories.has(serviceDir)) {
         logger.debug(`Skipping ${request.frontmatter.id}: directory ${serviceDir} already in use by another service`);
@@ -253,20 +205,14 @@ export class Dispatcher {
     return assignments;
   }
 
-  /**
-   * Find the best idle worker for a given service:
-   * 1. Best: idle worker that last processed this service (session affinity)
-   * 2. Good: any idle worker (first available)
-   */
   private findBestWorker(serviceName: string): Worker | null {
     const idleWorkers = this.workers.filter(w => w.isIdle());
     if (idleWorkers.length === 0) return null;
 
-    // Prefer worker that last processed this service (true session affinity)
+    // Prefer worker that last processed this service (session affinity)
     const withAffinity = idleWorkers.find(w => w.lastServiceName === serviceName);
     if (withAffinity) return withAffinity;
 
-    // Otherwise, pick any idle worker
     return idleWorkers[0];
   }
 

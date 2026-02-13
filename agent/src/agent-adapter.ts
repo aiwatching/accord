@@ -1,13 +1,8 @@
 // Agent Adapter — abstraction layer for AI agent invocations.
 //
 // Allows the dispatcher to work with different agent backends:
-//   - claude-code: Claude Agent SDK (native, supports session resume)
+//   - claude-code: Claude Agent SDK (native, supports session resume + streaming)
 //   - shell: any CLI agent via child_process (e.g. "claude -p", "codex", custom scripts)
-//
-// To add a new adapter:
-//   1. Implement the AgentAdapter interface
-//   2. Register it in createAdapter()
-//   3. Add the adapter name to AgentAdapterType
 
 import { execFileSync } from 'node:child_process';
 import { logger } from './logger.js';
@@ -24,6 +19,8 @@ export interface AgentInvocationParams {
   model?: string;
   maxTurns?: number;
   maxBudgetUsd?: number;
+  /** Streaming callback — receives text chunks as the agent produces output. */
+  onOutput?: (chunk: string) => void;
 }
 
 export interface AgentInvocationResult {
@@ -52,18 +49,6 @@ export interface AdapterConfig {
   model?: string;       // default model
 }
 
-/**
- * Create an agent adapter based on config.
- *
- * Resolution order:
- *   1. dispatcher.agent in config.yaml
- *   2. Default: "claude-code"
- *
- * For "shell" adapter, agent_cmd is required. Resolution:
- *   1. dispatcher.agent_cmd in config.yaml
- *   2. settings.agent_cmd in config.yaml
- *   3. Default: "claude --dangerously-skip-permissions -p"
- */
 export function createAdapter(config: AdapterConfig): AgentAdapter {
   switch (config.agent) {
     case 'claude-code':
@@ -124,6 +109,17 @@ class ClaudeCodeAdapter implements AgentAdapter {
         if (msg.type === 'system' && msg.subtype === 'init') {
           sessionId = msg.session_id;
           logger.debug(`[claude-code] Session started: ${sessionId}`);
+        } else if (msg.type === 'assistant' && msg.message) {
+          // Stream text output to callback
+          const text = typeof msg.message === 'string'
+            ? msg.message
+            : (msg.message as { content?: Array<{ type: string; text?: string }> })?.content
+                ?.filter((c: { type: string }) => c.type === 'text')
+                .map((c: { text?: string }) => c.text ?? '')
+                .join('') ?? '';
+          if (text && params.onOutput) {
+            params.onOutput(text);
+          }
         } else if (msg.type === 'result') {
           sessionId = msg.session_id;
           costUsd = msg.total_cost_usd;
@@ -152,15 +148,6 @@ class ClaudeCodeAdapter implements AgentAdapter {
 
 // ── Shell Adapter ───────────────────────────────────────────────────────────
 
-/**
- * Wraps any CLI agent that accepts a prompt via command-line argument.
- *
- * The agent command is invoked as: <agent_cmd> <prompt>
- * Example: "claude --dangerously-skip-permissions -p" <prompt>
- *          "codex -q" <prompt>
- *
- * Does NOT support session resume — each invocation is independent.
- */
 class ShellAdapter implements AgentAdapter {
   readonly name = 'shell';
   readonly supportsResume = false;
@@ -179,12 +166,17 @@ class ShellAdapter implements AgentAdapter {
     logger.info(`[shell] Invoking: ${cmd} ${parts.slice(1).join(' ')} <prompt>`);
 
     try {
-      execFileSync(cmd, args, {
+      const output = execFileSync(cmd, args, {
         cwd: params.cwd,
         stdio: 'pipe',
         timeout: params.timeout * 1000,
         maxBuffer: 50 * 1024 * 1024,  // 50 MB
       });
+
+      // Send entire output as a single chunk if callback provided
+      if (params.onOutput && output) {
+        params.onOutput(output.toString());
+      }
 
       return {
         durationMs: Date.now() - startTime,

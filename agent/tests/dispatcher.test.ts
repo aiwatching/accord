@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { Dispatcher } from '../src/dispatcher.js';
+import { scanInboxes, getPendingRequests, sortByPriority } from '../src/request.js';
 import type { AccordConfig, DispatcherConfig } from '../src/types.js';
 
 let tmpDir: string;
@@ -28,23 +29,6 @@ beforeEach(() => {
 afterEach(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
-
-const SAMPLE_REQUEST = `---
-id: req-001-test
-from: svc-a
-to: svc-b
-scope: external
-type: api-addition
-priority: high
-status: pending
-created: 2026-02-10T10:00:00Z
-updated: 2026-02-10T10:00:00Z
----
-
-## What
-
-A test request.
-`;
 
 const COMMAND_REQUEST = `---
 id: req-cmd-001
@@ -88,41 +72,64 @@ function makeDispatcherConfig(overrides: Partial<DispatcherConfig> = {}): Dispat
   };
 }
 
+function scanPending(config: AccordConfig): ReturnType<typeof sortByPriority> {
+  const accordDir = path.join(tmpDir, '.accord');
+  return sortByPriority(getPendingRequests(scanInboxes(accordDir, config)));
+}
+
 describe('Dispatcher', () => {
   it('initializes with correct worker count', () => {
     const dispatcher = new Dispatcher(makeDispatcherConfig(), makeConfig(), tmpDir);
     expect(dispatcher.status.workers).toHaveLength(2);
-    expect(dispatcher.status.running).toBe(false);
+    expect(dispatcher.status.running).toBe(true);
     expect(dispatcher.status.totalProcessed).toBe(0);
   });
 
   it('dry-run finds pending requests', async () => {
+    const config = makeConfig();
     fs.writeFileSync(
       path.join(tmpDir, '.accord', 'comms', 'inbox', 'svc-b', 'req-001-test.md'),
-      SAMPLE_REQUEST,
+      `---
+id: req-001-test
+from: svc-a
+to: svc-b
+scope: external
+type: api-addition
+priority: high
+status: pending
+created: 2026-02-10T10:00:00Z
+updated: 2026-02-10T10:00:00Z
+---
+
+## What
+
+A test request.
+`,
       'utf-8',
     );
 
-    const dispatcher = new Dispatcher(makeDispatcherConfig(), makeConfig(), tmpDir);
-    const count = await dispatcher.runOnce(true);
+    const dispatcher = new Dispatcher(makeDispatcherConfig(), config, tmpDir);
+    const count = await dispatcher.dispatch(scanPending(config), true);
     expect(count).toBe(1);
   });
 
   it('dry-run returns 0 with no requests', async () => {
-    const dispatcher = new Dispatcher(makeDispatcherConfig(), makeConfig(), tmpDir);
-    const count = await dispatcher.runOnce(true);
+    const config = makeConfig();
+    const dispatcher = new Dispatcher(makeDispatcherConfig(), config, tmpDir);
+    const count = await dispatcher.dispatch(scanPending(config), true);
     expect(count).toBe(0);
   });
 
   it('processes command requests via fast-path', async () => {
+    const config = makeConfig();
     fs.writeFileSync(
       path.join(tmpDir, '.accord', 'comms', 'inbox', 'svc-a', 'req-cmd-001.md'),
       COMMAND_REQUEST,
       'utf-8',
     );
 
-    const dispatcher = new Dispatcher(makeDispatcherConfig(), makeConfig(), tmpDir);
-    const count = await dispatcher.runOnce(false);
+    const dispatcher = new Dispatcher(makeDispatcherConfig(), config, tmpDir);
+    const count = await dispatcher.dispatch(scanPending(config));
     expect(count).toBe(1);
 
     // Verify request was archived
@@ -135,22 +142,22 @@ describe('Dispatcher', () => {
   });
 
   it('status tracks processed counts', async () => {
+    const config = makeConfig();
     fs.writeFileSync(
       path.join(tmpDir, '.accord', 'comms', 'inbox', 'svc-a', 'req-cmd-001.md'),
       COMMAND_REQUEST,
       'utf-8',
     );
 
-    const dispatcher = new Dispatcher(makeDispatcherConfig(), makeConfig(), tmpDir);
-    await dispatcher.runOnce(false);
+    const dispatcher = new Dispatcher(makeDispatcherConfig(), config, tmpDir);
+    await dispatcher.dispatch(scanPending(config));
 
     const status = dispatcher.status;
     expect(status.totalProcessed).toBe(1);
   });
 
   it('monorepo: only one service processed per tick (shared directory constraint)', async () => {
-    // In monorepo, svc-a and svc-b share the same directory.
-    // Only one should be processed per tick — the other must wait.
+    const config = makeConfig();
     const cmdForA = `---
 id: req-cmd-a
 from: orchestrator
@@ -185,33 +192,19 @@ command: status
 
 Status check for B.
 `;
-    fs.writeFileSync(
-      path.join(tmpDir, '.accord', 'comms', 'inbox', 'svc-a', 'req-cmd-a.md'),
-      cmdForA,
-      'utf-8',
-    );
-    fs.writeFileSync(
-      path.join(tmpDir, '.accord', 'comms', 'inbox', 'svc-b', 'req-cmd-b.md'),
-      cmdForB,
-      'utf-8',
-    );
+    fs.writeFileSync(path.join(tmpDir, '.accord', 'comms', 'inbox', 'svc-a', 'req-cmd-a.md'), cmdForA, 'utf-8');
+    fs.writeFileSync(path.join(tmpDir, '.accord', 'comms', 'inbox', 'svc-b', 'req-cmd-b.md'), cmdForB, 'utf-8');
 
-    // Monorepo — both services resolve to the same directory
-    const config = makeConfig();
     expect(config.repo_model).toBe('monorepo');
 
-    const dispatcher = new Dispatcher(
-      makeDispatcherConfig({ workers: 4 }),
-      config,
-      tmpDir,
-    );
+    const dispatcher = new Dispatcher(makeDispatcherConfig({ workers: 4 }), config, tmpDir);
 
     // First tick: only one should be processed (shared directory)
-    const count1 = await dispatcher.runOnce(false);
+    const count1 = await dispatcher.dispatch(scanPending(config));
     expect(count1).toBe(1);
 
     // Second tick: the other one should now be processed
-    const count2 = await dispatcher.runOnce(false);
+    const count2 = await dispatcher.dispatch(scanPending(config));
     expect(count2).toBe(1);
 
     // Both should now be archived
@@ -221,8 +214,6 @@ Status check for B.
   });
 
   it('multi-repo dry-run: different services both assignable (separate directories)', async () => {
-    // In multi-repo, svc-a resolves to ../svc-a and svc-b to ../svc-b.
-    // Since they have different directories, both should be assigned in one tick.
     const cmdForA = `---
 id: req-cmd-ma
 from: orchestrator
@@ -257,17 +248,8 @@ command: status
 
 Status check.
 `;
-    // Place requests in hub inbox
-    fs.writeFileSync(
-      path.join(tmpDir, '.accord', 'comms', 'inbox', 'svc-a', 'req-cmd-ma.md'),
-      cmdForA,
-      'utf-8',
-    );
-    fs.writeFileSync(
-      path.join(tmpDir, '.accord', 'comms', 'inbox', 'svc-b', 'req-cmd-mb.md'),
-      cmdForB,
-      'utf-8',
-    );
+    fs.writeFileSync(path.join(tmpDir, '.accord', 'comms', 'inbox', 'svc-a', 'req-cmd-ma.md'), cmdForA, 'utf-8');
+    fs.writeFileSync(path.join(tmpDir, '.accord', 'comms', 'inbox', 'svc-b', 'req-cmd-mb.md'), cmdForB, 'utf-8');
 
     const multiRepoConfig: AccordConfig = {
       version: '0.1',
@@ -276,22 +258,18 @@ Status check.
       services: [{ name: 'svc-a' }, { name: 'svc-b' }],
     };
 
+    const monoConfig = makeConfig();
+
     // Multi-repo dry-run: both assigned (different directories)
-    const multiDispatcher = new Dispatcher(
-      makeDispatcherConfig({ workers: 4 }),
-      multiRepoConfig,
-      tmpDir,
-    );
-    const multiCount = await multiDispatcher.runOnce(true);
+    const multiDispatcher = new Dispatcher(makeDispatcherConfig({ workers: 4 }), multiRepoConfig, tmpDir);
+    const multiPending = sortByPriority(getPendingRequests(scanInboxes(path.join(tmpDir, '.accord'), multiRepoConfig)));
+    const multiCount = await multiDispatcher.dispatch(multiPending, true);
     expect(multiCount).toBe(2);
 
     // Monorepo dry-run: only 1 assigned (shared directory constraint)
-    const monoDispatcher = new Dispatcher(
-      makeDispatcherConfig({ workers: 4 }),
-      makeConfig(), // monorepo
-      tmpDir,
-    );
-    const monoCount = await monoDispatcher.runOnce(true);
+    const monoDispatcher = new Dispatcher(makeDispatcherConfig({ workers: 4 }), monoConfig, tmpDir);
+    const monoPending = sortByPriority(getPendingRequests(scanInboxes(path.join(tmpDir, '.accord'), monoConfig)));
+    const monoCount = await monoDispatcher.dispatch(monoPending, true);
     expect(monoCount).toBe(1);
   });
 });

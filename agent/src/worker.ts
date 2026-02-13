@@ -2,6 +2,7 @@ import type { AccordConfig, AccordRequest, DispatcherConfig, RequestResult, Work
 import type { AgentAdapter } from './agent-adapter.js';
 import { SessionManager } from './session.js';
 import { logger } from './logger.js';
+import { eventBus } from './event-bus.js';
 import { executeCommand, isValidCommand } from './commands.js';
 import { buildAgentPrompt } from './prompt.js';
 import {
@@ -19,6 +20,8 @@ export class Worker {
   readonly id: number;
   private state: WorkerState = 'idle';
   private currentRequestId: string | null = null;
+  private currentService: string | null = null;
+  private startTime: number | null = null;
   private config: DispatcherConfig;
   private accordConfig: AccordConfig;
   private sessionManager: SessionManager;
@@ -43,8 +46,13 @@ export class Worker {
     this.targetDir = targetDir;
   }
 
-  get status(): { state: WorkerState; currentRequest: string | null } {
-    return { state: this.state, currentRequest: this.currentRequestId };
+  get status(): { state: WorkerState; currentRequest: string | null; currentService: string | null; elapsedMs: number | null } {
+    return {
+      state: this.state,
+      currentRequest: this.currentRequestId,
+      currentService: this.currentService,
+      elapsedMs: this.startTime ? Date.now() - this.startTime : null,
+    };
   }
 
   isIdle(): boolean {
@@ -55,10 +63,18 @@ export class Worker {
     const startTime = Date.now();
     this.state = 'busy';
     this.currentRequestId = request.frontmatter.id;
+    this.currentService = request.serviceName;
+    this.startTime = startTime;
     const reqId = request.frontmatter.id;
     const serviceName = request.serviceName;
 
     logger.info(`Worker ${this.id}: processing ${reqId} for ${serviceName}`);
+
+    eventBus.emit('worker:started', {
+      workerId: this.id,
+      service: serviceName,
+      requestId: reqId,
+    });
 
     const serviceDir = getServiceDir(this.accordConfig, serviceName, this.targetDir);
     const accordDir = getAccordDir(serviceDir, this.accordConfig);
@@ -85,6 +101,8 @@ export class Worker {
       this.lastServiceName = serviceName;
       this.state = 'idle';
       this.currentRequestId = null;
+      this.currentService = null;
+      this.startTime = null;
     }
   }
 
@@ -99,6 +117,12 @@ export class Worker {
     const command = request.frontmatter.command!;
 
     logger.info(`Worker ${this.id}: command fast-path "${command}" for ${reqId}`);
+
+    eventBus.emit('request:claimed', {
+      requestId: reqId,
+      service: request.serviceName,
+      workerId: this.id,
+    });
 
     if (!isValidCommand(command)) {
       const error = `Invalid command: ${command}`;
@@ -129,6 +153,13 @@ export class Worker {
 
     gitCommit(serviceDir, `accord: command "${command}" completed for ${reqId}`);
 
+    eventBus.emit('request:completed', {
+      requestId: reqId,
+      service: request.serviceName,
+      workerId: this.id,
+      result: { requestId: reqId, success: true, durationMs },
+    });
+
     return {
       requestId: reqId,
       success: true,
@@ -156,6 +187,12 @@ export class Worker {
     const attempts = incrementAttempts(request.filePath);
     gitCommit(serviceDir, `accord: claim ${reqId} (attempt ${attempts})`);
 
+    eventBus.emit('request:claimed', {
+      requestId: reqId,
+      service: serviceName,
+      workerId: this.id,
+    });
+
     writeHistory({
       historyDir,
       requestId: reqId,
@@ -175,11 +212,22 @@ export class Worker {
       checkpoint: checkpoint ?? undefined,
     });
 
-    // Step 4: Invoke agent via adapter
+    // Step 4: Invoke agent via adapter (with streaming callback)
     const existingSession = this.adapter.supportsResume
       ? this.sessionManager.getSession(serviceName)
       : undefined;
     const resumeId = existingSession?.sessionId;
+
+    let streamIndex = 0;
+    const onOutput = (chunk: string) => {
+      eventBus.emit('worker:output', {
+        workerId: this.id,
+        service: serviceName,
+        requestId: reqId,
+        chunk,
+        streamIndex: streamIndex++,
+      });
+    };
 
     try {
       const result = await this.adapter.invoke({
@@ -190,6 +238,7 @@ export class Worker {
         model: this.config.model,
         maxTurns: 50,
         maxBudgetUsd: this.config.max_budget_usd,
+        onOutput,
       });
 
       // Step 5: Success
@@ -218,7 +267,16 @@ export class Worker {
 
       gitCommit(serviceDir, `accord: completed ${reqId}`);
 
-      return { ...result, requestId: reqId, success: true, durationMs };
+      const requestResult = { ...result, requestId: reqId, success: true, durationMs };
+
+      eventBus.emit('request:completed', {
+        requestId: reqId,
+        service: serviceName,
+        workerId: this.id,
+        result: requestResult,
+      });
+
+      return requestResult;
     } catch (err) {
       // Step 6: Failure handling
       const error = String(err);
@@ -228,7 +286,9 @@ export class Worker {
       this.sessionManager.writeCheckpoint(accordDir, reqId, `Error: ${error}\nAttempt: ${attempts}`);
 
       const failDurationMs = Date.now() - startTime;
-      if (attempts >= this.config.max_attempts) {
+      const willRetry = attempts < this.config.max_attempts;
+
+      if (!willRetry) {
         // Max attempts reached: set failed, escalate
         setRequestStatus(request.filePath, 'failed');
 
@@ -267,6 +327,14 @@ export class Worker {
         gitCommit(serviceDir, `accord: revert ${reqId} to pending (attempt ${attempts}/${this.config.max_attempts})`);
       }
 
+      eventBus.emit('request:failed', {
+        requestId: reqId,
+        service: serviceName,
+        workerId: this.id,
+        error,
+        willRetry,
+      });
+
       return {
         requestId: reqId,
         success: false,
@@ -275,5 +343,4 @@ export class Worker {
       };
     }
   }
-
 }

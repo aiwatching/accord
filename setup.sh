@@ -149,12 +149,6 @@ collect_info() {
         SCAN=true
     fi
 
-    # 7. Agent daemons
-    read -r -p "  Start agent daemons for all services? (y/N): " daemon_input
-    START_DAEMONS=false
-    if [[ "$daemon_input" =~ ^[Yy]$ ]]; then
-        START_DAEMONS=true
-    fi
 }
 
 # ── Confirm ──────────────────────────────────────────────────────────────────
@@ -209,29 +203,6 @@ execute_setup() {
 
     local project_dir
     project_dir="$(pwd)"
-
-    # 0. Stop running agent daemon before re-init
-    local stopped_any=false
-    local hub_abs
-    hub_abs="$(cd "$HUB_DIR" 2>/dev/null && pwd)" || hub_abs="$HUB_DIR"
-    for check_dir in "$hub_abs" "${SVC_DIRS[@]}"; do
-        # Resolve to absolute path
-        if [[ "$check_dir" != /* ]]; then check_dir="$project_dir/$check_dir"; fi
-        check_dir="$(cd "$check_dir" 2>/dev/null && pwd)" || continue
-        local pf="$check_dir/.accord/.agent.pid"
-        if [[ -f "$pf" ]]; then
-            local pid
-            pid="$(cat "$pf")"
-            if kill -0 "$pid" 2>/dev/null; then
-                log "Stopping agent daemon (pid $pid)"
-                bash "$ACCORD_DIR/accord-agent.sh" stop --target-dir "$check_dir" 2>/dev/null || true
-                stopped_any=true
-            fi
-        fi
-    done
-    if [[ "$stopped_any" == true ]]; then
-        log "Agent daemon(s) stopped"
-    fi
 
     # 1. Clone hub if needed
     local hub_branch="accord/${PROJECT_NAME}"
@@ -335,16 +306,6 @@ execute_setup() {
         }
     done
 
-    # 4. Start agent daemon if requested (single process monitors all services)
-    if [[ "$START_DAEMONS" == true ]]; then
-        echo ""
-        log "Starting agent daemon..."
-        local hub_abs
-        hub_abs="$(cd "$HUB_DIR" 2>/dev/null && pwd)" || hub_abs="$HUB_DIR"
-        bash "$ACCORD_DIR/accord-agent.sh" start --target-dir "$hub_abs" || {
-            warn "Failed to start agent daemon"
-        }
-    fi
 }
 
 # ── Summary ──────────────────────────────────────────────────────────────────
@@ -379,16 +340,10 @@ print_done() {
         echo "       cd ${SVC_DIRS[$i]} && claude"
     done
     echo ""
-    echo "    3. (Alternative) Start the autonomous agent daemon:"
+    echo "    3. (Alternative) Start the Hub Service (API + Web UI + scheduler):"
     echo ""
-    echo "       accord-agent.sh start --target-dir $HUB_DIR"
-    echo -e "       ${DIM}# Single process, monitors all service inboxes${NC}"
-    echo ""
-    echo -e "       ${DIM}# Check status:${NC}"
-    echo "       accord-agent.sh status --target-dir $HUB_DIR"
-    echo ""
-    echo -e "       ${DIM}# Stop:${NC}"
-    echo "       accord-agent.sh stop --target-dir $HUB_DIR"
+    echo "       cd $HUB_DIR/agent && npm install && npm start"
+    echo -e "       ${DIM}# Opens on http://localhost:3000 — dashboard, API, live streaming${NC}"
     echo ""
 }
 
