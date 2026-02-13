@@ -1212,7 +1212,7 @@ fi
 
 # Validate example directive
 assert_validator "$ACCORD_DIR/protocol/scan/validators/validate-directive.sh" \
-    "$ACCORD_DIR/examples/multi-repo-project/accord_hub/directives/dir-001-device-reboot.md" \
+    "$ACCORD_DIR/examples/multi-repo-project/accord_hub/teams/zliu/directives/dir-001-device-reboot.md" \
     "Example directive passes validation"
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1351,7 +1351,7 @@ assert_contains "$ACCORD_DIR/protocol/templates/request.md.template" "originated
 
 # Existing request validator still works with v1 requests (backward-compat)
 assert_validator "$ACCORD_DIR/protocol/scan/validators/validate-request.sh" \
-    "$ACCORD_DIR/examples/multi-repo-project/accord_hub/comms/archive/req-001-list-devices.md" \
+    "$ACCORD_DIR/examples/multi-repo-project/accord_hub/teams/zliu/comms/archive/req-000-service-joined-device-manager.md" \
     "v1 request still validates after template update"
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1360,17 +1360,26 @@ assert_validator "$ACCORD_DIR/protocol/scan/validators/validate-request.sh" \
 echo -e "\n${BOLD}[Test 23] Example hub v2 files${NC}"
 
 HUB_EXAMPLE="$ACCORD_DIR/examples/multi-repo-project/accord_hub"
+HUB_TEAM="$HUB_EXAMPLE/teams/zliu"
 
-assert_file "$HUB_EXAMPLE/config.yaml"                              "Hub config.yaml exists"
-assert_contains "$HUB_EXAMPLE/config.yaml" "role: orchestrator"     "Hub config has role: orchestrator"
-assert_contains "$HUB_EXAMPLE/config.yaml" 'version: "0.2"'         "Hub config has version 0.2"
+assert_file "$HUB_EXAMPLE/accord.yaml"                              "Hub accord.yaml exists"
+assert_file "$HUB_TEAM/config.yaml"                                  "Hub team config.yaml exists"
+assert_contains "$HUB_TEAM/config.yaml" "role: orchestrator"         "Hub config has role: orchestrator"
+assert_contains "$HUB_TEAM/config.yaml" 'version: "1.0"'             "Hub config has version 1.0"
 
-assert_file "$HUB_EXAMPLE/directives/dir-001-device-reboot.md"      "Example directive exists"
-assert_file "$HUB_EXAMPLE/registry/device-manager.md"               "Hub has device-manager registry"
-assert_file "$HUB_EXAMPLE/registry/web-server.md"                   "Hub has web-server registry"
-assert_file "$HUB_EXAMPLE/registry/frontend.md"                     "Hub has frontend registry"
-assert_dir  "$HUB_EXAMPLE/comms/inbox/orchestrator"                  "Hub has orchestrator inbox"
-assert_file "$HUB_EXAMPLE/comms/history/2026-02-05-orchestrator.jsonl" "Hub has history entries"
+assert_file "$HUB_TEAM/directives/dir-001-device-reboot.md"          "Example directive exists"
+assert_file "$HUB_TEAM/registry/device-manager.yaml"                 "Hub has device-manager registry"
+assert_file "$HUB_TEAM/registry/web-server.yaml"                     "Hub has web-server registry"
+assert_file "$HUB_TEAM/registry/frontend.yaml"                       "Hub has frontend registry"
+assert_dir  "$HUB_TEAM/comms/inbox/_team"                            "Hub has cross-team inbox"
+assert_file "$HUB_TEAM/comms/history/2026-02-13-orchestrator.jsonl"  "Hub has history entries"
+
+# No stale root-level dirs (v1 cleanup)
+if [[ ! -d "$HUB_EXAMPLE/comms" && ! -d "$HUB_EXAMPLE/contracts" && ! -d "$HUB_EXAMPLE/registry" ]]; then
+    pass "No stale v1 root-level dirs"
+else
+    fail "Stale v1 root-level dirs still exist (comms/, contracts/, or registry/)"
+fi
 
 # Validate example history entries are valid JSON
 hist_valid=true
@@ -1380,7 +1389,7 @@ while IFS= read -r line; do
         hist_valid=false
         break
     fi
-done < "$HUB_EXAMPLE/comms/history/2026-02-05-orchestrator.jsonl"
+done < "$HUB_TEAM/comms/history/2026-02-13-orchestrator.jsonl"
 
 if [[ "$hist_valid" == true ]]; then
     pass "Example history entries are valid JSONL"

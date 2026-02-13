@@ -1270,6 +1270,28 @@ scaffold_orchestrator_v2() {
 
     local team_dir="$TARGET_DIR/teams/$TEAM"
 
+    # --force: clean up stale v1 root-level dirs and phantom teams
+    if [[ "$FORCE" == "true" ]]; then
+        local stale_dirs=("$TARGET_DIR/comms" "$TARGET_DIR/contracts" "$TARGET_DIR/registry" "$TARGET_DIR/.accord")
+        for d in "${stale_dirs[@]}"; do
+            if [[ -d "$d" ]]; then
+                log "Removing stale v1 directory: ${d#$TARGET_DIR/}/"
+                rm -rf "$d"
+            fi
+        done
+        # Remove phantom teams (any team dir that isn't $TEAM)
+        if [[ -d "$TARGET_DIR/teams" ]]; then
+            for d in "$TARGET_DIR/teams"/*/; do
+                local name
+                name="$(basename "$d")"
+                if [[ "$name" != "$TEAM" ]]; then
+                    log "Removing stale team: teams/$name/"
+                    rm -rf "$d"
+                fi
+            done
+        fi
+    fi
+
     # Root-level accord.yaml
     generate_accord_yaml
 
