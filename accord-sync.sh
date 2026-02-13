@@ -119,6 +119,15 @@ read_config() {
     ALL_SERVICES="$(yaml_all_services "$config")"
 
     HUB_DIR="$TARGET_DIR/.accord/hub"
+
+    # Derive project branch from project name
+    local project_name
+    project_name="$(yaml_val "name" "$config" 2>/dev/null || true)"
+    # project.name is nested — try indented form
+    if [[ -z "$project_name" ]]; then
+        project_name="$(sed -n '/^project:/,/^[^ ]/{s/^[[:space:]]*name:[[:space:]]*//p;}' "$config" | head -1 | tr -d '"' | tr -d "'" | xargs)"
+    fi
+    HUB_BRANCH="${project_name:+accord/$project_name}"
 }
 
 # ── init: Clone hub ─────────────────────────────────────────────────────────
@@ -135,6 +144,18 @@ do_init() {
     mkdir -p "$HUB_DIR"
     git clone "$HUB_URL" "$HUB_DIR"
 
+    # Checkout project branch (accord/<project-name>)
+    if [[ -n "$HUB_BRANCH" ]]; then
+        if (cd "$HUB_DIR" && git rev-parse --verify "origin/$HUB_BRANCH" >/dev/null 2>&1); then
+            log "Checking out project branch: $HUB_BRANCH"
+            (cd "$HUB_DIR" && git checkout "$HUB_BRANCH" 2>/dev/null) || \
+            (cd "$HUB_DIR" && git checkout -b "$HUB_BRANCH" "origin/$HUB_BRANCH" 2>/dev/null) || true
+        else
+            log "Creating project branch: $HUB_BRANCH"
+            (cd "$HUB_DIR" && git checkout -b "$HUB_BRANCH" 2>/dev/null) || true
+        fi
+    fi
+
     # If hub is empty (fresh repo), create initial structure
     if [[ ! -d "$HUB_DIR/contracts" ]]; then
         log "Hub is empty — initializing structure"
@@ -148,7 +169,8 @@ do_init() {
             touch "$HUB_DIR/comms/inbox/$svc/.gitkeep"
         done
 
-        (cd "$HUB_DIR" && git add -A && git commit -m "accord: init hub structure" && git push) || true
+        local push_target="${HUB_BRANCH:+origin $HUB_BRANCH}"
+        (cd "$HUB_DIR" && git add -A && git commit -m "accord: init hub structure" && git push ${push_target:--u origin HEAD}) || true
         log "Hub initialized with hub structure"
     fi
 
@@ -163,7 +185,11 @@ do_pull() {
     fi
 
     log "Pulling latest from hub..."
-    (cd "$HUB_DIR" && git pull --quiet)
+    if [[ -n "${HUB_BRANCH:-}" ]]; then
+        (cd "$HUB_DIR" && git pull --quiet origin "$HUB_BRANCH")
+    else
+        (cd "$HUB_DIR" && git pull --quiet)
+    fi
 
     # Copy incoming requests from hub inbox to local inbox
     local hub_inbox="$HUB_DIR/comms/inbox/$SERVICE_NAME"
@@ -264,7 +290,11 @@ do_push() {
     fi
 
     log "Pulling hub before push..."
-    (cd "$HUB_DIR" && git pull --quiet)
+    if [[ -n "${HUB_BRANCH:-}" ]]; then
+        (cd "$HUB_DIR" && git pull --quiet origin "$HUB_BRANCH")
+    else
+        (cd "$HUB_DIR" && git pull --quiet)
+    fi
 
     local changes=0
 
@@ -373,15 +403,26 @@ do_push() {
         # Auto-retry with rebase on push conflict
         local max_retries=3
         local attempt=0
+        local push_args=""
+        if [[ -n "${HUB_BRANCH:-}" ]]; then
+            push_args="origin $HUB_BRANCH"
+        fi
         while [[ $attempt -lt $max_retries ]]; do
-            if (cd "$HUB_DIR" && git push 2>/dev/null); then
+            if (cd "$HUB_DIR" && git push $push_args 2>/dev/null); then
                 break
             fi
             attempt=$((attempt + 1))
             log "Push conflict, pulling with rebase (attempt $attempt/$max_retries)..."
-            if ! (cd "$HUB_DIR" && git pull --rebase 2>/dev/null); then
-                log "ERROR: Rebase failed, manual resolution needed"
-                return 1
+            if [[ -n "${HUB_BRANCH:-}" ]]; then
+                if ! (cd "$HUB_DIR" && git pull --rebase origin "$HUB_BRANCH" 2>/dev/null); then
+                    log "ERROR: Rebase failed, manual resolution needed"
+                    return 1
+                fi
+            else
+                if ! (cd "$HUB_DIR" && git pull --rebase 2>/dev/null); then
+                    log "ERROR: Rebase failed, manual resolution needed"
+                    return 1
+                fi
             fi
         done
         if [[ $attempt -eq $max_retries ]]; then

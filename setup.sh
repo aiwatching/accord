@@ -27,6 +27,22 @@ log() { echo "[accord] $*"; }
 warn() { echo "[accord] WARNING: $*" >&2; }
 err() { echo "[accord] ERROR: $*" >&2; exit 1; }
 
+validate_project_name() {
+    local name="$1"
+    if [[ ! "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
+        echo -e "  ${RED}Invalid project name: '$name'${NC}"
+        echo "  Must start with a letter or digit, then only letters, digits, dots, underscores, or hyphens."
+        echo "  (Used as git branch: accord/$name)"
+        return 1
+    fi
+    if [[ "$name" == *.lock || "$name" == *.. || "$name" == *. ]]; then
+        echo -e "  ${RED}Invalid project name: '$name'${NC}"
+        echo "  Cannot end with '.lock', '..', or '.'."
+        return 1
+    fi
+    return 0
+}
+
 GREEN='\033[0;32m'
 DIM='\033[2m'
 BOLD='\033[1m'
@@ -40,11 +56,17 @@ collect_info() {
     echo -e "${BOLD}=== Accord Project Setup ===${NC}"
     echo ""
 
-    # 1. Project name
+    # 1. Project name (must be valid as git branch: accord/<name>)
     local detected_name
     detected_name="$(basename "$(pwd)")"
-    read -r -p "  Project name [$detected_name]: " input
-    PROJECT_NAME="${input:-$detected_name}"
+    while true; do
+        read -r -p "  Project name [$detected_name]: " input
+        PROJECT_NAME="${input:-$detected_name}"
+        if validate_project_name "$PROJECT_NAME"; then
+            break
+        fi
+        echo ""
+    done
 
     # 2. Hub
     echo ""
@@ -197,9 +219,22 @@ execute_setup() {
     fi
 
     # 1. Clone hub if needed
+    local hub_branch="accord/${PROJECT_NAME}"
     if [[ "$HUB_CLONE" == true ]]; then
         log "Cloning hub → $HUB_DIR"
         git clone "$HUB_URL" "$HUB_DIR"
+    fi
+
+    # Checkout project branch
+    if [[ -d "$HUB_DIR/.git" ]]; then
+        if (cd "$HUB_DIR" && git rev-parse --verify "origin/$hub_branch" >/dev/null 2>&1); then
+            log "Checking out project branch: $hub_branch"
+            (cd "$HUB_DIR" && git checkout "$hub_branch" 2>/dev/null) || \
+            (cd "$HUB_DIR" && git checkout -b "$hub_branch" "origin/$hub_branch" 2>/dev/null) || true
+        else
+            log "Creating project branch: $hub_branch"
+            (cd "$HUB_DIR" && git checkout -b "$hub_branch" 2>/dev/null) || true
+        fi
     fi
 
     # 2. Init hub as orchestrator
@@ -356,18 +391,45 @@ join_project() {
         git clone "$JOIN_HUB_URL" "$join_hub_dir"
     fi
 
-    # Read config.yaml to discover services
+    # Read project name from config.yaml to determine branch
     local config_file="$join_hub_dir/config.yaml"
+    local project_name=""
+
+    # Try reading config from default branch first to get project name
+    if [[ -f "$config_file" ]]; then
+        project_name="$(sed -n 's/^[[:space:]]*name:[[:space:]]*//p' "$config_file" | head -1 | xargs)"
+    fi
+
+    # If no config on default branch, ask user for project name to find the branch
+    if [[ -z "$project_name" ]]; then
+        echo ""
+        read -r -p "  Project name (needed to find the accord branch): " project_name
+        if [[ -z "$project_name" ]]; then
+            err "Project name is required to find the correct hub branch"
+        fi
+    fi
+
+    # Checkout project branch (accord/<project-name>)
+    local join_branch="accord/${project_name}"
+    if (cd "$join_hub_dir" && git rev-parse --verify "origin/$join_branch" >/dev/null 2>&1); then
+        log "Checking out project branch: $join_branch"
+        (cd "$join_hub_dir" && git checkout "$join_branch" 2>/dev/null) || \
+        (cd "$join_hub_dir" && git checkout -b "$join_branch" "origin/$join_branch" 2>/dev/null) || true
+    else
+        # Fallback: maybe the hub uses the default branch (pre-v2 project)
+        warn "Branch '$join_branch' not found on remote. Using default branch."
+    fi
+
+    # Re-read config after branch checkout (the right branch may have different content)
     if [[ ! -f "$config_file" ]]; then
         err "Hub does not have config.yaml — is this an Accord hub?"
     fi
 
-    local project_name
     project_name="$(sed -n 's/^[[:space:]]*name:[[:space:]]*//p' "$config_file" | head -1 | xargs)"
 
     echo ""
     echo -e "  Project:  ${GREEN}${project_name}${NC}"
-    echo -e "  Hub:      ${GREEN}${join_hub_dir}${NC}"
+    echo -e "  Hub:      ${GREEN}${join_hub_dir}${NC} (branch: ${join_branch})"
     echo ""
 
     # Parse services (and optional repo URLs) from config

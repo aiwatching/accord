@@ -350,8 +350,25 @@ interactive_prompt() {
 
 # ── Validation ───────────────────────────────────────────────────────────────
 
+validate_project_name() {
+    local name="$1"
+    if [[ -z "$name" ]]; then
+        err "Project name is required"
+    fi
+    # Must be valid as a git branch name component (used as accord/<name>)
+    # Rules: start with alphanumeric, then alphanumeric/dot/underscore/hyphen
+    # No spaces, no ~^:?*[\, no .., no trailing .lock or .
+    if [[ ! "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
+        err "Invalid project name: '$name'. Must start with a letter or digit, then only letters, digits, dots, underscores, or hyphens. (Used as git branch: accord/$name)"
+    fi
+    if [[ "$name" == *.lock || "$name" == *.. || "$name" == *. ]]; then
+        err "Invalid project name: '$name'. Cannot end with '.lock', '..', or '.'. (Used as git branch: accord/$name)"
+    fi
+}
+
 validate_inputs() {
     [[ -z "$PROJECT_NAME" ]] && err "Project name is required (--project-name or auto-detect)"
+    validate_project_name "$PROJECT_NAME"
     [[ -z "$SERVICES" ]] && err "At least one service is required (--services or auto-detect)"
 
     [[ "$REPO_MODEL" != "monorepo" && "$REPO_MODEL" != "multi-repo" ]] && \
@@ -824,6 +841,8 @@ hub_sync_on_init() {
     local hub_dir="$TARGET_DIR/.accord/hub"
 
     # a. Clone hub (or pull if already cloned)
+    local hub_branch="accord/${PROJECT_NAME}"
+
     if [[ -d "$hub_dir/.git" ]]; then
         log "Hub already cloned, pulling latest..."
         (cd "$hub_dir" && git pull --quiet) || { warn "Hub pull failed (network issue?). Skipping hub sync."; return; }
@@ -838,6 +857,16 @@ hub_sync_on_init() {
     # Configure git user in hub clone (needed for commits)
     (cd "$hub_dir" && git config user.email "accord-init@local" && git config user.name "Accord Init") 2>/dev/null || true
 
+    # Checkout project branch (accord/{project-name})
+    if (cd "$hub_dir" && git rev-parse --verify "origin/$hub_branch" >/dev/null 2>&1); then
+        log "Checking out existing project branch: $hub_branch"
+        (cd "$hub_dir" && git checkout "$hub_branch" 2>/dev/null) || \
+        (cd "$hub_dir" && git checkout -b "$hub_branch" "origin/$hub_branch" 2>/dev/null) || true
+    else
+        log "Creating project branch: $hub_branch"
+        (cd "$hub_dir" && git checkout -b "$hub_branch" 2>/dev/null) || true
+    fi
+
     # If hub is empty (no structure), initialize it
     if [[ ! -d "$hub_dir/contracts" ]]; then
         log "Hub is empty — initializing structure"
@@ -848,7 +877,7 @@ hub_sync_on_init() {
             mkdir -p "$hub_dir/comms/inbox/$svc"
             touch "$hub_dir/comms/inbox/$svc/.gitkeep"
         done
-        if ! (cd "$hub_dir" && git add -A && git commit -m "accord: init hub structure" && git push) 2>/dev/null; then
+        if ! (cd "$hub_dir" && git add -A && git commit -m "accord: init hub structure" && git push -u origin "$hub_branch") 2>/dev/null; then
             warn "Failed to push hub init. Skipping hub sync."
             return
         fi
@@ -925,7 +954,7 @@ NOTIFY
     # Commit + push hub (only if there are changes)
     (cd "$hub_dir" && git add -A)
     if ! (cd "$hub_dir" && git diff --cached --quiet); then
-        if (cd "$hub_dir" && git commit -m "accord-sync($own_svc): init — joined project" && git push) 2>/dev/null; then
+        if (cd "$hub_dir" && git commit -m "accord-sync($own_svc): init — joined project" && git push origin "$hub_branch") 2>/dev/null; then
             log "Hub synced: contract pushed, other services notified"
             HUB_SYNC_OK=true
         else
