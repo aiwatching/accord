@@ -186,31 +186,23 @@ elif [[ -f "$TARGET_DIR/.accord/adapter/AGENT_INSTRUCTIONS.md" ]]; then
     ADAPTER="generic"
 fi
 
-# Detect modules from config
+# Detect modules from config (flat list: entries with "type: module")
 MODULES=""
 SERVICE=""
-IFS=',' read -ra svc_arr <<< "$SERVICES"
-for svc in "${svc_arr[@]}"; do
-    svc="$(echo "$svc" | xargs)"
-    if sed -n "/- name: ${svc}/,/- name: /p" "$CONFIG_FILE" | grep -q "modules:"; then
-        SERVICE="$svc"
-        MODULES="$(sed -n "/- name: ${svc}/,/^  - name: /{ /modules:/,/^  - name: /{ s/^      - name: //p; }; }" "$CONFIG_FILE" | tr '\n' ',' | sed 's/,$//')"
-        break
-    fi
-done
+MODULES="$(sed -n '/type: module/{ x; s/^[[:space:]]*- name: //p; d; }; h' "$CONFIG_FILE" | tr '\n' ',' | sed 's/,$//')"
 
-# Detect language from config
+# Detect language from config (from module entries)
 LANGUAGE="java"
-if [[ -n "$SERVICE" ]]; then
-    detected_type="$(sed -n 's/.*type: \(.*\)-interface/\1/p' "$CONFIG_FILE" | head -1)"
-    [[ -n "$detected_type" ]] && LANGUAGE="$detected_type"
+detected_lang="$(sed -n 's/^[[:space:]]*language: //p' "$CONFIG_FILE" | head -1)"
+if [[ -n "$detected_lang" ]]; then
+    LANGUAGE="$detected_lang"
 fi
 
 # ── Display current state ───────────────────────────────────────────────────
 
 echo -e "  Project:       ${GREEN}$PROJECT_NAME${NC}"
 echo -e "  Services:      ${GREEN}$SERVICES${NC}"
-[[ -n "$SERVICE" ]] && echo -e "  Modules:       ${GREEN}$SERVICE/ → $MODULES${NC}"
+[[ -n "$MODULES" ]] && echo -e "  Modules:       ${GREEN}$MODULES${NC}"
 echo -e "  Adapter:       ${GREEN}$ADAPTER${NC}"
 echo -e "  Sync mode:     ${GREEN}$SYNC_MODE${NC}"
 echo -e "  Accord:        ${GREEN}v${CURRENT_VERSION}${NC}"
@@ -248,9 +240,6 @@ upgrade_claude_code() {
         return
     fi
 
-    local modules_arg=""
-    [[ -n "$MODULES" ]] && modules_arg="--module-list $MODULES"
-
     local internal_dir=""
     [[ -n "$MODULES" ]] && internal_dir=".accord/contracts/internal/"
 
@@ -263,7 +252,6 @@ upgrade_claude_code() {
         --contracts-dir ".accord/contracts/" \
         --comms-dir ".accord/comms/" \
         --sync-mode "$SYNC_MODE" \
-        ${modules_arg:+$modules_arg} \
         ${internal_dir:+--internal-contracts-dir "$internal_dir"}
 
     UPDATED=$((UPDATED + 1))
@@ -286,7 +274,6 @@ upgrade_generic() {
     replace_vars "$dest" \
         "PROJECT_NAME" "$PROJECT_NAME" \
         "SERVICE_LIST" "$SERVICES" \
-        "MODULE_LIST" "${MODULES:-}" \
         "CONTRACTS_DIR" ".accord/contracts/" \
         "INTERNAL_CONTRACTS_DIR" ".accord/contracts/internal/" \
         "COMMS_DIR" ".accord/comms/"

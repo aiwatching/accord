@@ -47,7 +47,7 @@ Options:
   --services <csv>             Override auto-detected service names
   --adapter <name>            Override auto-detected client (claude-code|cursor|codex|generic|none)
   --sync-mode <mode>          on-action | auto-poll | manual (default: on-action)
-  --service <name>            Service directory that has sub-modules (auto-detects modules)
+  --service <name>            Service directory that contains modules (auto-detects modules)
   --modules <csv>             Explicit module names (overrides auto-detection)
   --repo-model <model>        monorepo | multi-repo (default: monorepo)
   --hub <git-url>             Hub repo URL (multi-repo only)
@@ -293,7 +293,7 @@ interactive_prompt() {
                 detected_mods="$(list_subdirs "$svc_dir")"
                 if [[ -n "$detected_mods" ]]; then
                     echo ""
-                    echo -e "  ${CYAN}$_svc/${NC} has sub-modules: ${GREEN}$detected_mods${NC}"
+                    echo -e "  ${CYAN}$_svc/${NC} has modules: ${GREEN}$detected_mods${NC}"
                     read -r -p "  Use these as modules? (y/n/edit) [y]: " confirm
                     confirm="${confirm:-y}"
                     if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
@@ -455,17 +455,16 @@ generate_config() {
     repo: ${REPO_URL}"
         fi
 
-        # If this service has modules, nest them
+        # After the parent service, add its modules as peer-level entries
         if [[ "$svc" == "$SERVICE" && -n "$MODULES" ]]; then
-            services_yaml="${services_yaml}
-    modules:"
             IFS=',' read -ra mod_arr <<< "$MODULES"
             for mod in "${mod_arr[@]}"; do
                 mod="$(echo "$mod" | xargs)"
                 services_yaml="${services_yaml}
-      - name: ${mod}
-        path: ${svc}/${mod}/
-        type: ${LANGUAGE}-interface"
+  - name: ${mod}
+    type: module
+    directory: ${svc}/${mod}/
+    language: ${LANGUAGE}"
             done
         fi
     done
@@ -747,9 +746,6 @@ install_adapter() {
     if [[ -f "$install_script" ]]; then
         log "Installing adapter: $ADAPTER"
 
-        local modules_arg=""
-        [[ -n "$MODULES" ]] && modules_arg="--module-list $MODULES"
-
         local internal_dir=""
         [[ -n "$MODULES" ]] && internal_dir=".accord/contracts/internal/"
 
@@ -760,8 +756,7 @@ install_adapter() {
             --contracts-dir ".accord/contracts/" \
             --internal-contracts-dir "${internal_dir:-N/A}" \
             --comms-dir ".accord/comms/" \
-            --sync-mode "$SYNC_MODE" \
-            ${modules_arg:+$modules_arg}
+            --sync-mode "$SYNC_MODE"
 
         log "Adapter $ADAPTER installed"
     else
@@ -773,7 +768,6 @@ install_adapter() {
             replace_vars "$dest" \
                 "PROJECT_NAME" "$PROJECT_NAME" \
                 "SERVICE_LIST" "$SERVICES" \
-                "MODULE_LIST" "${MODULES:-}" \
                 "CONTRACTS_DIR" ".accord/contracts/" \
                 "INTERNAL_CONTRACTS_DIR" ".accord/contracts/internal/" \
                 "COMMS_DIR" ".accord/comms/"
@@ -1254,7 +1248,7 @@ print_summary() {
     echo -e "  Project:    ${GREEN}$PROJECT_NAME${NC}"
     echo -e "  Repo model: ${GREEN}$REPO_MODEL${NC}"
     echo -e "  Services:   ${GREEN}$SERVICES${NC}"
-    [[ -n "$SERVICE" ]] && echo -e "  Modules:    ${GREEN}$SERVICE/ → $MODULES${NC}"
+    [[ -n "$SERVICE" ]] && echo -e "  Modules:    ${GREEN}$MODULES${NC} ${DIM}(under $SERVICE/)${NC}"
     [[ "$ADAPTER" != "none" ]] && echo -e "  Adapter:    ${GREEN}$ADAPTER${NC}"
     echo -e "  Sync mode:  ${GREEN}$SYNC_MODE${NC}"
     [[ "$REPO_MODEL" == "multi-repo" ]] && echo -e "  Hub:        ${GREEN}$HUB${NC}"

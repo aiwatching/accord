@@ -150,17 +150,8 @@ export function scanInboxes(accordDir: string, config: AccordConfig): AccordRequ
   const services = config.services;
 
   for (const svc of services) {
-    // Scan service inbox
     const svcInbox = getInboxPath(accordDir, svc.name);
     scanDirectory(svcInbox, requests);
-
-    // Scan module inboxes
-    if (svc.modules) {
-      for (const mod of svc.modules) {
-        const modInbox = getInboxPath(accordDir, mod.name);
-        scanDirectory(modInbox, requests);
-      }
-    }
   }
 
   // Also scan orchestrator inbox if present

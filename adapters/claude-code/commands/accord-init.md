@@ -10,7 +10,7 @@ Ask the user for:
 - **Project name** (e.g., `next-demo`)
 - **Service/module names** (comma-separated, e.g., `frontend,demo-engine,device-manager`)
 - **Repo model**: monorepo or multi-repo? (default: monorepo)
-- **Service with sub-modules?** If yes, ask for service name and module names
+- **Modules?** If a service directory contains modules, ask for module names (added as peer-level entries)
 - **Language** for internal contracts: java, python, typescript, go (default: java)
 
 If the project already has `.accord/config.yaml`, read it and skip this step.
@@ -44,7 +44,7 @@ Now scan the actual source code to generate real contracts (replacing the templa
 4. Generate OpenAPI 3.0 YAML at `.accord/contracts/{service}.yaml`
 5. Mark with `x-accord-status: draft`
 
-**Internal contracts** — If the service has sub-modules:
+**Internal contracts** — If there are entries with `type: module` in config:
 1. Identify cross-module interfaces following Section 4 of SCAN_INSTRUCTIONS.md
 2. For each interface: extract signatures, types, behavioral notes from doc comments
 3. Generate contract markdown at `.accord/contracts/internal/{module}.md`

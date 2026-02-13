@@ -238,8 +238,8 @@ The **generic adapter** works with any agent that can read a markdown instructio
 
 --project-name <name>    Override auto-detected project name
 --services <csv>         Override auto-detected service names
---service <name>         Service with sub-modules (auto-detects modules)
---modules <csv>          Explicit module names
+--service <name>         Service directory that contains modules (auto-detects modules)
+--modules <csv>          Explicit module names (added as peer-level entries with type: module)
 --adapter <name>         claude-code | cursor | codex | generic | none
 --repo-model <model>     monorepo | multi-repo (default: monorepo)
 --hub <git-url>          Hub repo URL (multi-repo only)
@@ -250,7 +250,7 @@ The **generic adapter** works with any agent that can read a markdown instructio
 --no-interactive         Use auto-detected defaults without prompts
 ```
 
-Init auto-detects: project name, language, adapter, services (from subdirectories), and modules (from service subdirectories). Re-running init without `--force` safely exits with no changes.
+Init auto-detects: project name, language, adapter, services (from subdirectories), and modules (from subdirectories within services). All nodes (services and modules) are peer-level entries in config.yaml. Re-running init without `--force` safely exits with no changes.
 
 ## Project Structure (after init)
 

@@ -38,16 +38,11 @@ export interface AccordRequest {
 
 // ── Config types ───────────────────────────────────────────────────────────
 
-export interface ModuleConfig {
-  name: string;
-  path?: string;
-  type?: string;
-}
-
 export interface ServiceConfig {
   name: string;
-  modules?: ModuleConfig[];
+  type?: 'service' | 'module';
   directory?: string;
+  language?: string;
   repo?: string;
 }
 

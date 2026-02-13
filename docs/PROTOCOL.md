@@ -153,7 +153,7 @@ paths:
 
 ### 2.2 Internal Contracts (Module-Level)
 
-Internal contracts define the code-level interface boundary between sub-modules within a service. Other modules interact with your module exclusively through this contract.
+Internal contracts define the code-level interface boundary between modules. Other modules interact with your module exclusively through this contract.
 
 **Format**: Markdown with embedded interface signatures (Java interface, Python Protocol/ABC, TypeScript interface, etc.)
 
@@ -440,16 +440,18 @@ services:
     description: "Policy evaluation and enforcement engine"
   - name: device-manager
     description: "Device discovery, lifecycle, and plugin management"
-    modules:
-      - name: plugin
-        path: device-manager/plugin/
-        type: java-interface
-      - name: discovery
-        path: device-manager/discovery/
-        type: java-interface
-      - name: lifecycle
-        path: device-manager/lifecycle/
-        type: java-interface
+  - name: plugin
+    type: module
+    directory: device-manager/plugin/
+    language: java
+  - name: discovery
+    type: module
+    directory: device-manager/discovery/
+    language: java
+  - name: lifecycle
+    type: module
+    directory: device-manager/lifecycle/
+    language: java
   - name: demo-admin
     description: "Administration, RBAC, and audit logging"
 
