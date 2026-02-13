@@ -11,7 +11,7 @@ Read the project state and produce a structured status report. Follow these step
 Read `.accord/config.yaml` and report:
 - Project name, repo model
 - Services listed and whether each service's contract file exists
-- If a service has modules: list the modules from config
+- List all nodes (services and modules) — modules have `type: module` in config
 
 ### 2. External Contracts
 

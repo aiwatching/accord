@@ -113,7 +113,7 @@ assert_file "$TEST2_DIR/.accord/contracts/internal/mod-y.md"          "mod-y int
 assert_dir  "$TEST2_DIR/.accord/comms/inbox/mod-x"                    "mod-x inbox"
 assert_dir  "$TEST2_DIR/.accord/comms/inbox/mod-y"                    "mod-y inbox"
 assert_contains "$TEST2_DIR/.accord/config.yaml" "mod-x"              "Config lists mod-x"
-assert_contains "$TEST2_DIR/.accord/config.yaml" "modules:"           "Config has modules section"
+assert_contains "$TEST2_DIR/.accord/config.yaml" "type: module"         "Config has type: module entries"
 
 # Internal contract validation
 assert_validator "$ACCORD_DIR/protocol/scan/validators/validate-internal.sh" \

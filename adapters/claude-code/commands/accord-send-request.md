@@ -5,8 +5,9 @@ Create and send an Accord request to another module.
 ## Instructions
 
 1. **Determine scope**:
-   - If the target is a service name from `{{SERVICE_LIST}}` → scope is `external`
-   - If the target is a module name from `{{MODULE_LIST}}` → scope is `internal`
+   - Read `.accord/config.yaml` and check the target's `type` field
+   - If the target has `type: module` → scope is `internal`
+   - Otherwise (service, default) → scope is `external`
    - Ask the user if unclear
 
 2. **Gather details** from the user:

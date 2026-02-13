@@ -8,13 +8,12 @@ These instructions enable any AI coding agent to participate in the Accord inter
 
 - **Project**: {{PROJECT_NAME}}
 - **Services**: {{SERVICE_LIST}}
-- **Sub-modules**: {{MODULE_LIST}}
 - **External contracts directory**: `{{CONTRACTS_DIR}}`
 - **Internal contracts directory**: `{{INTERNAL_CONTRACTS_DIR}}`
 - **Communications directory**: `{{COMMS_DIR}}`
-- **Full module config**: `.accord/config.yaml` (see `path:` fields for directory mapping)
+- **Full node config**: `.accord/config.yaml` (services + modules as peer-level entries)
 
-Each service and sub-module is an **independent boundary**. Every cross-boundary change must go through the Accord protocol.
+Each service and module is an **independent boundary**. Every cross-boundary change must go through the Accord protocol.
 
 ---
 

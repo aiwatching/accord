@@ -40,8 +40,7 @@ Adapters must inject these behaviors into the agent's instruction set:
 1. Read `.accord/config.yaml` to determine repo model
 2. Multi-repo: run `git pull` to sync latest changes (monorepo: comms are already local)
 3. If multi-repo: run `accord sync pull` to pull from the hub repo
-4. Check inbox: `.accord/comms/inbox/{own-module}/`
-4. If service has sub-modules, also check: `.accord/comms/inbox/{sub-module-name}/`
+4. Check inbox: `.accord/comms/inbox/{own-node}/` (services and modules are peer-level in config)
 5. For each request file, read the YAML frontmatter
 6. Report to user:
    - Number of pending/approved requests (grouped by scope: external vs internal)

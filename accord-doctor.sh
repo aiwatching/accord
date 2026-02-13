@@ -108,53 +108,48 @@ if [[ -f "$PROJECT_DIR/.accord/config.yaml" ]]; then
         fail "Missing repo_model in config"
     fi
 
-    # Check each service has a contract file and inbox
+    # Check each service/module has a contract file and inbox
+    # Modules (type: module) have internal contracts; services have external contracts
     if grep -q "^services:" "$config"; then
         services=$(grep "^  - name:" "$config" | sed 's/.*name:[[:space:]]*//')
+
+        # Build list of module names (entries with "type: module")
+        module_names=""
+        while IFS= read -r line; do
+            if echo "$line" | grep -q "^  - name:"; then
+                current_name="$(echo "$line" | sed 's/.*name:[[:space:]]*//')"
+            fi
+            if echo "$line" | grep -q "type: module"; then
+                module_names="$module_names $current_name"
+            fi
+        done < "$config"
+
         for svc in $services; do
-            if [[ -f "$PROJECT_DIR/.accord/contracts/${svc}.yaml" ]]; then
-                ok "Service '$svc' has contract file"
+            # Check if this is a module (type: module)
+            if echo "$module_names" | grep -qw "$svc"; then
+                # Module: check internal contract
+                if [[ -f "$PROJECT_DIR/.accord/contracts/internal/${svc}.md" ]]; then
+                    ok "Module '$svc' has internal contract"
+                else
+                    fail "Module '$svc' missing contract: .accord/contracts/internal/${svc}.md"
+                fi
             else
-                fail "Service '$svc' missing contract: .accord/contracts/${svc}.yaml"
+                # Service: check external contract
+                if [[ -f "$PROJECT_DIR/.accord/contracts/${svc}.yaml" ]]; then
+                    ok "Service '$svc' has contract file"
+                else
+                    fail "Service '$svc' missing contract: .accord/contracts/${svc}.yaml"
+                fi
             fi
 
             if [[ -d "$PROJECT_DIR/.accord/comms/inbox/${svc}" ]]; then
-                ok "Service '$svc' has inbox directory"
+                ok "'$svc' has inbox directory"
             else
-                fail "Service '$svc' missing inbox: .accord/comms/inbox/${svc}/"
+                fail "'$svc' missing inbox: .accord/comms/inbox/${svc}/"
             fi
         done
     else
         warn "No services defined in config"
-    fi
-fi
-
-# ── 3. Module Checks ─────────────────────────────────────────────────────────
-if [[ -f "$PROJECT_DIR/.accord/config.yaml" ]]; then
-    config="$PROJECT_DIR/.accord/config.yaml"
-
-    # Check for modules in config (nested under service entries)
-    if grep -q "modules:" "$config"; then
-        echo -e "\n${BOLD}[Modules]${NC}"
-
-        # Extract module names from config
-        modules=$(sed -n '/modules:/,/^  - name: /{ s/^      - name: //p; }' "$config")
-        for mod in $modules; do
-            # Internal contract
-            contract="$PROJECT_DIR/.accord/contracts/internal/${mod}.md"
-            if [[ -f "$contract" ]]; then
-                ok "Module '$mod' internal contract exists"
-            else
-                fail "Module '$mod' missing contract: .accord/contracts/internal/${mod}.md"
-            fi
-
-            # Module inbox
-            if [[ -d "$PROJECT_DIR/.accord/comms/inbox/${mod}" ]]; then
-                ok "Module '$mod' has inbox"
-            else
-                fail "Module '$mod' missing inbox: .accord/comms/inbox/${mod}/"
-            fi
-        done
     fi
 fi
 

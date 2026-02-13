@@ -8,14 +8,13 @@ You are an AI coding agent participating in the **{{PROJECT_NAME}}** project via
 
 - **Project**: {{PROJECT_NAME}}
 - **Services**: {{SERVICE_LIST}}
-- **Sub-modules**: {{MODULE_LIST}}
 - **External contracts**: `{{CONTRACTS_DIR}}`
 - **Internal contracts**: `{{INTERNAL_CONTRACTS_DIR}}`
 - **Communications**: `{{COMMS_DIR}}`
 - **Sync mode**: `{{SYNC_MODE}}`
-- **Full module config**: `.accord/config.yaml` (see `path:` fields for directory mapping)
+- **Full node config**: `.accord/config.yaml` (services + modules as peer-level entries)
 
-Each service and sub-module is an **independent boundary**. Every cross-boundary change must go through the Accord protocol.
+Each service and module is an **independent boundary**. Every cross-boundary change must go through the Accord protocol.
 
 ## CRITICAL: Module Boundary Rules
 
