@@ -83,6 +83,7 @@ function makeDispatcherConfig(overrides: Partial<DispatcherConfig> = {}): Dispat
     max_attempts: 3,
     model: 'claude-sonnet-4-5-20250929',
     debug: false,
+    agent: 'claude-code',
     ...overrides,
   };
 }

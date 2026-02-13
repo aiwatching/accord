@@ -124,14 +124,37 @@ dispatcher:
   max_attempts: 3              # max retries before marking failed
   model: claude-sonnet-4-5-20250929   # Claude model for agent invocations
   max_budget_usd: 5.0          # cost cap per agent invocation
+  agent: claude-code           # agent adapter: "claude-code" or "shell"
+  agent_cmd: "claude -p"       # shell command (only for agent: shell)
   debug: false                 # enable debug logging
 ```
 
 CLI flags override config values. Config values override built-in defaults.
 
+#### Agent Adapters
+
+The dispatcher uses a pluggable agent adapter to invoke AI agents. Two adapters are available:
+
+| Adapter | `agent:` value | Session Resume | Description |
+|---------|---------------|----------------|-------------|
+| Claude Code | `claude-code` (default) | Yes | Native Claude Agent SDK integration. Supports session resume across requests. |
+| Shell | `shell` | No | Wraps any CLI agent via `agent_cmd`. Each invocation is independent. |
+
+**Shell adapter** — use `agent: shell` with `agent_cmd` to integrate any agent that accepts a prompt argument:
+
+```yaml
+dispatcher:
+  agent: shell
+  agent_cmd: "claude --dangerously-skip-permissions -p"   # Claude Code CLI
+  # agent_cmd: "codex -q"                                 # OpenAI Codex
+  # agent_cmd: "/path/to/custom-agent.sh"                 # custom script
+```
+
+The shell adapter invokes `<agent_cmd> <prompt>` in the service directory. The agent is expected to read the prompt, perform the work, and exit. `agent_cmd` can also be set in `settings.agent_cmd` as a fallback.
+
 #### Architecture
 
-**Dispatcher → Worker Pool → Claude Agent SDK**
+**Dispatcher → Worker Pool → Agent Adapter**
 
 The dispatcher runs a tick loop: sync pull → scan all inboxes → assign pending requests to idle workers → workers process in parallel → commit → sync push.
 

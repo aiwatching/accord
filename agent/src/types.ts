@@ -61,6 +61,10 @@ export interface DispatcherConfig {
   model: string;
   max_budget_usd?: number;
   debug: boolean;
+  /** Agent adapter type: "claude-code" (default) or "shell" */
+  agent: 'claude-code' | 'shell';
+  /** Shell command for the "shell" adapter (e.g. "claude -p", "codex -q") */
+  agent_cmd?: string;
 }
 
 export interface AccordSettings {
