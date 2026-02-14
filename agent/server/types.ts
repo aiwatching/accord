@@ -130,6 +130,8 @@ export interface RequestResult {
   numTurns?: number;
   error?: string;
   sessionId?: string;
+  /** ISO 8601 timestamp when this result was produced */
+  completedAt?: string;
 }
 
 // ── Dispatcher types ───────────────────────────────────────────────────────

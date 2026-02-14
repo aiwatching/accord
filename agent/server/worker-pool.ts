@@ -86,7 +86,7 @@ export class Worker {
       // Guard: check if request file still exists (may have been archived/deleted)
       if (!fs.existsSync(request.filePath)) {
         logger.warn(`Worker ${this.id}: request file gone — ${request.filePath}`);
-        return { requestId: reqId, success: false, durationMs: Date.now() - startTime, error: 'Request file no longer exists' };
+        return { requestId: reqId, success: false, durationMs: Date.now() - startTime, completedAt: new Date().toISOString(), error: 'Request file no longer exists' };
       }
 
       // Command fast-path: no AI agent needed
@@ -137,7 +137,7 @@ export class Worker {
       appendResultSection(request.filePath, error);
       setRequestStatus(request.filePath, 'completed');
       archiveRequest(request.filePath, accordDir);
-      return { requestId: reqId, success: false, durationMs: Date.now() - startTime, error };
+      return { requestId: reqId, success: false, durationMs: Date.now() - startTime, completedAt: new Date().toISOString(), error };
     }
 
     const result = executeCommand(command, serviceDir, accordDir);
@@ -147,6 +147,7 @@ export class Worker {
     setRequestStatus(request.filePath, 'completed');
 
     const durationMs = Date.now() - startTime;
+    const completedAt = new Date().toISOString();
     writeHistory({
       historyDir,
       requestId: reqId,
@@ -165,13 +166,14 @@ export class Worker {
       requestId: reqId,
       service: request.serviceName,
       workerId: this.id,
-      result: { requestId: reqId, success: true, durationMs },
+      result: { requestId: reqId, success: true, durationMs, completedAt },
     });
 
     return {
       requestId: reqId,
       success: true,
       durationMs,
+      completedAt,
     };
   }
 
@@ -263,7 +265,8 @@ export class Worker {
 
       // Step 5: Success — finalize log
       const durationMs = Date.now() - startTime;
-      fs.appendFileSync(logFile, `\n--- completed | ${durationMs}ms ---\n`);
+      const completedAt = new Date().toISOString();
+      fs.appendFileSync(logFile, `\n--- completed | ${durationMs}ms | ${completedAt} ---\n`);
 
       if (result.sessionId) {
         this.sessionManager.updateSession(serviceName, result.sessionId);
@@ -289,7 +292,7 @@ export class Worker {
 
       gitCommit(serviceDir, `accord: completed ${reqId}`);
 
-      const requestResult = { ...result, requestId: reqId, success: true, durationMs };
+      const requestResult = { ...result, requestId: reqId, success: true, durationMs, completedAt };
 
       eventBus.emit('request:completed', {
         requestId: reqId,
@@ -302,8 +305,9 @@ export class Worker {
     } catch (err) {
       // Step 6: Failure handling
       const error = String(err);
+      const failedAt = new Date().toISOString();
       logger.error(`Worker ${this.id}: agent failed for ${reqId}: ${error}`);
-      fs.appendFileSync(logFile, `\n--- failed | ${error} ---\n`);
+      fs.appendFileSync(logFile, `\n--- failed | ${error} | ${failedAt} ---\n`);
 
       // Write checkpoint for crash recovery
       this.sessionManager.writeCheckpoint(accordDir, reqId, `Error: ${error}\nAttempt: ${attempts}`);
@@ -362,6 +366,7 @@ export class Worker {
         requestId: reqId,
         success: false,
         durationMs: Date.now() - startTime,
+        completedAt: failedAt,
         error,
       };
     }
