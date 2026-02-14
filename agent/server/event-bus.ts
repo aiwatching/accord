@@ -84,6 +84,13 @@ export interface WireMessage {
 // ── Typed Event Bus ──────────────────────────────────────────────────────────
 
 class AccordEventBus extends EventEmitter {
+  constructor() {
+    super();
+    // Each WebSocket client adds 9 listeners (one per event type).
+    // Default limit of 10 triggers warnings with just 2 clients.
+    this.setMaxListeners(100);
+  }
+
   emit<K extends EventName>(event: K, data: EventMap[K]): boolean {
     return super.emit(event, data);
   }

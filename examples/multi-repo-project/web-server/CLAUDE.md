@@ -17,6 +17,7 @@
 
 ## Recent Changes
 - 2026-02-13: req-000-service-joined-device-manager — Acknowledged device-manager joining the project. Hub contracts synced locally at .accord/.hub/accord_hub/contracts/device-manager.yaml
+- 2026-02-13: req-cascade-1771031931448-aednxg-01 — Added DELETE /api/proxy/devices/{id} endpoint to support device deletion. Implemented deleteDevice method in DeviceAggregationService that proxies to device-manager. Updated web-server contract.
 
 
 
