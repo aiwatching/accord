@@ -1,0 +1,184 @@
+import type { FastifyInstance } from 'fastify';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { getHubState } from '../hub-state.js';
+import { getAccordDir, getServiceNames, getInboxPath } from '../config.js';
+import { scanInboxes, scanArchives } from '../scanner.js';
+import { executeCommand } from '../commands.js';
+import { logger } from '../logger.js';
+
+interface ExecBody {
+  command: string;
+}
+
+interface ExecResult {
+  command: string;
+  output: string;
+  success: boolean;
+  timestamp: string;
+}
+
+const HELP_TEXT = `## Available Commands
+
+| Command | Description |
+|---------|-------------|
+| **status** | Show contract counts, inbox items, archived requests |
+| **scan** | Validate all contracts |
+| **check-inbox** | List all pending inbox items |
+| **validate** | Validate all request files |
+| **sync** | Trigger an immediate scheduler sync cycle |
+| **services** | List all configured services |
+| **requests** | List all requests (use \`requests --status pending\` to filter) |
+| **send <service> <message>** | Create a new request in a service's inbox |
+| **help** | Show this help text |`;
+
+export function registerCommandRoutes(app: FastifyInstance): void {
+  app.post<{ Body: ExecBody }>('/api/commands/execute', async (req, reply) => {
+    const raw = (req.body.command ?? '').trim();
+    if (!raw) {
+      return reply.status(400).send({ error: 'command is required' });
+    }
+
+    const parts = raw.split(/\s+/);
+    const cmd = parts[0];
+    const args = parts.slice(1);
+    const timestamp = new Date().toISOString();
+
+    try {
+      const output = await runCommand(cmd, args);
+      return { command: raw, output, success: true, timestamp } satisfies ExecResult;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { command: raw, output: `ERROR: ${message}`, success: false, timestamp } satisfies ExecResult;
+    }
+  });
+}
+
+async function runCommand(cmd: string, args: string[]): Promise<string> {
+  const { config, hubDir, scheduler } = getHubState();
+  const accordDir = getAccordDir(hubDir, config);
+
+  switch (cmd) {
+    case 'status':
+    case 'scan':
+    case 'check-inbox':
+    case 'validate':
+      return executeCommand(cmd, hubDir, accordDir);
+
+    case 'sync': {
+      const processed = await scheduler.triggerNow();
+      return `## Sync Complete\n\nScheduler tick triggered. **${processed}** request(s) processed.`;
+    }
+
+    case 'services':
+      return formatServices(accordDir);
+
+    case 'requests':
+      return formatRequests(accordDir, args);
+
+    case 'send':
+      return handleSend(accordDir, args);
+
+    case 'help':
+      return HELP_TEXT;
+
+    default:
+      return `Unknown command: **${cmd}**\n\nType \`help\` for available commands.`;
+  }
+}
+
+function formatServices(accordDir: string): string {
+  const { config, hubDir, dispatcher } = getHubState();
+  const allRequests = scanInboxes(accordDir, config, hubDir);
+  const services = config.services;
+
+  const lines: string[] = [
+    '## Services',
+    '',
+    '| Name | Type | Status | Pending |',
+    '|------|------|--------|---------|',
+  ];
+
+  for (const svc of services) {
+    const pending = allRequests.filter(
+      r => r.serviceName === svc.name && (r.frontmatter.status === 'pending' || r.frontmatter.status === 'approved')
+    ).length;
+    const type = svc.type ?? 'service';
+    const status = pending > 0 ? 'pending' : 'idle';
+    lines.push(`| ${svc.name} | ${type} | ${status} | ${pending} |`);
+  }
+
+  return lines.join('\n');
+}
+
+function formatRequests(accordDir: string, args: string[]): string {
+  const { config, hubDir } = getHubState();
+  let requests = scanInboxes(accordDir, config, hubDir);
+  requests.push(...scanArchives(accordDir, config, hubDir));
+
+  // Parse --status filter
+  const statusIdx = args.indexOf('--status');
+  if (statusIdx !== -1 && args[statusIdx + 1]) {
+    const filterStatus = args[statusIdx + 1];
+    requests = requests.filter(r => r.frontmatter.status === filterStatus);
+  }
+
+  if (requests.length === 0) {
+    return '## Requests\n\nNo requests found.';
+  }
+
+  const lines: string[] = [
+    '## Requests',
+    '',
+    '| ID | Service | Status | Priority | Type |',
+    '|----|---------|--------|----------|------|',
+  ];
+
+  for (const r of requests) {
+    lines.push(`| ${r.frontmatter.id} | ${r.serviceName} | ${r.frontmatter.status} | ${r.frontmatter.priority} | ${r.frontmatter.type} |`);
+  }
+
+  return lines.join('\n');
+}
+
+function handleSend(accordDir: string, args: string[]): string {
+  if (args.length < 2) {
+    return 'Usage: `send <service> <message>`\n\nExample: `send device-manager fix the authentication bug`';
+  }
+
+  const { config } = getHubState();
+  const service = args[0];
+  const message = args.slice(1).join(' ');
+  const serviceNames = getServiceNames(config);
+
+  if (!serviceNames.includes(service)) {
+    return `Unknown service: **${service}**\n\nAvailable services: ${serviceNames.join(', ')}`;
+  }
+
+  const inboxPath = getInboxPath(accordDir, service);
+  fs.mkdirSync(inboxPath, { recursive: true });
+
+  const id = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const now = new Date().toISOString();
+
+  const content = `---
+id: ${id}
+from: console
+to: ${service}
+scope: external
+type: other
+priority: medium
+status: pending
+created: ${now}
+updated: ${now}
+---
+
+${message}
+`;
+
+  const filePath = path.join(inboxPath, `${id}.md`);
+  fs.writeFileSync(filePath, content, 'utf-8');
+  logger.info(`Console: created request ${id} for ${service}`);
+
+  return `Request created: **${id}**\n\n- **To**: ${service}\n- **Message**: ${message}\n- **File**: ${path.basename(filePath)}`;
+}
