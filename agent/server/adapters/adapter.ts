@@ -80,6 +80,30 @@ export function createAdapter(config: AdapterConfig): AgentAdapter {
   }
 }
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Extract readable text from an SDK assistant message.
+ *  Returns text content blocks first; if none, summarizes tool_use blocks. */
+function extractAssistantText(message: unknown): string {
+  if (typeof message === 'string') return message;
+
+  const msg = message as { content?: Array<{ type: string; text?: string; name?: string; input?: unknown }> };
+  const blocks = msg?.content;
+  if (!Array.isArray(blocks)) return '';
+
+  // Prefer text blocks
+  const textParts = blocks
+    .filter(c => c.type === 'text' && c.text)
+    .map(c => c.text!);
+  if (textParts.length > 0) return textParts.join('');
+
+  // Fallback: summarize tool calls so the user sees activity
+  const toolParts = blocks
+    .filter(c => c.type === 'tool_use' && c.name)
+    .map(c => `[tool: ${c.name}]`);
+  return toolParts.length > 0 ? toolParts.join(' ') + '\n' : '';
+}
+
 // ── Claude Code Adapter ─────────────────────────────────────────────────────
 
 class ClaudeCodeV1Adapter implements AgentAdapter {
@@ -121,22 +145,42 @@ class ClaudeCodeV1Adapter implements AgentAdapter {
       let sessionId: string | undefined;
       let costUsd: number | undefined;
       let numTurns: number | undefined;
+      // Track whether we received any streaming deltas.
+      // If yes, skip the complete assistant message to avoid duplicates.
+      // If no (SDK didn't emit stream_event), fall back to assistant message.
+      let receivedStreamChunks = false;
+
+      let msgCount = 0;
 
       for await (const msg of response) {
+        msgCount++;
+        const msgType = (msg as Record<string, unknown>).type as string;
+        // Log first 20 messages (diagnose stream_event availability), then sparingly
+        if (msgCount <= 20 || msgCount % 50 === 0) {
+          logger.debug(`[claude-code] #${msgCount} type=${msgType}${msg.type !== msgType ? ` (narrowed=${msg.type})` : ''}`);
+        }
+
         if (msg.type === 'system' && msg.subtype === 'init') {
           sessionId = msg.session_id;
           logger.debug(`[claude-code] Session started: ${sessionId}`);
-        } else if (msg.type === 'assistant' && msg.message) {
-          // With includePartialMessages, text is already streamed via stream_event.
-          // The assistant message contains the full accumulated text — skip to avoid duplicates.
-          // (Only used for metadata if needed in the future.)
-        } else if ((msg as Record<string, unknown>).type === 'stream_event') {
+        } else if (msgType === 'stream_event') {
           // Streaming text delta — real-time output, token by token
           const event = (msg as Record<string, unknown>).event as Record<string, unknown> | undefined;
           if (event?.type === 'content_block_delta') {
             const delta = event.delta as Record<string, unknown> | undefined;
             if (delta?.type === 'text_delta' && typeof delta.text === 'string') {
+              receivedStreamChunks = true;
               if (params.onOutput) params.onOutput(delta.text);
+            }
+          }
+        } else if (msg.type === 'assistant' && msg.message) {
+          // Fallback: if stream_event never fired, extract text from the complete message
+          if (!receivedStreamChunks) {
+            const text = extractAssistantText(msg.message);
+            if (text && params.onOutput) {
+              params.onOutput(text);
+            } else {
+              logger.debug(`[claude-code] assistant message had no extractable text (tool-only response)`);
             }
           }
         } else if (msg.type === 'result') {
@@ -149,7 +193,7 @@ class ClaudeCodeV1Adapter implements AgentAdapter {
             throw new Error(`Agent error (${msg.subtype}): ${errors?.join(', ') ?? 'unknown'}`);
           }
 
-          logger.info(`[claude-code] Completed: ${numTurns} turns, $${costUsd?.toFixed(4)}`);
+          logger.info(`[claude-code] Completed: ${numTurns} turns, $${costUsd?.toFixed(4)}, streaming=${receivedStreamChunks}, msgs=${msgCount}`);
         }
       }
 
@@ -330,6 +374,7 @@ class ClaudeCodeV2Adapter implements AgentAdapter {
     let sessionId: string | undefined;
     let costUsd: number | undefined;
     let numTurns: number | undefined;
+    let receivedStreamChunks = false;
 
     while (true) {
       const { value: msg, done } = await managed.activeStream.next();
@@ -341,15 +386,21 @@ class ClaudeCodeV2Adapter implements AgentAdapter {
         sessionId = m.session_id as string | undefined;
         if (sessionId) managed.sessionId = sessionId;
         logger.debug(`[claude-code-v2] Session ID: ${sessionId}`);
-      } else if (m.type === 'assistant' && m.message) {
-        // With streaming, text already delivered via stream_event — skip duplicates.
       } else if (m.type === 'stream_event') {
-        // Streaming text delta — real-time output, token by token
         const event = m.event as Record<string, unknown> | undefined;
         if (event?.type === 'content_block_delta') {
           const delta = event.delta as Record<string, unknown> | undefined;
           if (delta?.type === 'text_delta' && typeof delta.text === 'string') {
+            receivedStreamChunks = true;
             if (onOutput) onOutput(delta.text);
+          }
+        }
+      } else if (m.type === 'assistant' && m.message) {
+        // Fallback: if stream_event never fired, extract text from the complete message
+        if (!receivedStreamChunks) {
+          const text = extractAssistantText(m.message);
+          if (text && onOutput) {
+            onOutput(text);
           }
         }
       } else if (m.type === 'result') {
