@@ -51,6 +51,23 @@ interface OutputLine {
   success?: boolean;
 }
 
+function formatTime(ts: number): string {
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+}
+
+const timestampStyle: React.CSSProperties = {
+  color: '#475569',
+  fontSize: 11,
+  fontFamily: 'monospace',
+  marginRight: 8,
+  flexShrink: 0,
+  userSelect: 'none',
+};
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 export function Console() {
@@ -476,29 +493,32 @@ export function Console() {
             </div>
           )}
           {filteredLines.map(line => (
-            <div key={line.key} style={{ marginBottom: 2 }}>
-              {line.type === 'event' && (
-                <div style={{
-                  color: line.text.includes('COMPLETED') ? '#4ade80'
-                    : line.text.includes('FAILED') ? '#f87171'
-                    : '#fbbf24',
-                  fontSize: 12,
-                  padding: '2px 0',
-                }}>
-                  {line.text}
-                </div>
-              )}
-              {line.type === 'chunk' && (
-                <span style={{ color: '#cbd5e1' }}>
-                  {line.text}
-                </span>
-              )}
-              {line.type === 'log' && (
-                <LogBlock requestId={line.requestId!} service={line.service!} text={line.text} />
-              )}
-              {line.type === 'command-result' && (
-                <CommandResult text={line.text} success={line.success} />
-              )}
+            <div key={line.key} style={{ marginBottom: 2, display: 'flex', alignItems: 'flex-start' }}>
+              <span style={timestampStyle}>{formatTime(line.timestamp)}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {line.type === 'event' && (
+                  <div style={{
+                    color: line.text.includes('COMPLETED') ? '#4ade80'
+                      : line.text.includes('FAILED') ? '#f87171'
+                      : '#fbbf24',
+                    fontSize: 12,
+                    padding: '2px 0',
+                  }}>
+                    {line.text}
+                  </div>
+                )}
+                {line.type === 'chunk' && (
+                  <span style={{ color: '#cbd5e1' }}>
+                    {line.text}
+                  </span>
+                )}
+                {line.type === 'log' && (
+                  <LogBlock requestId={line.requestId!} service={line.service!} text={line.text} />
+                )}
+                {line.type === 'command-result' && (
+                  <CommandResult text={line.text} success={line.success} />
+                )}
+              </div>
             </div>
           ))}
           {executing && (
