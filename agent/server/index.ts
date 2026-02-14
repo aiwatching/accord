@@ -122,6 +122,9 @@ async function main(): Promise<void> {
   const shutdown = async () => {
     logger.info('Shutting down...');
     if (scheduler) scheduler.stop();
+    // Close persistent agent sessions (V2 adapter)
+    const adapter = dispatcher.getAdapter();
+    if (adapter.closeAll) await adapter.closeAll();
     await stopServer();
     logger.close();
     process.exit(0);
