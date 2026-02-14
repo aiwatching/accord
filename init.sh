@@ -1386,6 +1386,16 @@ scaffold_orchestrator_v2() {
     mkdir -p "$team_dir/protocol/templates"
     cp "$ACCORD_DIR/protocol/templates/directive.md.template" "$team_dir/protocol/templates/directive.md.template"
 
+    # .gitignore — ignore adapter-specific and runtime files
+    local gitignore="$TARGET_DIR/.gitignore"
+    if [[ ! -f "$gitignore" ]]; then
+        cat > "$gitignore" <<'GI'
+.claude/
+.accord/
+GI
+        log "Created .gitignore"
+    fi
+
     # ── Hub Service ──────────────────────────────────────────────────────
     # Hub Service code lives in accord/agent/ (installed locally).
     # Start with: accord-hub --hub-dir <this-directory> --port 3000

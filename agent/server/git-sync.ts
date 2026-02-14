@@ -4,8 +4,24 @@ import { logger } from './logger.js';
 
 const MAX_PUSH_RETRIES = 3;
 
+function hasUpstream(targetDir: string): boolean {
+  try {
+    execFileSync('git', ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], {
+      cwd: targetDir,
+      stdio: 'pipe',
+      timeout: 5_000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function syncPull(targetDir: string, _config: AccordConfig): void {
-  // Hub Service operates directly on the hub directory — just git pull
+  if (!hasUpstream(targetDir)) {
+    logger.debug('No upstream tracking branch — skipping pull');
+    return;
+  }
   try {
     execFileSync('git', ['pull', '--rebase', '--autostash'], {
       cwd: targetDir,
@@ -19,7 +35,10 @@ export function syncPull(targetDir: string, _config: AccordConfig): void {
 }
 
 export function syncPush(targetDir: string, _config: AccordConfig): void {
-  // Hub Service operates directly on the hub directory — just git push with retry
+  if (!hasUpstream(targetDir)) {
+    logger.debug('No upstream tracking branch — skipping push');
+    return;
+  }
   for (let attempt = 1; attempt <= MAX_PUSH_RETRIES; attempt++) {
     try {
       execFileSync('git', ['push'], {
