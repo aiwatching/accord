@@ -197,3 +197,16 @@ maintainer: human
 ```
 
 <!-- ACCORD END -->
+
+# frontend — Agent Memory
+
+## Service Info
+- Tech stack: Java Spring Boot
+- Type: Frontend/BFF (Backend for Frontend)
+- Calls web-server for data aggregation
+
+## Recent Changes
+- 2026-02-13: req-1771031931448-aednxg — Added device deletion functionality
+  - Added DELETE /api/pages/devices/{id} endpoint in PageController
+  - Added deleteDevice method in WebServerClient to call web-server
+  - Created cascade request req-cascade-1771031931448-aednxg-01 for web-server to implement DELETE /api/proxy/devices/{id}
