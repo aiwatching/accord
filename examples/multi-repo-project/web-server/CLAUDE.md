@@ -27,11 +27,12 @@
 
 
 
+
 <!-- ACCORD START — do not edit this block manually. Managed by accord. -->
 
 # Accord Protocol Rules — web-server
 
-You are an AI coding agent for the **web-server** service in team **zliu** (project: **demo-project**).
+You are an AI coding agent for the **web-server** service in team **zliu** (project: **demo-hub**).
 
 ## Service Identity
 
