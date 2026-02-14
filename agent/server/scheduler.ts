@@ -3,7 +3,8 @@ import type { Dispatcher } from './dispatcher.js';
 import { eventBus } from './event-bus.js';
 import { syncPull } from './git-sync.js';
 import { scanInboxes, getDispatchableRequests, sortByPriority } from './scanner.js';
-import { getAccordDir } from './config.js';
+import { loadConfig, getAccordDir } from './config.js';
+import { setHubState, getHubState } from './hub-state.js';
 import { logger } from './logger.js';
 
 export class Scheduler {
@@ -56,6 +57,24 @@ export class Scheduler {
     };
   }
 
+  /** Re-read config.yaml from disk. Detects new/removed services. */
+  private reloadConfig(): void {
+    try {
+      const fresh = loadConfig(this.hubDir);
+      const oldNames = this.config.services.map(s => s.name).sort().join(',');
+      const newNames = fresh.services.map(s => s.name).sort().join(',');
+      if (oldNames !== newNames) {
+        logger.info(`Config changed: services [${oldNames}] → [${newNames}]`);
+        this.config = fresh;
+        // Update shared hub state so API routes also see the new config
+        const state = getHubState();
+        setHubState({ ...state, config: fresh });
+      }
+    } catch (err) {
+      logger.warn(`Config reload failed (using cached): ${err}`);
+    }
+  }
+
   private async tick(): Promise<number> {
     if (this.ticking) {
       logger.debug('Scheduler: tick already in progress, skipping');
@@ -65,6 +84,9 @@ export class Scheduler {
     this.ticking = true;
     try {
       logger.debug('--- Scheduler tick ---');
+
+      // 0. Hot-reload config from disk (picks up new services added by orchestrator)
+      this.reloadConfig();
 
       // 1. Sync pull
       syncPull(this.hubDir, this.config);
