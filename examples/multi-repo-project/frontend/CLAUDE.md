@@ -22,6 +22,13 @@
 - Calls web-server for data aggregation
 
 ## Recent Changes
+- 2026-02-14: req-002-add-interfaces-page — Device interfaces page implemented
+  - Added GET /api/pages/interfaces endpoint in PageController.java:106-123
+  - Supports filtering by deviceId, type, status, enabled and pagination (page, pageSize)
+  - Added WebServerClient.getAllInterfaces() method to fetch from web-server (WebServerClient.java:137-158)
+  - Returns PageData with title "Device Interfaces" and interface data with pagination
+  - Added comprehensive unit tests for interfaces page (PageControllerTest.java:189-255)
+  - Tests cover: success with data, with filters, and empty list scenarios
 - 2026-02-14: req-001-device-list-page — Device list page verified and tested
   - GET /api/pages/devices endpoint already implemented in PageController.java:38-42
   - Endpoint fetches device data via WebServerClient.getDashboardDevices()

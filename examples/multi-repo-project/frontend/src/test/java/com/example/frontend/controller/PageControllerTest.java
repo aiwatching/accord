@@ -207,4 +207,93 @@ class PageControllerTest {
 
         verify(webServerClient, times(1)).getDeviceDetails(deviceId);
     }
+
+    @Test
+    void testGetInterfacesPage_Success() throws Exception {
+        // Arrange
+        Map<String, Object> mockResponse = new java.util.LinkedHashMap<>();
+        List<Object> mockInterfaces = Arrays.asList(
+                Collections.singletonMap("id", "if1"),
+                Collections.singletonMap("id", "if2")
+        );
+        Map<String, Object> pagination = new java.util.LinkedHashMap<>();
+        pagination.put("page", 1);
+        pagination.put("pageSize", 50);
+        pagination.put("totalItems", 2);
+        pagination.put("totalPages", 1);
+
+        mockResponse.put("interfaces", mockInterfaces);
+        mockResponse.put("pagination", pagination);
+
+        when(webServerClient.getAllInterfaces(any())).thenReturn(mockResponse);
+
+        // Act & Assert
+        mockMvc.perform(get("/api/pages/interfaces"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Device Interfaces"))
+                .andExpect(jsonPath("$.data.interfaces").isArray())
+                .andExpect(jsonPath("$.data.interfaces.length()").value(2))
+                .andExpect(jsonPath("$.data.pagination").exists())
+                .andExpect(jsonPath("$.timestamp").exists());
+
+        verify(webServerClient, times(1)).getAllInterfaces(any());
+    }
+
+    @Test
+    void testGetInterfacesPage_WithFilters() throws Exception {
+        // Arrange
+        Map<String, Object> mockResponse = new java.util.LinkedHashMap<>();
+        List<Object> mockInterfaces = Collections.singletonList(
+                Collections.singletonMap("id", "if1")
+        );
+        Map<String, Object> pagination = new java.util.LinkedHashMap<>();
+        pagination.put("page", 1);
+        pagination.put("pageSize", 25);
+        pagination.put("totalItems", 1);
+        pagination.put("totalPages", 1);
+
+        mockResponse.put("interfaces", mockInterfaces);
+        mockResponse.put("pagination", pagination);
+
+        when(webServerClient.getAllInterfaces(any())).thenReturn(mockResponse);
+
+        // Act & Assert
+        mockMvc.perform(get("/api/pages/interfaces")
+                        .param("deviceId", "device1")
+                        .param("type", "ethernet")
+                        .param("status", "up")
+                        .param("enabled", "true")
+                        .param("page", "1")
+                        .param("pageSize", "25"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Device Interfaces"))
+                .andExpect(jsonPath("$.data.interfaces").isArray())
+                .andExpect(jsonPath("$.data.pagination").exists());
+
+        verify(webServerClient, times(1)).getAllInterfaces(any());
+    }
+
+    @Test
+    void testGetInterfacesPage_EmptyList() throws Exception {
+        // Arrange
+        Map<String, Object> mockResponse = new java.util.LinkedHashMap<>();
+        mockResponse.put("interfaces", Collections.emptyList());
+        Map<String, Object> pagination = new java.util.LinkedHashMap<>();
+        pagination.put("page", 1);
+        pagination.put("pageSize", 50);
+        pagination.put("totalItems", 0);
+        pagination.put("totalPages", 0);
+        mockResponse.put("pagination", pagination);
+
+        when(webServerClient.getAllInterfaces(any())).thenReturn(mockResponse);
+
+        // Act & Assert
+        mockMvc.perform(get("/api/pages/interfaces"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Device Interfaces"))
+                .andExpect(jsonPath("$.data.interfaces").isArray())
+                .andExpect(jsonPath("$.data.interfaces.length()").value(0));
+
+        verify(webServerClient, times(1)).getAllInterfaces(any());
+    }
 }
