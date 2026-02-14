@@ -89,4 +89,17 @@ public class InMemoryNetworkInterfaceRepository implements NetworkInterfaceRepos
                                 InterfaceStatus status, Boolean enabled) {
         return findAllWithFilters(deviceId, type, status, enabled).size();
     }
+
+    @Override
+    public List<NetworkInterface> findByIds(List<String> ids) {
+        return ids.stream()
+                .map(interfaces::get)
+                .filter(iface -> iface != null)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public void deleteByIds(List<String> ids) {
+        ids.forEach(interfaces::remove);
+    }
 }

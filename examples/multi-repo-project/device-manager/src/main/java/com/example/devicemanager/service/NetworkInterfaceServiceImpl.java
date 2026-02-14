@@ -1,6 +1,8 @@
 package com.example.devicemanager.service;
 
 import com.example.devicemanager.dto.AllInterfacesResponse;
+import com.example.devicemanager.dto.BatchDeleteInterfacesRequest;
+import com.example.devicemanager.dto.BatchDeleteInterfacesResponse;
 import com.example.devicemanager.dto.CreateInterfaceRequest;
 import com.example.devicemanager.dto.InterfaceWithDevice;
 import com.example.devicemanager.dto.PaginationMetadata;
@@ -14,6 +16,7 @@ import com.example.devicemanager.repository.NetworkInterfaceRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -184,6 +187,49 @@ public class NetworkInterfaceServiceImpl implements NetworkInterfaceService {
         PaginationMetadata pagination = new PaginationMetadata(page, pageSize, totalItems);
 
         return new AllInterfacesResponse(enrichedInterfaces, pagination);
+    }
+
+    @Override
+    public BatchDeleteInterfacesResponse batchDeleteInterfaces(List<String> interfaceIds) {
+        // Validate input
+        if (interfaceIds == null || interfaceIds.isEmpty()) {
+            throw new IllegalArgumentException("Interface IDs list cannot be null or empty");
+        }
+        if (interfaceIds.size() > 100) {
+            throw new IllegalArgumentException("Cannot delete more than 100 interfaces at once");
+        }
+
+        List<BatchDeleteInterfacesResponse.DeletedInterface> deleted = new ArrayList<>();
+        List<BatchDeleteInterfacesResponse.FailedInterface> failed = new ArrayList<>();
+
+        // Find which interfaces exist
+        List<NetworkInterface> existingInterfaces = interfaceRepository.findByIds(interfaceIds);
+        List<String> existingIds = existingInterfaces.stream()
+                .map(NetworkInterface::getId)
+                .collect(Collectors.toList());
+
+        // Categorize results
+        for (String id : interfaceIds) {
+            if (existingIds.contains(id)) {
+                deleted.add(new BatchDeleteInterfacesResponse.DeletedInterface(id));
+            } else {
+                failed.add(new BatchDeleteInterfacesResponse.FailedInterface(id, "Interface not found"));
+            }
+        }
+
+        // Delete existing interfaces
+        if (!existingIds.isEmpty()) {
+            interfaceRepository.deleteByIds(existingIds);
+        }
+
+        // Create summary
+        BatchDeleteInterfacesResponse.Summary summary = new BatchDeleteInterfacesResponse.Summary(
+                interfaceIds.size(),
+                deleted.size(),
+                failed.size()
+        );
+
+        return new BatchDeleteInterfacesResponse(deleted, failed, summary);
     }
 
     private InterfaceWithDevice enrichWithDeviceName(NetworkInterface networkInterface) {

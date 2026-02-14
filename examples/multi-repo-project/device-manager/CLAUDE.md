@@ -62,6 +62,21 @@
   - Implemented pagination metadata calculation (page, pageSize, totalItems, totalPages)
   - Added 14 comprehensive tests (6 service tests, 8 controller tests) — all passing (47 total tests)
   - Updated device-manager.yaml contract with new /api/interfaces endpoint marked as proposed
+- 2026-02-14: req-004-add-batch-delete-interfaces — Added batch delete operation for interfaces
+  - Created POST /api/interfaces/batch-delete endpoint
+  - Implemented BatchDeleteInterfacesRequest and BatchDeleteInterfacesResponse DTOs with proper JSON property mapping
+  - Extended NetworkInterfaceRepository with findByIds and deleteByIds methods
+  - Extended NetworkInterfaceService with batchDeleteInterfaces method
+  - Implemented partial success handling (deleted vs. failed interfaces)
+  - Added validation: non-empty list, max 100 interfaces per request
+  - Added 10 comprehensive tests (6 service tests, 4 controller tests)
+  - Updated device-manager.yaml contract with batch delete endpoint marked as proposed
+- 2026-02-14: req-006-add-interface-api-tests — Completed comprehensive test coverage for all interface APIs
+  - Re-added batch delete functionality (DTOs, repository methods, service methods, controller endpoint) that was previously lost
+  - Re-added missing batch delete tests (4 controller tests, 6 service tests)
+  - Fixed test code to match actual DTO structure and method signatures
+  - All 57 tests now passing (24 interface management + 14 global query + 10 batch delete + 9 device tests)
+  - Verified comprehensive coverage for all interface endpoints including edge cases and error scenarios
 
 
 

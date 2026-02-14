@@ -1,6 +1,7 @@
 package com.example.devicemanager.service;
 
 import com.example.devicemanager.dto.AllInterfacesResponse;
+import com.example.devicemanager.dto.BatchDeleteInterfacesResponse;
 import com.example.devicemanager.dto.CreateInterfaceRequest;
 import com.example.devicemanager.dto.UpdateInterfaceRequest;
 import com.example.devicemanager.model.InterfaceStatus;
@@ -21,4 +22,7 @@ public interface NetworkInterfaceService {
     AllInterfacesResponse listAllInterfaces(String deviceId, InterfaceType type,
                                            InterfaceStatus status, Boolean enabled,
                                            int page, int pageSize);
+
+    // Batch operations
+    BatchDeleteInterfacesResponse batchDeleteInterfaces(List<String> interfaceIds);
 }

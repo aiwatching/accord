@@ -1,6 +1,8 @@
 package com.example.devicemanager.controller;
 
 import com.example.devicemanager.dto.AllInterfacesResponse;
+import com.example.devicemanager.dto.BatchDeleteInterfacesRequest;
+import com.example.devicemanager.dto.BatchDeleteInterfacesResponse;
 import com.example.devicemanager.model.InterfaceStatus;
 import com.example.devicemanager.model.InterfaceType;
 import com.example.devicemanager.service.NetworkInterfaceService;
@@ -29,6 +31,19 @@ public class AllInterfacesController {
         try {
             AllInterfacesResponse response = interfaceService.listAllInterfaces(
                     deviceId, type, status, enabled, page, pageSize);
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    @PostMapping("/batch-delete")
+    public ResponseEntity<BatchDeleteInterfacesResponse> batchDeleteInterfaces(
+            @RequestBody BatchDeleteInterfacesRequest request) {
+
+        try {
+            BatchDeleteInterfacesResponse response = interfaceService.batchDeleteInterfaces(
+                    request.getInterfaceIds());
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().build();

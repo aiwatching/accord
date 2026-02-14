@@ -22,4 +22,8 @@ public interface NetworkInterfaceRepository {
                                                InterfaceStatus status, Boolean enabled);
     long countWithFilters(String deviceId, InterfaceType type,
                          InterfaceStatus status, Boolean enabled);
+
+    // Batch operations
+    List<NetworkInterface> findByIds(List<String> ids);
+    void deleteByIds(List<String> ids);
 }

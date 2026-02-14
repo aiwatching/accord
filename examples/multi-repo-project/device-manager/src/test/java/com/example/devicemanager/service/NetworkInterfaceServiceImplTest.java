@@ -1,6 +1,7 @@
 package com.example.devicemanager.service;
 
 import com.example.devicemanager.dto.AllInterfacesResponse;
+import com.example.devicemanager.dto.BatchDeleteInterfacesResponse;
 import com.example.devicemanager.dto.CreateInterfaceRequest;
 import com.example.devicemanager.dto.UpdateInterfaceRequest;
 import com.example.devicemanager.model.Device;
@@ -18,6 +19,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -396,6 +398,101 @@ class NetworkInterfaceServiceImplTest {
         // Assert
         assertEquals(1, response.getInterfaces().size());
         assertEquals("Unknown", response.getInterfaces().get(0).getDeviceName());
+    }
+
+    @Test
+    void batchDeleteInterfaces_allExist_allDeleted() {
+        // Arrange
+        List<String> ids = Arrays.asList("iface1", "iface2", "iface3");
+        NetworkInterface iface1 = createTestInterface("iface1", "device1", "eth0");
+        NetworkInterface iface2 = createTestInterface("iface2", "device2", "wlan0");
+        NetworkInterface iface3 = createTestInterface("iface3", "device3", "eth1");
+
+        when(interfaceRepository.findByIds(ids)).thenReturn(Arrays.asList(iface1, iface2, iface3));
+
+        // Act
+        BatchDeleteInterfacesResponse response = interfaceService.batchDeleteInterfaces(ids);
+
+        // Assert
+        assertEquals(3, response.getDeleted().size());
+        assertEquals(0, response.getFailed().size());
+        assertEquals(3, response.getSummary().getTotalRequested());
+        assertEquals(3, response.getSummary().getSuccessfulDeletions());
+        assertEquals(0, response.getSummary().getFailedDeletions());
+
+        verify(interfaceRepository, times(1)).deleteByIds(ids);
+    }
+
+    @Test
+    void batchDeleteInterfaces_someNotFound_partialSuccess() {
+        // Arrange
+        List<String> ids = Arrays.asList("iface1", "iface2", "iface3");
+        NetworkInterface iface1 = createTestInterface("iface1", "device1", "eth0");
+        NetworkInterface iface3 = createTestInterface("iface3", "device3", "eth1");
+
+        when(interfaceRepository.findByIds(ids)).thenReturn(Arrays.asList(iface1, iface3));
+
+        // Act
+        BatchDeleteInterfacesResponse response = interfaceService.batchDeleteInterfaces(ids);
+
+        // Assert
+        assertEquals(2, response.getDeleted().size());
+        assertEquals(1, response.getFailed().size());
+        assertEquals(3, response.getSummary().getTotalRequested());
+        assertEquals(2, response.getSummary().getSuccessfulDeletions());
+        assertEquals(1, response.getSummary().getFailedDeletions());
+
+        assertEquals("iface2", response.getFailed().get(0).getInterfaceId());
+        assertEquals("Interface not found", response.getFailed().get(0).getReason());
+
+        verify(interfaceRepository, times(1)).deleteByIds(Arrays.asList("iface1", "iface3"));
+    }
+
+    @Test
+    void batchDeleteInterfaces_noneExist_allFailed() {
+        // Arrange
+        List<String> ids = Arrays.asList("iface1", "iface2");
+
+        when(interfaceRepository.findByIds(ids)).thenReturn(Collections.emptyList());
+
+        // Act
+        BatchDeleteInterfacesResponse response = interfaceService.batchDeleteInterfaces(ids);
+
+        // Assert
+        assertEquals(0, response.getDeleted().size());
+        assertEquals(2, response.getFailed().size());
+        assertEquals(2, response.getSummary().getTotalRequested());
+        assertEquals(0, response.getSummary().getSuccessfulDeletions());
+        assertEquals(2, response.getSummary().getFailedDeletions());
+
+        verify(interfaceRepository, never()).deleteByIds(anyList());
+    }
+
+    @Test
+    void batchDeleteInterfaces_emptyList_throwsException() {
+        // Act & Assert
+        assertThrows(IllegalArgumentException.class, () ->
+                interfaceService.batchDeleteInterfaces(Collections.emptyList()));
+    }
+
+    @Test
+    void batchDeleteInterfaces_nullList_throwsException() {
+        // Act & Assert
+        assertThrows(IllegalArgumentException.class, () ->
+                interfaceService.batchDeleteInterfaces(null));
+    }
+
+    @Test
+    void batchDeleteInterfaces_tooMany_throwsException() {
+        // Arrange
+        List<String> ids = new java.util.ArrayList<>();
+        for (int i = 0; i < 101; i++) {
+            ids.add("iface" + i);
+        }
+
+        // Act & Assert
+        assertThrows(IllegalArgumentException.class, () ->
+                interfaceService.batchDeleteInterfaces(ids));
     }
 
     private NetworkInterface createTestInterface(String id, String deviceId, String name) {
