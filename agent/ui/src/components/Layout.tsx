@@ -4,7 +4,7 @@ import { useApi } from '../hooks/useApi';
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const { connected } = useWebSocket();
-  const { data: hub } = useApi<{ project: string }>('/api/hub');
+  const { data: hub } = useApi<{ project: string }>('/api/hub/status');
 
   const projectName = hub?.project ?? 'Accord Hub';
 

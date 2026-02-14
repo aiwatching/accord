@@ -57,7 +57,14 @@ export async function startServer(port: number, hubDir: string): Promise<Fastify
   registerCommandRoutes(app);
 
   // Serve static UI files in production
-  const uiDistPath = path.resolve(hubDir, 'ui', 'dist');
+  // Try hub project's own ui/dist first, then fall back to agent's ui/dist (dev mode)
+  let uiDistPath = path.resolve(hubDir, 'ui', 'dist');
+  if (!fs.existsSync(uiDistPath)) {
+    const agentUiDist = path.resolve(import.meta.dirname, '..', '..', 'ui', 'dist');
+    if (fs.existsSync(agentUiDist)) {
+      uiDistPath = agentUiDist;
+    }
+  }
   if (fs.existsSync(uiDistPath)) {
     await app.register(fastifyStatic, {
       root: uiDistPath,

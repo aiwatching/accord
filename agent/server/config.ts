@@ -112,6 +112,11 @@ export function getServiceConfig(config: AccordConfig, serviceName: string): Ser
  * - multi-repo: sibling directory or configured path
  */
 export function getServiceDir(config: AccordConfig, serviceName: string, hubDir: string): string {
+  // Orchestrator always runs in the hub directory itself
+  if (serviceName === 'orchestrator') {
+    return hubDir;
+  }
+
   if (config.repo_model === 'monorepo') {
     return hubDir;
   }

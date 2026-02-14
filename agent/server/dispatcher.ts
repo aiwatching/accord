@@ -145,6 +145,16 @@ export class Dispatcher {
     return this.workers;
   }
 
+  /** Expose adapter for direct session invocation (console → orchestrator). */
+  getAdapter(): AgentAdapter {
+    return this.adapter;
+  }
+
+  /** Expose session manager for direct session invocation. */
+  getSessionManager(): SessionManager {
+    return this.sessionManager;
+  }
+
   // ── Worker assignment ────────────────────────────────────────────────────
 
   private assignRequests(pending: AccordRequest[]): Array<{ worker: Worker; request: AccordRequest }> {
