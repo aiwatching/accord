@@ -22,6 +22,11 @@
 - Calls web-server for data aggregation
 
 ## Recent Changes
+- 2026-02-13: req-002-add-batch-delete-ui — Batch delete API already implemented
+  - POST /api/pages/devices/batch-delete endpoint exists in PageController
+  - BatchDeleteRequest/Response models already created
+  - WebServerClient.batchDeleteDevices() already integrated with web-server
+  - API ready to support UI batch delete functionality
 - 2026-02-13: req-1771031931448-aednxg — Added device deletion functionality
   - Added DELETE /api/pages/devices/{id} endpoint in PageController
   - Added deleteDevice method in WebServerClient to call web-server
