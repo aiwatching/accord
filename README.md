@@ -18,57 +18,46 @@ Accord replaces all of that with a file-based protocol that lives in your Git re
 
 ## How It Works
 
-Real example: three independent Claude Code sessions coordinated a device search feature across a multi-repo Spring Boot project — with zero direct communication between agents.
-
 ```
-FRONTEND                       WEB-SERVER                      DEVICE-MANAGER
-(session 1)                    (session 2)                     (session 3)
-    │                              │                                │
-    │  "Add device search page"    │                                │
-    │  ├─ implement with mock data │                                │
-    │  ├─ create req-001 ─────────>│                                │
-    │  └─ push to hub              │                                │
-    │     (continues working)      │                                │
-    │                              │  /check-inbox                  │
-    │                              │  ├─ receive req-001            │
-    │                              │  ├─ approve, implement proxy   │
-    │                              │  ├─ create req-002 ──────────> │
-    │                              │  └─ push to hub                │
-    │                              │                                │
-    │                              │                     /check-inbox
-    │                              │                     ├─ receive req-002
-    │                              │                     ├─ approve, implement
-    │                              │                     ├─ update contract
-    │                              │                     ├─ complete req-002 ✓
-    │                              │                     └─ push to hub
-    │                              │                                │
-    │                              │  /check-inbox                  │
-    │                              │  ├─ see req-002 completed      │
-    │                              │  ├─ complete req-001 ✓         │
-    │                              │  └─ push to hub                │
-    │                              │                                │
-    │  /check-inbox                │                                │
-    │  full chain completed ✓      │                                │
-    │  switch from mock to real    │                                │
-    ▼                              ▼                                ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                        Accord Hub Service                            │
+│              Web UI + API + Scheduler + Worker Pool                   │
+│                                                                      │
+│   ┌──────────┐  ┌──────────────┐  ┌──────────┐  ┌───────────────┐  │
+│   │ Console  │  │  Request     │  │ Session  │  │  Dispatcher   │  │
+│   │ (chat)   │  │  Badges      │  │  Output  │  │  (workers)    │  │
+│   └────┬─────┘  └──────┬───────┘  └────┬─────┘  └───────┬───────┘  │
+│        │               │               │                │           │
+│        └───────────────┴───────────────┴────────────────┘           │
+│                              │                                       │
+│                     ┌────────▼────────┐                              │
+│                     │   Hub Directory  │                             │
+│                     │  (protocol data) │                             │
+│                     └────────┬────────┘                              │
+│                              │                                       │
+│              ┌───────────────┼───────────────┐                      │
+│              │               │               │                      │
+│        ┌─────▼────┐   ┌─────▼────┐   ┌──────▼───┐                  │
+│        │ device-  │   │ web-     │   │ frontend │                   │
+│        │ manager  │   │ server   │   │          │                   │
+│        └──────────┘   └──────────┘   └──────────┘                   │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-No servers. No message queues. No infrastructure. Just files and Git.
-
-Each agent worked independently in its own repo, reading contracts to understand other services' APIs, creating request files when it needed something new, and syncing through a shared hub repo. The full request chain (`pending → approved → in-progress → completed`) propagated across three services automatically.
+The Hub Service provides a single-page dashboard to interact with the orchestrator and all services. Type a message to the orchestrator — it decomposes your request, dispatches to the right services, and streams output in real time. All state is stored as plain files in the hub directory.
 
 ## Key Features
 
+- **Hub Service**: Web UI + REST API + WebSocket streaming — one command to start
 - **Agent-agnostic**: Works with Claude Code, Cursor, GitHub Copilot, Codex, or any agent that can read files and run git
-- **Two-level contracts**: External contracts (OpenAPI) for service-level APIs + internal contracts (Java interface, Python Protocol, etc.) for module-level boundaries
+- **Direct orchestrator session**: Chat with the orchestrator in real time via the console — maintains session continuity
+- **Two-level contracts**: External contracts (OpenAPI) for service-level APIs + internal contracts (code-level interfaces) for module-level boundaries
 - **Module registry**: Each module declares what it owns, what it can do, and what it depends on — agents use this for task routing
-- **Fractal protocol**: Same state machine and workflow at every granularity — from cross-service REST APIs to intra-service Java interfaces
-- **Monorepo and multi-repo**: Works with both — Hub-and-Spoke model for multi-repo with `accord sync`
-- **Zero infrastructure**: Git is the message bus, file system is the database
-- **Auto-scan contracts**: `accord scan` analyzes your code and generates contract files automatically — works with any AI agent
-- **Human-in-the-loop**: Agents create requests, humans approve them
-- **Full traceability**: Every request, approval, and contract change is a git commit
-- **Debug logging**: Optional JSONL logs trace every protocol action across sessions
+- **Fractal protocol**: Same state machine and workflow at every granularity level
+- **Monorepo and multi-repo**: Hub-and-Spoke model for multi-repo
+- **Auto-scan contracts**: Analyzes source code and generates contract files automatically
+- **Session logs**: All agent output persisted to `comms/sessions/*.log` for review
+- **Full traceability**: Every request, approval, and contract change tracked in JSONL history
 
 ## Quick Start
 
@@ -78,146 +67,160 @@ Each agent worked independently in its own repo, reading contracts to understand
 curl -fsSL https://raw.githubusercontent.com/aiwatching/accord/main/install.sh | bash
 ```
 
-### Initialize your project
+### Set up a project
 
 ```bash
-cd your-project
+# Interactive wizard — sets up hub + all services
+~/.accord/setup.sh
+
+# Or initialize a single repo
 ~/.accord/init.sh
 ```
 
-That's it — interactive prompts will guide you through project name, services, and adapter selection.
+### Start the Hub Service
 
-Subsequent runs detect the existing config and exit early. Use `--force` to re-initialize (existing contracts are preserved).
-
-### What it creates
-
-Everything under `.accord/`:
-
-```
-.accord/
-├── config.yaml              — Project configuration
-├── contracts/               — External OpenAPI specs for each service
-│   └── internal/            — Internal module-level contracts
-├── registry/                — Module registry (ownership, capabilities, dependencies)
-│   ├── frontend.md
-│   └── device-manager.md
-└── comms/                   — Inbox directories for each service/module
-    ├── inbox/{service}/
-    ├── archive/
-    └── PROTOCOL.md / TEMPLATE.md
-
-CLAUDE.md                    — Protocol rules (Claude Code adapter)
-.claude/commands/            — Slash commands (/accord-check-inbox, /accord-send-request, etc.)
+```bash
+accord-hub --hub-dir /path/to/hub --port 3000
 ```
 
-Then start your agent. It will automatically check for incoming requests on session start.
+Open `http://localhost:3000` — a single-page dashboard with:
+- **Request badges**: pending/active counts per service
+- **Session output**: real-time streaming from agent sessions
+- **Console**: send messages to orchestrator or any service
+
+### Update accord
+
+```bash
+accord-hub update
+```
+
+Pulls latest code, installs dependencies, rebuilds server + UI — one command.
 
 ## Architecture
 
+### Three-Tier Model
+
 ```
-┌─────────────────────────────────────────────────────┐
-│                  Adapter Layer                       │
-│            (per-agent implementation)                │
-│                                                     │
-│  ┌──────────┐  ┌──────────┐  ┌───────────────────┐ │
-│  │ Claude   │  │ Cursor   │  │ Codex / Generic   │ │
-│  │ Code     │  │          │  │                   │ │
-│  └────┬─────┘  └────┬─────┘  └─────────┬─────────┘ │
-│       └──────────┬───┴─────────────────┘            │
-│           Standard Interface                        │
-├─────────────────────────────────────────────────────┤
-│                  Protocol Layer                      │
-│             (fully agent-agnostic)                   │
-│                                                     │
-│  ┌───────────┐ ┌──────────┐ ┌─────────┐ ┌────────┐ │
-│  │ Contract  │ │ Message  │ │  Task   │ │ Module │ │
-│  │ Registry  │ │ Protocol │ │Lifecycle│ │Registry│ │
-│  └───────────┘ └──────────┘ └─────────┘ └────────┘ │
-│                                                     │
-│             All based on Git + Files                │
-└─────────────────────────────────────────────────────┘
+User          →  "Add device search to frontend"
+                         │
+Orchestrator  →  Decomposes into per-service requests
+                         │
+                ┌────────┼────────┐
+Services      → device-  web-     frontend
+                manager  server
 ```
 
-The protocol layer is the core — fully agent-agnostic, based on files and Git. The same state machine and message format apply at every level: from cross-service REST APIs to intra-service code interfaces. Adapters are thin translation layers that inject protocol rules into each agent's native config format.
+- **User** provides high-level directives
+- **Orchestrator** (agent on hub repo) decomposes, dispatches, routes, monitors
+- **Services** execute work autonomously (AI agent or human)
 
-### Protocol Layer Components
+### Hub Directory Structure
 
-**Contract Registry** — Two levels of contracts under the same protocol:
-- External contracts (`.accord/contracts/{service}.yaml`): OpenAPI specs for service-level APIs
-- Internal contracts (`.accord/contracts/internal/{module}.md`): Code-level interfaces for module boundaries
+The hub repo contains only protocol data — no application code:
 
-**Module Registry** — Lightweight directory of module ownership and capabilities:
-- Each service/module has `.accord/registry/{name}.md`
-- Declares: responsibility, data ownership, capabilities, dependencies
-- Agents use this for **task routing** — deciding which module to modify or request changes from
+```
+accord_hub/
+├── accord.yaml                     # Org config (lists teams)
+├── CLAUDE.md                       # Orchestrator instructions
+└── teams/{team}/
+    ├── config.yaml                 # Services, dispatcher settings
+    ├── contracts/
+    │   ├── device-manager.yaml     # OpenAPI contracts
+    │   ├── frontend.yaml
+    │   └── web-server.yaml
+    ├── registry/
+    │   └── {service}.yaml          # Ownership, capabilities
+    ├── directives/                 # High-level requirements
+    └── comms/
+        ├── inbox/{service}/        # Pending requests
+        ├── archive/                # Completed requests
+        ├── history/                # JSONL audit log
+        └── sessions/              # Agent session logs
+```
+
+### Protocol Layer (agent-agnostic)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Protocol Layer                        │
+│                                                         │
+│  ┌────────────┐ ┌───────────┐ ┌──────────┐ ┌─────────┐ │
+│  │ Contract   │ │  Message  │ │  Task    │ │ Module  │ │
+│  │ Registry   │ │  Protocol │ │Lifecycle │ │Registry │ │
+│  └────────────┘ └───────────┘ └──────────┘ └─────────┘ │
+│                                                         │
+│              All based on Git + Files                   │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Contract Registry** — Two levels:
+- External: `.accord/contracts/{service}.yaml` (OpenAPI)
+- Internal: `.accord/contracts/internal/{module}.md` (code-level interfaces)
 
 **Message Protocol** — File-based async communication:
-- Request files in `.accord/comms/inbox/{target}/` with YAML frontmatter
-- State machine: pending → approved → in-progress → completed
-- Archive completed/rejected requests to `.accord/comms/archive/`
+- Request files in `comms/inbox/{target}/` with YAML frontmatter
+- State machine: `pending → approved → in-progress → completed`
 
-**Contract Scanner** — Auto-generate contracts from source code:
-- Agent-agnostic instructions that any AI agent can follow
-- Supports Java/Spring, Python/FastAPI, TypeScript/Express, Go
-- Generated contracts start as `draft` — human review required before `stable`
+**Module Registry** — Service/module ownership and capabilities at `registry/{name}.yaml`
 
-## Repository Models
+### Hub Service
 
-### Monorepo
+The Hub Service (`accord/agent/`) provides:
 
-All services in one repo. Simplest setup — comms are local, no push required.
+| Component | Description |
+|-----------|-------------|
+| **REST API** | `/api/requests`, `/api/services`, `/api/logs`, `/api/session/send` |
+| **WebSocket** | Real-time streaming at `/ws` — session output, request events |
+| **Scheduler** | Polls inboxes, dispatches to worker pool |
+| **Dispatcher** | Assigns requests to workers with session affinity |
+| **Worker Pool** | Concurrent agent invocations via Claude Agent SDK or shell |
+| **Web UI** | Single-page dashboard — badges, output stream, console |
 
-### Multi-Repo (Hub-and-Spoke)
+The Hub Service reads from and writes to the hub directory. It does **not** live inside the hub repo — it's installed separately and pointed at the hub via `--hub-dir`.
 
-Each service has its own repo. A shared **Accord Hub** repo centralizes contracts and cross-service communication.
+## CLI Reference
 
+### accord-hub
+
+```bash
+accord-hub [command] [options]
+
+Commands:
+  update                Pull latest code, install deps, rebuild
+
+Options:
+  --hub-dir <path>      Hub directory (required)
+  --port <number>       HTTP port (default: 3000, or from config)
+  --workers <N>         Concurrent workers (default: 4)
+  --interval <seconds>  Polling interval (default: 30)
+  --timeout <seconds>   Per-request timeout (default: 600)
+  --agent-cmd <cmd>     Shell agent command (instead of Claude SDK)
+  --rebuild             Force rebuild before starting
 ```
-                    ┌─────────────────────┐
-                    │     Accord Hub      │
-                    │ contracts/ + comms/  │
-                    └───┬─────┬──────┬────┘
-                        │     │      │
-               sync push/pull │ sync push/pull
-                        │     │      │
-              ┌─────────▼┐  ┌─▼──────▼──┐  ┌──────────┐
-              │ device-  │  │ demo -      │  │ demo -     │
-              │ manager  │  │ engine    │  │ admin    │
-              └──────────┘  └───────────┘  └──────────┘
+
+Port can also be set in `config.yaml`:
+
+```yaml
+dispatcher:
+  port: 8080
+  workers: 4
 ```
 
-**Hub write rules**: Local `.accord/` is the write target. `.accord/hub/` is a read-only clone used for exchange — agents never edit it directly. `accord-sync.sh push` copies local → hub, `accord-sync.sh pull` copies hub → local.
+### Console Commands
 
-**Push retry**: If a push to hub conflicts with a concurrent change from another service, `accord-sync.sh` automatically retries with rebase (up to 3 attempts).
+Type these in the Web UI console:
 
-**Template protection**: Template contracts (from init) are not pushed to hub. Real contracts from hub are not overwritten by templates.
+| Command | Description |
+|---------|-------------|
+| `status` | Contract counts, inbox items, archived requests |
+| `scan` | Validate all contracts |
+| `check-inbox` | List pending inbox items |
+| `services` | List configured services |
+| `requests` | List requests (use `requests --status pending` to filter) |
+| `send <service> <msg>` | Create request in service inbox |
+| `help` | Show all commands |
 
-## Sync Modes
-
-Accord supports three modes for checking incoming requests:
-
-| Mode | How it works | Best for |
-|------|-------------|----------|
-| `on-action` | Agent auto-checks inbox before/after operations | Most projects (default) |
-| `auto-poll` | Background script polls every 5 minutes | Long-running sessions |
-| `manual` | User explicitly runs `/accord-check-inbox` | Full control |
-
-Set during init: `~/.accord/init.sh --sync-mode auto-poll`
-
-## Agent Behaviors
-
-Adapters inject these behaviors into the agent's instruction set:
-
-| Behavior | Trigger | What happens |
-|----------|---------|-------------|
-| ON_START | Session begins | Read config, sync from hub, check inbox, announce module |
-| ON_ROUTE | Task involves other modules | Read registry, check contracts, decide caller vs provider |
-| ON_NEED_INTERFACE | Need API from another module | Create request file, commit, sync to hub |
-| ON_APPROVED_REQUEST | Approved request in inbox | Present to user, implement, update contract |
-| ON_COMPLETE | Request fulfilled | Verify contract, archive request, sync to hub |
-| ON_DISPATCH | Multi-module feature | Break into per-module tasks, spawn subagents |
-| ON_SCAN | Contract generation | Analyze source code, generate draft contracts |
-| ON_CONFLICT | Merge conflict on contract | Notify user, show both versions |
-| ON_LOG | Every action (if debug enabled) | Write JSONL log entry |
+Typing a plain message with **orchestrator** selected sends it directly to the orchestrator agent session. With any other service selected, it creates a request file.
 
 ## Supported Agents
 
@@ -229,79 +232,16 @@ Adapters inject these behaviors into the agent's instruction set:
 | GitHub Copilot | Planned  | Coming    |
 | OpenAI Codex | Planned    | Coming    |
 
-The **generic adapter** works with any agent that can read a markdown instruction file.
-
-## Init Options
-
-```bash
-~/.accord/init.sh [options]
-
---project-name <name>    Override auto-detected project name
---services <csv>         Override auto-detected service names
---service <name>         Service directory that contains modules (auto-detects modules)
---modules <csv>          Explicit module names (added as peer-level entries with type: module)
---adapter <name>         claude-code | cursor | codex | generic | none
---repo-model <model>     monorepo | multi-repo (default: monorepo)
---hub <git-url>          Hub repo URL (multi-repo only)
---language <lang>        java | python | typescript | go (default: java)
---sync-mode <mode>       on-action | auto-poll | manual (default: on-action)
---scan                   Auto-scan source code for contracts after init
---force                  Re-initialize even if .accord/config.yaml exists
---no-interactive         Use auto-detected defaults without prompts
-```
-
-Init auto-detects: project name, language, adapter, services (from subdirectories), and modules (from subdirectories within services). All nodes (services and modules) are peer-level entries in config.yaml. Re-running init without `--force` safely exits with no changes.
-
-## Project Structure (after init)
-
-```
-your-project/
-├── .accord/
-│   ├── config.yaml                        # Project configuration
-│   ├── contracts/                         # External Contract Registry
-│   │   ├── frontend.yaml                  # OpenAPI spec per service
-│   │   ├── demo-engine.yaml
-│   │   ├── device-manager.yaml
-│   │   └── internal/                      # Internal Contract Registry
-│   │       ├── plugin.md                  # Code-level interface contract
-│   │       └── discovery.md
-│   ├── registry/                          # Module Registry
-│   │   ├── frontend.md                    # Ownership, capabilities, dependencies
-│   │   ├── demo-engine.md
-│   │   └── device-manager.md
-│   ├── comms/                             # Communication Layer
-│   │   ├── inbox/
-│   │   │   ├── frontend/                  # Service-level inboxes
-│   │   │   ├── demo-engine/
-│   │   │   ├── device-manager/
-│   │   │   ├── plugin/                    # Module-level inboxes
-│   │   │   └── discovery/
-│   │   ├── archive/
-│   │   ├── PROTOCOL.md
-│   │   └── TEMPLATE.md
-│   └── log/                               # Debug logs (gitignored)
-│       └── *.jsonl
-│
-├── device-manager/                        # Service with sub-modules
-│   ├── plugin/
-│   └── discovery/
-└── ... (your source code)
-```
-
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
-| [Install Guide](docs/INSTALL.md) | Hub-centric setup guide (setup.sh as primary entry point) |
+| [Install Guide](docs/INSTALL.md) | Hub-centric setup guide |
 | [Commands Reference](docs/COMMANDS.md) | All slash commands and CLI tools |
-| [v2 Architecture](docs/DESIGN-V2.md) | Orchestrator, directives, centralized routing, audit trail |
-| [Contract Types Roadmap](docs/CONTRACT-TYPES-ROADMAP.md) | Expansion plan: DB schema, AsyncAPI, gRPC, etc. |
-| [Protocol Specification](docs/PROTOCOL.md) | Core protocol: state machine, formats, rules (v1) |
-| [Standard Interface](docs/INTERFACE.md) | Required agent capabilities and behaviors (v1) |
-| [Design Document](docs/DESIGN.md) | Architecture rationale and design decisions (v1) |
+| [v2 Architecture](docs/DESIGN-V2.md) | Orchestrator, directives, routing, audit trail |
+| [Contract Types Roadmap](docs/CONTRACT-TYPES-ROADMAP.md) | Expansion plan: DB schema, AsyncAPI, gRPC |
+| [Protocol Specification](docs/PROTOCOL.md) | Core protocol: state machine, formats, rules |
 | [Session Context](docs/SESSION_CONTEXT.md) | WHY behind each design decision |
-| [Registry Format](protocol/registry-format.md) | Module registry format and usage |
-| [Scan Instructions](protocol/scan/SCAN_INSTRUCTIONS.md) | How contract scanning works |
 
 ## Contributing
 
