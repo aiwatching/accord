@@ -12,7 +12,7 @@ import { logger } from './logger.js';
 
 interface CLIArgs {
   hubDir: string;
-  port: number;
+  port?: number;
   workers?: number;
   interval?: number;
   timeout?: number;
@@ -22,7 +22,6 @@ interface CLIArgs {
 function parseArgs(argv: string[]): CLIArgs {
   const args: CLIArgs = {
     hubDir: process.cwd(),
-    port: 3000,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -92,6 +91,9 @@ async function main(): Promise<void> {
   const config = loadConfig(args.hubDir);
   const dispatcherConfig = getDispatcherConfig(config);
 
+  // Port: CLI > config > default
+  const port = args.port || config.dispatcher?.port || 3000;
+
   // Apply CLI overrides
   if (args.workers) dispatcherConfig.workers = args.workers;
   if (args.interval) dispatcherConfig.poll_interval = args.interval;
@@ -111,7 +113,7 @@ async function main(): Promise<void> {
   setHubState({ hubDir: args.hubDir, config, dispatcherConfig, dispatcher, scheduler });
 
   // Start the Fastify server (API + WebSocket + UI)
-  await startServer(args.port, args.hubDir);
+  await startServer(port, args.hubDir);
 
   // Start scheduling
   scheduler.start();
@@ -128,7 +130,7 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 
-  logger.info(`Accord Hub Service started — port ${args.port}, ${dispatcherConfig.workers} workers, poll every ${dispatcherConfig.poll_interval}s`);
+  logger.info(`Accord Hub Service started — port ${port}, ${dispatcherConfig.workers} workers, poll every ${dispatcherConfig.poll_interval}s`);
 }
 
 main().catch(err => {

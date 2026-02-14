@@ -1373,73 +1373,11 @@ scaffold_orchestrator_v2() {
     mkdir -p "$team_dir/protocol/templates"
     cp "$ACCORD_DIR/protocol/templates/directive.md.template" "$team_dir/protocol/templates/directive.md.template"
 
-    # ── Hub Service (server + UI) ──────────────────────────────────────────
-    # Copy server code
-    if [[ -d "$ACCORD_DIR/agent/server" ]]; then
-        mkdir -p "$TARGET_DIR/server"
-        cp -r "$ACCORD_DIR/agent/server/"* "$TARGET_DIR/server/"
-        log "Copied server/ (Hub Service code)"
-    fi
-
-    # Copy UI source + pre-built dist (if available)
-    if [[ -d "$ACCORD_DIR/agent/ui" ]]; then
-        mkdir -p "$TARGET_DIR/ui"
-        cp -r "$ACCORD_DIR/agent/ui/src" "$TARGET_DIR/ui/src"
-        cp "$ACCORD_DIR/agent/ui/index.html" "$TARGET_DIR/ui/index.html"
-        cp "$ACCORD_DIR/agent/ui/vite.config.ts" "$TARGET_DIR/ui/vite.config.ts"
-        # Copy pre-built dist if it exists
-        if [[ -d "$ACCORD_DIR/agent/ui/dist" ]]; then
-            cp -r "$ACCORD_DIR/agent/ui/dist" "$TARGET_DIR/ui/dist"
-            log "Copied ui/ (source + pre-built dist)"
-        else
-            log "Copied ui/ (source only — run 'npm run build:ui' to build)"
-        fi
-    fi
-
-    # Copy build config files
-    if [[ -f "$ACCORD_DIR/agent/tsconfig.json" ]]; then
-        cp "$ACCORD_DIR/agent/tsconfig.json" "$TARGET_DIR/tsconfig.json"
-        log "Copied tsconfig.json"
-    fi
-
-    # Copy entry point
-    if [[ -f "$ACCORD_DIR/agent/accord-server.ts" ]]; then
-        cp "$ACCORD_DIR/agent/accord-server.ts" "$TARGET_DIR/accord-server.ts"
-        log "Copied accord-server.ts"
-    fi
-
-    # Generate package.json from template
-    if [[ -f "$ACCORD_DIR/agent/package.template.json" ]]; then
-        local pkg_file="$TARGET_DIR/package.json"
-        if [[ ! -f "$pkg_file" ]]; then
-            cp "$ACCORD_DIR/agent/package.template.json" "$pkg_file"
-            replace_vars "$pkg_file" "PROJECT_NAME" "$PROJECT_NAME"
-            log "Generated package.json"
-        else
-            warn "package.json already exists (skipping)"
-        fi
-    fi
-
-    # ── Install dependencies + compile server ──────────────────────────────
-    if command -v node >/dev/null 2>&1 && [[ -f "$TARGET_DIR/package.json" ]]; then
-        local node_ver
-        node_ver="$(node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1)"
-        if [[ -n "$node_ver" && "$node_ver" -ge 20 ]]; then
-            log "Installing Hub Service dependencies..."
-            if (cd "$TARGET_DIR" && npm install --quiet 2>/dev/null); then
-                log "Compiling Hub Service..."
-                if (cd "$TARGET_DIR" && npx tsc 2>/dev/null); then
-                    log "Hub Service ready — start with: npm start"
-                else
-                    warn "TypeScript compilation failed — run 'npx tsc' manually"
-                fi
-            else
-                warn "npm install failed — run 'npm install' manually"
-            fi
-        else
-            log "Node.js >= 20 required for Hub Service (found v${node_ver:-unknown})"
-        fi
-    fi
+    # ── Hub Service ──────────────────────────────────────────────────────
+    # Hub Service code lives in accord/agent/ (installed locally).
+    # Start with: accord-hub --hub-dir <this-directory> --port 3000
+    log "Hub Service runs from accord/agent/ — start with:"
+    log "  accord-hub --hub-dir $TARGET_DIR --port 3000"
 
     log "v2 orchestrator hub scaffolding complete"
 }
