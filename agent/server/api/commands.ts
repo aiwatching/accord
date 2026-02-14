@@ -137,9 +137,13 @@ export function registerCommandRoutes(app: FastifyInstance): void {
       message: message.slice(0, 200),
     });
 
+    // Build orchestrator-constrained prompt: enforce protocol rules
+    const serviceNames = getServiceNames(config);
+    const orchestratorPrompt = buildOrchestratorPrompt(message, serviceNames, accordDir);
+
     try {
       const result = await adapter.invoke({
-        prompt: message,
+        prompt: orchestratorPrompt,
         cwd: hubDir,
         resumeSessionId: resumeId,
         timeout: dispatcherConfig.request_timeout,
@@ -339,4 +343,38 @@ ${message}
   logger.info(`Console: created request ${id} for ${service}`);
 
   return `Request created: **${id}**\n\n- **To**: ${service}\n- **Message**: ${message}\n- **File**: ${path.basename(filePath)}`;
+}
+
+// ── Orchestrator prompt builder ─────────────────────────────────────────────
+
+function buildOrchestratorPrompt(userMessage: string, serviceNames: string[], accordDir: string): string {
+  // Read the request template if available
+  const templatePath = path.join(accordDir, 'comms', 'TEMPLATE.md');
+  const hasTemplate = fs.existsSync(templatePath);
+
+  return `## CRITICAL ROLE CONSTRAINT
+
+You are the **orchestrator**. You MUST follow these rules absolutely:
+
+1. **NEVER write application code** — no models, controllers, services, components, APIs, or any implementation code.
+2. **NEVER create or modify files outside the hub repo** — you only manage protocol files in this hub directory.
+3. Your ONLY job is to **decompose tasks into requests** and **dispatch them to services** via the Accord protocol.
+4. For each sub-task, create a request file in the target service's inbox: \`comms/inbox/{service}/req-{id}.md\`
+5. Use the request template at \`comms/TEMPLATE.md\` for the correct format.${hasTemplate ? '' : ' If template is missing, use standard frontmatter with id, from, to, scope, type, priority, status, created, updated fields.'}
+
+## Available Services
+
+${serviceNames.map(s => `- ${s}`).join('\n')}
+
+## What You Must Do
+
+When the user describes a feature or task:
+1. **Analyze** which services need to be involved
+2. **Decompose** into concrete, actionable requests (one per service)
+3. **Create request files** in each service's inbox with clear instructions
+4. **Commit and push** so the daemon can dispatch workers to process them
+
+## User Message
+
+${userMessage}`;
 }

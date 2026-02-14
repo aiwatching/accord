@@ -9,36 +9,41 @@ export interface WireMessage {
 export function useWebSocket(url?: string) {
   const [connected, setConnected] = useState(false);
   const [events, setEvents] = useState<WireMessage[]>([]);
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
-
-  const connect = useCallback(() => {
-    const wsUrl = url ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
-    const ws = new WebSocket(wsUrl);
-
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => {
-      setConnected(false);
-      // Auto-reconnect after 3s
-      reconnectTimer.current = setTimeout(connect, 3000);
-    };
-    ws.onmessage = (ev) => {
-      try {
-        const msg = JSON.parse(ev.data) as WireMessage;
-        setEvents(prev => [...prev.slice(-199), msg]); // Keep last 200
-      } catch { /* ignore malformed */ }
-    };
-
-    wsRef.current = ws;
-  }, [url]);
 
   useEffect(() => {
+    let disposed = false;
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout>;
+
+    function connect() {
+      if (disposed) return;
+      const wsUrl = url ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        if (!disposed) setConnected(true);
+      };
+      ws.onclose = () => {
+        if (disposed) return;
+        setConnected(false);
+        reconnectTimer = setTimeout(connect, 3000);
+      };
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data) as WireMessage;
+          setEvents(prev => [...prev.slice(-199), msg]);
+        } catch { /* ignore malformed */ }
+      };
+    }
+
     connect();
+
     return () => {
-      clearTimeout(reconnectTimer.current);
-      wsRef.current?.close();
+      disposed = true;
+      clearTimeout(reconnectTimer);
+      ws?.close();
     };
-  }, [connect]);
+  }, [url]);
 
   const clearEvents = useCallback(() => setEvents([]), []);
 
