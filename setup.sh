@@ -292,6 +292,7 @@ execute_setup() {
             --team "$TEAM_NAME"
             --hub "$HUB_URL"
             --services "$services_csv"
+            --service-name "$svc"
             --adapter "$ADAPTER"
             --no-interactive
             --force

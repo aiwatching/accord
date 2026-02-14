@@ -63,6 +63,7 @@ Options:
   --service-repos <mapping>   Repo URLs for services (format: name=url,name=url) — orchestrator only
   --repo <git-url>            Git repo URL for this service (stored in config)
   --v2                        Use v2 multi-team hub structure
+  --service-name <name>       This service's name (v2 only; defaults to first in --services)
   --team <name>               Team name (v2 only)
   --org <name>                Organization name (v2 only)
   --force                     Re-initialize even if .accord/config.yaml exists
@@ -211,6 +212,7 @@ parse_args() {
             --service-repos)  SERVICE_REPOS="$2"; shift 2 ;;
             --repo)           REPO_URL="$2"; shift 2 ;;
             --v2)             V2=true; shift ;;
+            --service-name)   SERVICE_V2_NAME="$2"; shift 2 ;;
             --team)           TEAM="$2"; shift 2 ;;
             --org)            ORG="$2"; shift 2 ;;
             --scan)           SCAN=true; shift ;;
@@ -823,14 +825,22 @@ install_adapter() {
         local internal_dir=""
         [[ -n "$MODULES" ]] && internal_dir=".accord/contracts/internal/"
 
-        bash "$install_script" \
-            --project-dir "$TARGET_DIR" \
-            --project-name "$PROJECT_NAME" \
-            --service-list "$SERVICES" \
-            --contracts-dir ".accord/contracts/" \
-            --internal-contracts-dir "${internal_dir:-N/A}" \
-            --comms-dir ".accord/comms/" \
+        local adapter_args=(
+            --project-dir "$TARGET_DIR"
+            --project-name "$PROJECT_NAME"
+            --service-list "$SERVICES"
+            --contracts-dir ".accord/contracts/"
+            --internal-contracts-dir "${internal_dir:-N/A}"
+            --comms-dir ".accord/comms/"
             --sync-mode "$SYNC_MODE"
+        )
+        if [[ -n "$SERVICE_V2_NAME" ]]; then
+            adapter_args+=(--service-name "$SERVICE_V2_NAME")
+        fi
+        if [[ -n "$TEAM" ]]; then
+            adapter_args+=(--team "$TEAM")
+        fi
+        bash "$install_script" "${adapter_args[@]}"
 
         log "Adapter $ADAPTER installed"
     else
@@ -901,10 +911,13 @@ hub_sync_on_init() {
     [[ "$REPO_MODEL" != "multi-repo" ]] && return
     [[ -z "$HUB" ]] && return
 
-    # Determine own service name (first in SERVICES list)
-    IFS=',' read -ra svc_arr <<< "$SERVICES"
-    local own_svc="${svc_arr[0]}"
-    own_svc="$(echo "$own_svc" | xargs)"
+    # Determine own service name (explicit or first in SERVICES list)
+    local own_svc="$SERVICE_V2_NAME"
+    if [[ -z "$own_svc" ]]; then
+        IFS=',' read -ra svc_arr <<< "$SERVICES"
+        own_svc="${svc_arr[0]}"
+        own_svc="$(echo "$own_svc" | xargs)"
+    fi
 
     local hub_dir="$TARGET_DIR/.accord/hub"
 
@@ -1721,9 +1734,11 @@ main() {
             fi
         else
             # v2 service init
-            IFS=',' read -ra svc_arr <<< "$SERVICES"
-            SERVICE_V2_NAME="${svc_arr[0]}"
-            SERVICE_V2_NAME="$(echo "$SERVICE_V2_NAME" | xargs)"
+            if [[ -z "$SERVICE_V2_NAME" ]]; then
+                IFS=',' read -ra svc_arr <<< "$SERVICES"
+                SERVICE_V2_NAME="${svc_arr[0]}"
+                SERVICE_V2_NAME="$(echo "$SERVICE_V2_NAME" | xargs)"
+            fi
             [[ -z "$TEAM" ]] && err "--team is required for v2 service init"
             scaffold_service_v2
             hub_sync_on_init_v2
