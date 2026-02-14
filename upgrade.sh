@@ -164,10 +164,28 @@ echo ""
 
 # ── Step 2: Read project config ──────────────────────────────────────────────
 
-CONFIG_FILE="$TARGET_DIR/.accord/config.yaml"
+# Detect config location: service (.accord/config.yaml), flat hub (config.yaml), multi-team hub (accord.yaml → teams/*/config.yaml)
+CONFIG_FILE=""
+IS_HUB=false
 
-if [[ ! -f "$CONFIG_FILE" ]]; then
-    err "No Accord config found at $CONFIG_FILE — is this an Accord project?"
+if [[ -f "$TARGET_DIR/.accord/config.yaml" ]]; then
+    CONFIG_FILE="$TARGET_DIR/.accord/config.yaml"
+elif [[ -f "$TARGET_DIR/config.yaml" ]]; then
+    CONFIG_FILE="$TARGET_DIR/config.yaml"
+    IS_HUB=true
+elif [[ -f "$TARGET_DIR/accord.yaml" ]]; then
+    # Multi-team hub: find first team config
+    for team_config in "$TARGET_DIR"/teams/*/config.yaml; do
+        if [[ -f "$team_config" ]]; then
+            CONFIG_FILE="$team_config"
+            IS_HUB=true
+            break
+        fi
+    done
+fi
+
+if [[ -z "$CONFIG_FILE" ]]; then
+    err "No Accord config found in $TARGET_DIR — is this an Accord project?"
 fi
 
 # Parse config values
@@ -407,6 +425,67 @@ upgrade_ts_agent() {
     fi
 }
 
+# ── Upgrade Hub Service (server + UI) for hub projects ──────────────────────
+
+upgrade_hub_service() {
+    if [[ "$IS_HUB" != true ]]; then return; fi
+    if [[ ! -d "$TARGET_DIR/server" ]]; then
+        log "No server/ in hub project — skipping Hub Service upgrade"
+        return
+    fi
+
+    log "Upgrading Hub Service (server + UI)..."
+
+    # Copy server source
+    if [[ -d "$ACCORD_DIR/agent/server" ]]; then
+        cp -r "$ACCORD_DIR/agent/server/"* "$TARGET_DIR/server/"
+        log "Copied server/"
+    fi
+
+    # Copy UI source + pre-built dist
+    if [[ -d "$ACCORD_DIR/agent/ui" ]]; then
+        mkdir -p "$TARGET_DIR/ui"
+        cp -r "$ACCORD_DIR/agent/ui/src" "$TARGET_DIR/ui/src"
+        cp "$ACCORD_DIR/agent/ui/index.html" "$TARGET_DIR/ui/index.html"
+        cp "$ACCORD_DIR/agent/ui/vite.config.ts" "$TARGET_DIR/ui/vite.config.ts"
+        if [[ -d "$ACCORD_DIR/agent/ui/dist" ]]; then
+            cp -r "$ACCORD_DIR/agent/ui/dist" "$TARGET_DIR/ui/dist"
+            log "Copied ui/ (source + pre-built dist)"
+        else
+            log "Copied ui/ (source only)"
+        fi
+    fi
+
+    # Copy tsconfig + entry point
+    if [[ -f "$ACCORD_DIR/agent/tsconfig.json" ]]; then
+        cp "$ACCORD_DIR/agent/tsconfig.json" "$TARGET_DIR/tsconfig.json"
+    fi
+    if [[ -f "$ACCORD_DIR/agent/accord-server.ts" ]]; then
+        cp "$ACCORD_DIR/agent/accord-server.ts" "$TARGET_DIR/accord-server.ts"
+    fi
+
+    # Install dependencies + compile
+    if command -v node >/dev/null 2>&1; then
+        local node_ver
+        node_ver="$(node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1)"
+        if [[ -n "$node_ver" && "$node_ver" -ge 20 && -f "$TARGET_DIR/package.json" ]]; then
+            log "Installing dependencies..."
+            if (cd "$TARGET_DIR" && npm install --quiet 2>/dev/null); then
+                log "Compiling server..."
+                if (cd "$TARGET_DIR" && npx tsc 2>/dev/null); then
+                    log "Hub Service build complete"
+                else
+                    warn "TypeScript compilation failed — run 'npx tsc' manually in $TARGET_DIR"
+                fi
+            else
+                warn "npm install failed — run 'npm install' manually in $TARGET_DIR"
+            fi
+        fi
+    fi
+
+    UPDATED=$((UPDATED + 1))
+}
+
 # ── Execute ──────────────────────────────────────────────────────────────────
 
 upgrade_protocol_files
@@ -415,6 +494,7 @@ upgrade_generic
 upgrade_watch_script
 upgrade_debug_viewer
 upgrade_ts_agent
+upgrade_hub_service
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 
