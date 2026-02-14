@@ -10,6 +10,7 @@ import { registerRequestRoutes } from './api/requests.js';
 import { registerDirectiveRoutes } from './api/directives.js';
 import { registerWorkerRoutes } from './api/workers.js';
 import { registerHubRoutes } from './api/hub.js';
+import { registerCommandRoutes } from './api/commands.js';
 import { logger } from './logger.js';
 
 let app: FastifyInstance | null = null;
@@ -53,6 +54,7 @@ export async function startServer(port: number, hubDir: string): Promise<Fastify
   registerDirectiveRoutes(app);
   registerWorkerRoutes(app);
   registerHubRoutes(app);
+  registerCommandRoutes(app);
 
   // Serve static UI files in production
   const uiDistPath = path.resolve(hubDir, 'ui', 'dist');

@@ -33,6 +33,55 @@ interface ServiceItem {
   pendingRequests: number;
 }
 
+function getEventColor(type: string): string {
+  if (type === 'request:claimed' || type === 'request:completed') return '#4ade80';
+  if (type === 'request:failed') return '#f87171';
+  if (type === 'worker:output') return '#475569';
+  if (type.startsWith('worker:')) return '#60a5fa';
+  if (type.startsWith('sync:')) return '#a78bfa';
+  if (type === 'scheduler:tick') return '#64748b';
+  return '#94a3b8';
+}
+
+function formatEventData(type: string, data: Record<string, unknown>): string {
+  const svc = (data.service ?? data.serviceName ?? '') as string;
+  const reqId = (data.requestId ?? data.id ?? '') as string;
+  const workerId = data.workerId as number | undefined;
+
+  switch (type) {
+    case 'request:claimed':
+      return `${svc} claimed ${reqId}${workerId !== undefined ? ` (worker ${workerId})` : ''}`;
+    case 'request:completed':
+      return `${svc} completed ${reqId}`;
+    case 'request:failed': {
+      const err = (data.error ?? '') as string;
+      const attempts = data.attempts as number | undefined;
+      return `${svc} failed ${reqId}${err ? `: ${err}` : ''}${attempts ? ` (attempt ${attempts})` : ''}`;
+    }
+    case 'worker:started':
+      return `Worker ${workerId ?? '?'} started on ${reqId} (${svc})`;
+    case 'worker:output':
+      return `output chunk (${svc})`;
+    case 'worker:finished': {
+      const ok = data.success ? 'OK' : 'FAIL';
+      return `Worker ${workerId ?? '?'} finished ${reqId} ${ok}`;
+    }
+    case 'sync:pull':
+    case 'sync:push': {
+      const dir = type.split(':')[1];
+      const ok = data.success ? 'succeeded' : 'failed';
+      return `Sync ${dir} ${ok}`;
+    }
+    case 'scheduler:tick': {
+      const pending = data.pendingCount ?? 0;
+      const processed = data.processedCount ?? 0;
+      return `Scheduler tick: ${pending} pending, ${processed} processed`;
+    }
+    default:
+      return JSON.stringify(data);
+  }
+}
+
 function Card({ title, value, subtitle }: { title: string; value: string | number; subtitle?: string }) {
   return (
     <div style={{
@@ -55,7 +104,8 @@ export function Dashboard() {
   const { events } = useWebSocket();
 
   const totalPending = services?.reduce((sum, s) => sum + s.pendingRequests, 0) ?? 0;
-  const recentEvents = events.slice(-20);
+  // Filter out worker:output (high-frequency noise — shown in StreamingOutput below)
+  const recentEvents = events.filter(e => e.type !== 'worker:output').slice(-20);
 
   return (
     <div>
@@ -111,8 +161,8 @@ export function Dashboard() {
             {recentEvents.map((e, i) => (
               <div key={i} style={{ padding: '2px 0', color: '#cbd5e1' }}>
                 <span style={{ color: '#64748b' }}>{new Date(e.timestamp).toLocaleTimeString()}</span>{' '}
-                <span style={{ color: '#3b82f6' }}>{e.type}</span>{' '}
-                <span style={{ color: '#94a3b8' }}>{JSON.stringify(e.data)}</span>
+                <span style={{ color: getEventColor(e.type) }}>{e.type}</span>{' '}
+                <span style={{ color: getEventColor(e.type), opacity: 0.8 }}>{formatEventData(e.type, e.data)}</span>
               </div>
             ))}
           </div>

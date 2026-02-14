@@ -5,6 +5,7 @@ import { Dashboard } from './pages/Dashboard';
 import { Services } from './pages/Services';
 import { Requests } from './pages/Requests';
 import { Workers } from './pages/Workers';
+import { Console } from './pages/Console';
 
 export function App() {
   return (
@@ -15,6 +16,7 @@ export function App() {
           <Route path="/services" element={<Services />} />
           <Route path="/requests" element={<Requests />} />
           <Route path="/workers" element={<Workers />} />
+          <Route path="/console" element={<Console />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Layout>
