@@ -57,6 +57,29 @@ export interface SchedulerTickEvent {
   timestamp: string;
 }
 
+export interface SessionStartEvent {
+  service: string;
+  message: string;
+}
+
+export interface SessionOutputEvent {
+  service: string;
+  chunk: string;
+  streamIndex: number;
+}
+
+export interface SessionCompleteEvent {
+  service: string;
+  durationMs: number;
+  costUsd?: number;
+  numTurns?: number;
+}
+
+export interface SessionErrorEvent {
+  service: string;
+  error: string;
+}
+
 // ── Event map ────────────────────────────────────────────────────────────────
 
 export interface EventMap {
@@ -69,6 +92,10 @@ export interface EventMap {
   'sync:pull': SyncEvent;
   'sync:push': SyncEvent;
   'scheduler:tick': SchedulerTickEvent;
+  'session:start': SessionStartEvent;
+  'session:output': SessionOutputEvent;
+  'session:complete': SessionCompleteEvent;
+  'session:error': SessionErrorEvent;
 }
 
 export type EventName = keyof EventMap;
@@ -108,6 +135,7 @@ class AccordEventBus extends EventEmitter {
       'request:claimed', 'request:completed', 'request:failed',
       'worker:started', 'worker:output', 'worker:finished',
       'sync:pull', 'sync:push', 'scheduler:tick',
+      'session:start', 'session:output', 'session:complete', 'session:error',
     ];
 
     const handlers = new Map<string, (...args: unknown[]) => void>();

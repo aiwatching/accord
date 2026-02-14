@@ -5,14 +5,12 @@ import { useApi } from '../hooks/useApi';
 // ── Types ──────────────────────────────────────────────────────────────────
 
 interface RequestItem {
-  frontmatter: {
-    id: string;
-    to: string;
-    status: string;
-    priority: string;
-    type: string;
-  };
-  serviceName: string;
+  id: string;
+  to: string;
+  service: string;
+  status: string;
+  priority: string;
+  type: string;
 }
 
 interface LogEntry {
@@ -34,7 +32,6 @@ interface ServiceItem {
 
 interface HubInfo {
   project: string;
-  services: ServiceItem[];
 }
 
 // ── Inline event types appended to the output view ─────────────────────────
@@ -55,7 +52,8 @@ export function Console() {
   // -- Data fetching --
   const { data: requests, refresh: refreshRequests } = useApi<RequestItem[]>('/api/requests');
   const { data: logs } = useApi<LogEntry[]>('/api/logs');
-  const { data: hub } = useApi<HubInfo>('/api/hub');
+  const { data: hub } = useApi<HubInfo>('/api/hub/status');
+  const { data: serviceList } = useApi<ServiceItem[]>('/api/services');
   const { events } = useWebSocket();
 
   // -- Output lines (session output + inline events + command results) --
@@ -74,7 +72,14 @@ export function Console() {
   const lastEventIdx = useRef(0);
 
   // -- Derive service list --
-  const services = useMemo(() => hub?.services?.map(s => s.name) ?? [], [hub]);
+  const services = useMemo(() => {
+    const names = serviceList?.map(s => s.name) ?? [];
+    // Always include orchestrator at the top
+    if (!names.includes('orchestrator')) {
+      names.unshift('orchestrator');
+    }
+    return names;
+  }, [serviceList]);
 
   // -- Poll requests every 10s --
   useEffect(() => {
@@ -125,13 +130,39 @@ export function Console() {
       const reqId = d.requestId as string | undefined;
       const svc = d.service as string | undefined;
 
-      if (ev.type === 'worker:output') {
+      if (ev.type === 'worker:output' || ev.type === 'session:output') {
         newLines.push({
           key: `ws-${Date.now()}-${Math.random()}`,
           type: 'chunk',
           requestId: reqId,
           service: svc,
           text: d.chunk as string,
+          timestamp: Date.now(),
+        });
+      } else if (ev.type === 'session:start') {
+        newLines.push({
+          key: `ev-${Date.now()}-${Math.random()}`,
+          type: 'event',
+          service: svc,
+          text: `[SESSION] ${svc}: ${(d.message as string) ?? ''}`,
+          timestamp: Date.now(),
+        });
+      } else if (ev.type === 'session:complete') {
+        const cost = d.costUsd as number | undefined;
+        const turns = d.numTurns as number | undefined;
+        newLines.push({
+          key: `ev-${Date.now()}-${Math.random()}`,
+          type: 'event',
+          service: svc,
+          text: `[DONE] ${svc} — ${turns ?? '?'} turns, $${cost?.toFixed(4) ?? '?'}`,
+          timestamp: Date.now(),
+        });
+      } else if (ev.type === 'session:error') {
+        newLines.push({
+          key: `ev-${Date.now()}-${Math.random()}`,
+          type: 'event',
+          service: svc,
+          text: `[ERROR] ${svc}: ${d.error as string}`,
           timestamp: Date.now(),
         });
       } else if (ev.type === 'request:claimed' || ev.type === 'request:completed' || ev.type === 'request:failed') {
@@ -175,42 +206,102 @@ export function Console() {
     setCmdHistory(prev => [...prev, raw]);
     setExecuting(true);
 
-    // Determine the actual command to send
-    const isCommand = raw.startsWith('/') || ['status', 'scan', 'check-inbox', 'validate', 'sync', 'services', 'requests', 'help'].includes(raw.split(/\s+/)[0]);
-    const command = isCommand
-      ? (raw.startsWith('/') ? raw.slice(1) : raw)
-      : `send ${selectedService} ${raw}`;
+    // Determine if this is a built-in command or a message to an agent
+    const firstWord = raw.split(/\s+/)[0];
+    const isCommand = raw.startsWith('/') || ['status', 'scan', 'check-inbox', 'validate', 'sync', 'services', 'requests', 'help'].includes(firstWord);
 
-    try {
-      const res = await fetch('/api/commands/execute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command }),
-      });
-      const data = await res.json();
-      setOutputLines(prev => [...prev, {
-        key: `cmd-${Date.now()}`,
-        type: 'command-result',
-        text: `$ ${command}\n${data.output ?? data.error ?? 'No output'}`,
-        timestamp: Date.now(),
-        success: data.success ?? false,
-      }]);
-      // Refresh requests after sending
-      if (!isCommand) {
-        refreshRequests();
+    if (isCommand) {
+      // Execute as a built-in command
+      const command = raw.startsWith('/') ? raw.slice(1) : raw;
+      try {
+        const res = await fetch('/api/commands/execute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command }),
+        });
+        const data = await res.json();
+        setOutputLines(prev => [...prev, {
+          key: `cmd-${Date.now()}`,
+          type: 'command-result',
+          text: `$ ${command}\n${data.output ?? data.error ?? 'No output'}`,
+          timestamp: Date.now(),
+          success: data.success ?? false,
+        }]);
+      } catch (err) {
+        setOutputLines(prev => [...prev, {
+          key: `cmd-err-${Date.now()}`,
+          type: 'command-result',
+          text: `$ ${command}\nNetwork error: ${err}`,
+          timestamp: Date.now(),
+          success: false,
+        }]);
       }
-    } catch (err) {
+    } else if (selectedService === 'orchestrator') {
+      // Direct session interaction with orchestrator
+      // Output streams via WebSocket session:output events — just fire and forget
       setOutputLines(prev => [...prev, {
-        key: `cmd-err-${Date.now()}`,
-        type: 'command-result',
-        text: `$ ${command}\nNetwork error: ${err}`,
+        key: `msg-${Date.now()}`,
+        type: 'event',
+        service: 'orchestrator',
+        text: `[YOU] ${raw}`,
         timestamp: Date.now(),
-        success: false,
       }]);
-    } finally {
-      setExecuting(false);
-      inputRef.current?.focus();
+      try {
+        const res = await fetch('/api/session/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: raw }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          setOutputLines(prev => [...prev, {
+            key: `err-${Date.now()}`,
+            type: 'event',
+            service: 'orchestrator',
+            text: `[ERROR] ${data.error ?? res.statusText}`,
+            timestamp: Date.now(),
+          }]);
+        }
+      } catch (err) {
+        setOutputLines(prev => [...prev, {
+          key: `err-${Date.now()}`,
+          type: 'event',
+          service: 'orchestrator',
+          text: `[ERROR] Network error: ${err}`,
+          timestamp: Date.now(),
+        }]);
+      }
+    } else {
+      // Send as request to other services (via file-based protocol)
+      const command = `send ${selectedService} ${raw}`;
+      try {
+        const res = await fetch('/api/commands/execute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command }),
+        });
+        const data = await res.json();
+        setOutputLines(prev => [...prev, {
+          key: `cmd-${Date.now()}`,
+          type: 'command-result',
+          text: `$ ${command}\n${data.output ?? data.error ?? 'No output'}`,
+          timestamp: Date.now(),
+          success: data.success ?? false,
+        }]);
+        refreshRequests();
+      } catch (err) {
+        setOutputLines(prev => [...prev, {
+          key: `cmd-err-${Date.now()}`,
+          type: 'command-result',
+          text: `$ ${command}\nNetwork error: ${err}`,
+          timestamp: Date.now(),
+          success: false,
+        }]);
+      }
     }
+
+    setExecuting(false);
+    inputRef.current?.focus();
   }, [input, executing, selectedService, refreshRequests]);
 
   // -- Key handling --
@@ -246,11 +337,11 @@ export function Console() {
     if (!requests) return [];
     const groups: Record<string, { pending: number; active: number }> = {};
     for (const r of requests) {
-      const svc = r.serviceName;
+      const svc = r.service;
       if (!groups[svc]) groups[svc] = { pending: 0, active: 0 };
-      if (r.frontmatter.status === 'pending' || r.frontmatter.status === 'approved') {
+      if (r.status === 'pending' || r.status === 'approved') {
         groups[svc].pending++;
-      } else if (r.frontmatter.status === 'in-progress') {
+      } else if (r.status === 'in-progress') {
         groups[svc].active++;
       }
     }

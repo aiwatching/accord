@@ -5,6 +5,7 @@ import { getHubState } from '../hub-state.js';
 import { getAccordDir, getServiceNames, getInboxPath } from '../config.js';
 import { scanInboxes, scanArchives } from '../scanner.js';
 import { executeCommand } from '../commands.js';
+import { eventBus } from '../event-bus.js';
 import { logger } from '../logger.js';
 
 interface ExecBody {
@@ -91,6 +92,102 @@ export function registerCommandRoutes(app: FastifyInstance): void {
 
     const content = fs.readFileSync(logFile, 'utf-8');
     return { requestId: req.params.requestId, content };
+  });
+
+  // POST /api/session/send — direct orchestrator session interaction
+  // Invokes the AI agent on the hub directory, streams output via WebSocket,
+  // and maintains session continuity across messages.
+  let sessionBusy = false;
+
+  app.post<{ Body: { message: string } }>('/api/session/send', async (req, reply) => {
+    const message = (req.body.message ?? '').trim();
+    if (!message) {
+      return reply.status(400).send({ error: 'message is required' });
+    }
+
+    if (sessionBusy) {
+      return reply.status(409).send({ error: 'Orchestrator session is busy. Wait for the current message to complete.' });
+    }
+
+    sessionBusy = true;
+    const { hubDir, config, dispatcherConfig, dispatcher } = getHubState();
+    const adapter = dispatcher.getAdapter();
+    const sessionManager = dispatcher.getSessionManager();
+    const accordDir = getAccordDir(hubDir, config);
+
+    // Resolve existing session for resume
+    const existing = adapter.supportsResume
+      ? sessionManager.getSession('orchestrator')
+      : undefined;
+    const resumeId = existing?.sessionId;
+
+    const startTime = Date.now();
+    let streamIndex = 0;
+
+    logger.info(`[session] Orchestrator message: ${message.slice(0, 80)}...`);
+
+    eventBus.emit('session:start', {
+      service: 'orchestrator',
+      message: message.slice(0, 200),
+    });
+
+    try {
+      const result = await adapter.invoke({
+        prompt: message,
+        cwd: hubDir,
+        resumeSessionId: resumeId,
+        timeout: dispatcherConfig.request_timeout,
+        model: dispatcherConfig.model,
+        maxTurns: 50,
+        maxBudgetUsd: dispatcherConfig.max_budget_usd,
+        onOutput: (chunk: string) => {
+          eventBus.emit('session:output', {
+            service: 'orchestrator',
+            chunk,
+            streamIndex: streamIndex++,
+          });
+        },
+      });
+
+      // Update session for future resume
+      if (result.sessionId) {
+        sessionManager.updateSession('orchestrator', result.sessionId);
+        sessionManager.saveToDisk(accordDir);
+      }
+
+      const durationMs = Date.now() - startTime;
+
+      eventBus.emit('session:complete', {
+        service: 'orchestrator',
+        durationMs,
+        costUsd: result.costUsd,
+        numTurns: result.numTurns,
+      });
+
+      return {
+        success: true,
+        durationMs,
+        costUsd: result.costUsd,
+        numTurns: result.numTurns,
+        sessionId: result.sessionId,
+      };
+    } catch (err) {
+      const error = String(err);
+      logger.error(`[session] Orchestrator error: ${error}`);
+
+      eventBus.emit('session:error', {
+        service: 'orchestrator',
+        error,
+      });
+
+      return reply.status(500).send({
+        success: false,
+        error,
+        durationMs: Date.now() - startTime,
+      });
+    } finally {
+      sessionBusy = false;
+    }
   });
 }
 
