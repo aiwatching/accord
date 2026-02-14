@@ -20,6 +20,8 @@
 - 2026-02-13: req-000-service-joined-device-manager — Acknowledged device-manager joining the project. Hub contracts synced locally at .accord/.hub/accord_hub/contracts/device-manager.yaml
 - 2026-02-13: req-cascade-1771031931448-aednxg-01 — Added DELETE /api/proxy/devices/{id} endpoint to support device deletion. Implemented deleteDevice method in DeviceAggregationService that proxies to device-manager. Updated web-server contract.
 - 2026-02-14: req-001-integrate-auth-server — Migrated authentication to use auth-server service. Removed local auth logic. Implemented AuthServerClient for communicating with auth-server (validate, login, register, logout, refresh endpoints). Created AuthInterceptor to validate JWT tokens on protected endpoints. Added proxy endpoints in AuthController (/api/auth/login, /api/auth/register, /api/auth/logout, /api/auth/refresh). Protected /api/dashboard/** and /api/proxy/** endpoints with authentication. Added configuration for auth.server.url (default: http://localhost:4000). Updated web-server contract to version 0.2.0 with auth endpoints and security schemes. Tests pass successfully.
+- 2026-02-14: req-002-add-auth-integration-tests — Added comprehensive test suite for auth integration. Created AuthServerClientTest with error handling tests. Added mockito-inline dependency for testing. Tests verify auth-server communication, error handling, and best-effort logout behavior. All tests pass successfully.
+- 2026-02-14: req-003-implement-login-functionality — Request completed. All requested login functionality (login, register, logout, refresh endpoints) was already implemented in req-001-integrate-auth-server. No additional changes needed.
 
 
 
