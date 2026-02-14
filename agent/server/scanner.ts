@@ -253,6 +253,12 @@ export function getPendingRequests(requests: AccordRequest[]): AccordRequest[] {
   return requests.filter(r => r.frontmatter.status === 'pending');
 }
 
+export function getDispatchableRequests(requests: AccordRequest[]): AccordRequest[] {
+  return requests.filter(r =>
+    r.frontmatter.status === 'pending' || r.frontmatter.status === 'in-progress'
+  );
+}
+
 export function sortByPriority(requests: AccordRequest[]): AccordRequest[] {
   return [...requests].sort((a, b) => {
     const pDiff = PRIORITY_ORDER[a.frontmatter.priority] - PRIORITY_ORDER[b.frontmatter.priority];

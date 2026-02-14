@@ -83,6 +83,12 @@ export class Worker {
     const historyDir = `${accordDir}/comms/history`;
 
     try {
+      // Guard: check if request file still exists (may have been archived/deleted)
+      if (!fs.existsSync(request.filePath)) {
+        logger.warn(`Worker ${this.id}: request file gone — ${request.filePath}`);
+        return { requestId: reqId, success: false, durationMs: Date.now() - startTime, error: 'Request file no longer exists' };
+      }
+
       // Command fast-path: no AI agent needed
       if (request.frontmatter.type === 'command' && request.frontmatter.command) {
         return await this.processCommand(request, serviceDir, accordDir, historyDir, startTime);
@@ -185,9 +191,14 @@ export class Worker {
     }
 
     // Step 2: Claim — set in-progress, commit + push
-    setRequestStatus(request.filePath, 'in-progress');
-    const attempts = incrementAttempts(request.filePath);
-    gitCommit(serviceDir, `accord: claim ${reqId} (attempt ${attempts})`);
+    const isRecovery = request.frontmatter.status === 'in-progress';
+    if (!isRecovery) {
+      setRequestStatus(request.filePath, 'in-progress');
+    }
+    const attempts = isRecovery
+      ? (request.frontmatter.attempts ?? 1)
+      : incrementAttempts(request.filePath);
+    gitCommit(serviceDir, `accord: claim ${reqId} (attempt ${attempts}${isRecovery ? ', recovery' : ''})`);
 
     eventBus.emit('request:claimed', {
       requestId: reqId,

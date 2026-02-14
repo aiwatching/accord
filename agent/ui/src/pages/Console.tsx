@@ -28,6 +28,11 @@ interface LogDetail {
 interface ServiceItem {
   name: string;
   type?: string;
+  language?: string;
+  maintainer?: string;
+  description?: string;
+  status?: string;
+  pendingRequests?: number;
 }
 
 interface HubInfo {
@@ -367,41 +372,63 @@ export function Console() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Section 1: Request badges */}
+      {/* Section 1: Services overview */}
       <div style={{
-        padding: '8px 16px',
+        padding: '8px 12px',
         borderBottom: '1px solid #334155',
         display: 'flex',
         gap: 8,
-        alignItems: 'center',
         flexShrink: 0,
         flexWrap: 'wrap',
         minHeight: 40,
       }}>
-        {badges.length === 0 && (
-          <span style={{ color: '#64748b', fontSize: 13 }}>No active requests</span>
+        {(!serviceList || serviceList.length === 0) && (
+          <span style={{ color: '#64748b', fontSize: 13 }}>Loading services...</span>
         )}
-        {badges.map(b => (
-          <span key={b.name} style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-            background: '#334155',
-            borderRadius: 12,
-            padding: '3px 10px',
-            fontSize: 12,
-            color: '#e2e8f0',
-          }}>
-            <span style={{ fontWeight: 600 }}>{b.name}</span>
-            {b.pending > 0 && (
-              <span style={{ color: '#fbbf24' }}>{b.pending} pending</span>
-            )}
-            {b.pending > 0 && b.active > 0 && <span style={{ color: '#64748b' }}>·</span>}
-            {b.active > 0 && (
-              <span style={{ color: '#4ade80' }}>{b.active} active</span>
-            )}
-          </span>
-        ))}
+        {serviceList?.map(svc => {
+          const badge = badges.find(b => b.name === svc.name);
+          const statusColor = svc.status === 'working' ? '#4ade80'
+            : svc.status === 'pending' ? '#fbbf24' : '#64748b';
+          const statusDot = svc.status === 'working' ? '\u25CF'
+            : svc.status === 'pending' ? '\u25CF' : '\u25CB';
+          return (
+            <div key={svc.name} style={{
+              background: '#1e293b',
+              border: '1px solid #334155',
+              borderRadius: 8,
+              padding: '6px 12px',
+              minWidth: 140,
+              fontSize: 12,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                <span style={{ color: statusColor, fontSize: 10 }}>{statusDot}</span>
+                <span style={{ color: '#f1f5f9', fontWeight: 600, fontSize: 13 }}>{svc.name}</span>
+              </div>
+              <div style={{ color: '#64748b', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {svc.maintainer && <span>{svc.maintainer}</span>}
+                {svc.language && <span>{svc.language}</span>}
+                {svc.type && svc.type !== 'service' && (
+                  <span style={{ color: '#818cf8' }}>{svc.type}</span>
+                )}
+              </div>
+              {(badge?.pending || badge?.active) ? (
+                <div style={{ marginTop: 3, display: 'flex', gap: 6 }}>
+                  {badge.pending > 0 && (
+                    <span style={{ color: '#fbbf24' }}>{badge.pending} pending</span>
+                  )}
+                  {badge.active > 0 && (
+                    <span style={{ color: '#4ade80' }}>{badge.active} active</span>
+                  )}
+                </div>
+              ) : null}
+              {svc.description && (
+                <div style={{ color: '#94a3b8', marginTop: 2, fontSize: 11 }}>
+                  {svc.description}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Section 2: Session output (main area) */}

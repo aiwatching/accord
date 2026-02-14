@@ -2,7 +2,7 @@ import type { AccordConfig } from './types.js';
 import type { Dispatcher } from './dispatcher.js';
 import { eventBus } from './event-bus.js';
 import { syncPull } from './git-sync.js';
-import { scanInboxes, getPendingRequests, sortByPriority } from './scanner.js';
+import { scanInboxes, getDispatchableRequests, sortByPriority } from './scanner.js';
 import { getAccordDir } from './config.js';
 import { logger } from './logger.js';
 
@@ -73,7 +73,7 @@ export class Scheduler {
       // 2. Scan inboxes (pass hubDir for multi-team support)
       const accordDir = getAccordDir(this.hubDir, this.config);
       const allRequests = scanInboxes(accordDir, this.config, this.hubDir);
-      const pending = sortByPriority(getPendingRequests(allRequests));
+      const pending = sortByPriority(getDispatchableRequests(allRequests));
 
       // 3. Dispatch
       const processed = await this.dispatcher.dispatch(pending);
