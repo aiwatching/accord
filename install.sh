@@ -120,16 +120,34 @@ if [[ -f "$ACCORD_HOME/VERSION" ]]; then
     INSTALLED_VERSION="$(cat "$ACCORD_HOME/VERSION" | tr -d '[:space:]')"
 fi
 
+# ── Create symlink for accord-hub command ────────────────────────────────────
+
+if [[ -f "$ACCORD_HOME/accord-hub.sh" ]]; then
+    LINK_DIR="/usr/local/bin"
+    if [[ -w "$LINK_DIR" ]]; then
+        ln -sf "$ACCORD_HOME/accord-hub.sh" "$LINK_DIR/accord-hub"
+        log "Created symlink: accord-hub → $ACCORD_HOME/accord-hub.sh"
+    else
+        # Try with sudo, or fall back to ~/.local/bin
+        LOCAL_BIN="$HOME/.local/bin"
+        mkdir -p "$LOCAL_BIN"
+        ln -sf "$ACCORD_HOME/accord-hub.sh" "$LOCAL_BIN/accord-hub"
+        if ! echo "$PATH" | grep -q "$LOCAL_BIN"; then
+            echo -e "${DIM}Add to PATH: export PATH=\"$LOCAL_BIN:\$PATH\"${NC}"
+        fi
+    fi
+fi
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}${BOLD}Accord v${INSTALLED_VERSION} installed at ~/.accord/${NC}"
 echo ""
 echo "Commands:"
 echo ""
+echo -e "  ${BOLD}accord-hub${NC}                 Start the Hub Service (API + Web UI)"
+echo -e "  ${BOLD}accord-hub update${NC}          Pull latest code + rebuild"
 echo -e "  ${BOLD}~/.accord/setup.sh${NC}         Set up a new project (interactive wizard)"
 echo -e "  ${BOLD}~/.accord/init.sh${NC}          Initialize a single repo (hub or service)"
-echo -e "  ${BOLD}~/.accord/upgrade.sh${NC}       Upgrade to latest Accord version"
-echo -e "  ${BOLD}~/.accord/uninstall.sh${NC}     Remove Accord from a project"
 echo ""
 echo -e "  ${DIM}Installed version: ${INSTALLED_VERSION}${NC}"
 echo -e "  ${DIM}Run any command with --help for options.${NC}"
