@@ -65,12 +65,18 @@ export async function startServer(port: number, hubDir: string): Promise<Fastify
       wildcard: false,
     });
 
-    // SPA fallback — serve index.html for all non-API, non-WS routes
+    // SPA fallback — serve static file if it exists, otherwise index.html
     app.setNotFoundHandler((req, reply) => {
       if (req.url.startsWith('/api/') || req.url.startsWith('/ws')) {
         reply.status(404).send({ error: 'Not found' });
       } else {
-        reply.sendFile('index.html');
+        const urlPath = req.url.split('?')[0];
+        const filePath = path.join(uiDistPath, urlPath);
+        if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+          reply.sendFile(urlPath);
+        } else {
+          reply.sendFile('index.html');
+        }
       }
     });
   }

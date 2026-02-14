@@ -1252,13 +1252,13 @@ print_orchestrator_summary() {
     echo "    1. Commit hub: git add . && git commit -m 'accord: init orchestrator hub'"
     echo "    2. Commit each service repo"
     echo "    3. Start agent sessions (one per repo) and begin working"
-    echo "    4. (Optional) Start the Hub Service: npm install && npm run build && npm start"
+    echo "    4. (Optional) Start the Hub Service: npm start"
     else
     echo "    1. git add . && git commit -m 'accord: init orchestrator hub'"
     echo "    2. Init service repos: re-run with --init-services, or init each service individually"
     echo "    3. Create directives in directives/ for feature decomposition"
     echo "    4. Start your orchestrator agent — it will read registries and process directives"
-    echo "    5. (Optional) Start the Hub Service: npm install && npm run build && npm start"
+    echo "    5. (Optional) Start the Hub Service: npm start"
     fi
     echo ""
 }
@@ -1417,6 +1417,27 @@ scaffold_orchestrator_v2() {
             log "Generated package.json"
         else
             warn "package.json already exists (skipping)"
+        fi
+    fi
+
+    # ── Install dependencies + compile server ──────────────────────────────
+    if command -v node >/dev/null 2>&1 && [[ -f "$TARGET_DIR/package.json" ]]; then
+        local node_ver
+        node_ver="$(node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1)"
+        if [[ -n "$node_ver" && "$node_ver" -ge 20 ]]; then
+            log "Installing Hub Service dependencies..."
+            if (cd "$TARGET_DIR" && npm install --quiet 2>/dev/null); then
+                log "Compiling Hub Service..."
+                if (cd "$TARGET_DIR" && npx tsc 2>/dev/null); then
+                    log "Hub Service ready — start with: npm start"
+                else
+                    warn "TypeScript compilation failed — run 'npx tsc' manually"
+                fi
+            else
+                warn "npm install failed — run 'npm install' manually"
+            fi
+        else
+            log "Node.js >= 20 required for Hub Service (found v${node_ver:-unknown})"
         fi
     fi
 
@@ -1618,7 +1639,7 @@ print_summary() {
     fi
     echo "    2. git add .accord && git commit -m 'accord: init project'"
     echo "    3. Start your agent — it will check the inbox on start"
-    echo "    4. (Optional) Start the Hub Service from your hub project: cd <hub-dir> && npm start"
+    echo "    4. (Optional) Start the Hub Service: cd <hub-dir> && npm start"
     if [[ "$SYNC_MODE" == "auto-poll" && "$ADAPTER" != "claude-code" ]]; then
         echo "    5. Run: .accord/accord-watch.sh &"
     fi
