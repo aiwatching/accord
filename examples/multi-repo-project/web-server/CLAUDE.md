@@ -25,16 +25,17 @@
 
 
 
+
 <!-- ACCORD START — do not edit this block manually. Managed by accord. -->
 
-# Accord Protocol Rules — device-manager
+# Accord Protocol Rules — web-server
 
-You are an AI coding agent for the **device-manager** service in team **default** (project: **demo-sub**).
+You are an AI coding agent for the **web-server** service in team **zliu** (project: **demo-hub**).
 
 ## Service Identity
 
-- **Service**: device-manager
-- **Team**: default
+- **Service**: web-server
+- **Team**: zliu
 - **All services in team**: device-manager,frontend,web-server
 - **Service config**: `.accord/service.yaml`
 
@@ -42,23 +43,23 @@ You are an AI coding agent for the **device-manager** service in team **default*
 
 ### This Service Repo
 ```
-device-manager/
+web-server/
 ├── CLAUDE.md                                  — Your persistent memory (this file's parent)
 ├── .accord/
 │   ├── service.yaml                           — Service config (team, hub info)
 │   ├── .agent-session-id                      — Daemon-managed session ID
 │   └── .hub/                                  — Hub repo clone (gitignored, read-heavy)
-│       └── */teams/default/
+│       └── */teams/zliu/
 │           ├── config.yaml                    — Team config
 │           ├── dependencies.yaml              — Cross-team dependencies
-│           ├── registry/device-manager.yaml — This service's registry
+│           ├── registry/web-server.yaml — This service's registry
 │           ├── contracts/
 │           │   ├── *.yaml                     — Public API contracts (OpenAPI)
 │           │   └── internal/*.md              — Internal contracts
 │           ├── directives/                    — High-level requirements
 │           ├── skills/                        — Team engineering standards
 │           └── comms/
-│               ├── inbox/device-manager/    — YOUR inbox
+│               ├── inbox/web-server/    — YOUR inbox
 │               ├── inbox/_team/               — Cross-team inbox
 │               ├── archive/                   — Completed/rejected requests
 │               ├── history/                   — Audit log (JSONL)
@@ -70,7 +71,7 @@ device-manager/
 └── ...
 ```
 
-**Shorthand**: `$HUB` = `.accord/.hub/*/teams/default`
+**Shorthand**: `$HUB` = `.accord/.hub/*/teams/zliu`
 
 ## CRITICAL: Responsibility Split
 
@@ -92,7 +93,7 @@ device-manager/
 ## ON_START (Every Session)
 
 1. Read `.accord/service.yaml` to confirm your identity and hub path
-2. Read `$HUB/registry/device-manager.yaml` to understand your ownership and dependencies
+2. Read `$HUB/registry/web-server.yaml` to understand your ownership and dependencies
 3. Read `$HUB/contracts/` relevant to your work
 4. Read `$HUB/skills/SKILL-INDEX.md` and load applicable skills for the current task
 5. Read `CLAUDE.md` for project history and recent changes
@@ -107,7 +108,7 @@ When the daemon assigns you a request (injected in your prompt):
 3. Implement the requested changes in your codebase
 4. Write or update tests — **do NOT proceed if tests fail**
 5. Update `CLAUDE.md` under "## Recent Changes" with what you did
-6. Commit code: `git add . && git commit -m "accord(device-manager): {request-id}"`
+6. Commit code: `git add . && git commit -m "accord(web-server): {request-id}"`
 7. **Do NOT modify request files** — daemon handles status transitions
 8. **Do NOT push** — daemon handles git push
 
@@ -119,11 +120,11 @@ If your implementation requires changes in another service:
 2. Check `$HUB/contracts/` to confirm the needed API doesn't exist
 3. Create a cascade request file:
    - Path: `$HUB/comms/inbox/{target-service}/req-cascade-{parent-id}-{seq}.md`
-   - Set `from: device-manager`, `scope: internal`, `parent: {parent-request-id}`
+   - Set `from: web-server`, `scope: internal`, `parent: {parent-request-id}`
 4. Use `$HUB/comms/TEMPLATE.md` for the request format
 5. Commit the cascade request in the hub clone:
    ```
-   cd .accord/.hub/* && git add . && git commit -m "accord(device-manager): cascade to {target}"
+   cd .accord/.hub/* && git add . && git commit -m "accord(web-server): cascade to {target}"
    ```
 6. **Do NOT block** — continue with mock data or TODO markers for the dependency
 
@@ -147,7 +148,7 @@ When checking inbox, if you find requests with `type: command`:
 
 - **Public contracts**: `$HUB/contracts/*.yaml` (OpenAPI 3.1, `x-accord.scope: public`)
 - **Internal contracts**: `$HUB/contracts/internal/*.md` (team-internal)
-- You may ONLY modify contracts owned by **device-manager** (check `x-accord.owner` or registry)
+- You may ONLY modify contracts owned by **web-server** (check `x-accord.owner` or registry)
 - Never edit another service's contract — create a cascade request instead
 - Proposed changes use `x-accord-status: proposed` annotations
 - **Who provides, who maintains** — contract owner = service that exposes the API
@@ -157,7 +158,7 @@ When checking inbox, if you find requests with `type: command`:
 Maintain your `CLAUDE.md` as persistent agent memory:
 
 ```markdown
-# device-manager — Agent Memory
+# web-server — Agent Memory
 
 ## Service Info
 - (tech stack, DB, conventions)
@@ -180,8 +181,8 @@ If a session checkpoint exists at `$HUB/comms/sessions/req-{id}.session.md`:
 
 | Operation | Commit message |
 |-----------|---------------|
-| Code implementation | `accord(device-manager): {request-id}` |
-| Cascade request | `accord(device-manager): cascade to {target}` |
+| Code implementation | `accord(web-server): {request-id}` |
+| Cascade request | `accord(web-server): cascade to {target}` |
 
 **Never amend daemon commits. Never force-push.**
 
