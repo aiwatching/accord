@@ -1,13 +1,534 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useWebSocket, type WireMessage } from '../hooks/useWebSocket';
+import { useApi } from '../hooks/useApi';
 
-interface HistoryEntry {
-  command: string;
-  output: string;
-  success: boolean;
-  timestamp: string;
+// ── Types ──────────────────────────────────────────────────────────────────
+
+interface RequestItem {
+  frontmatter: {
+    id: string;
+    to: string;
+    status: string;
+    priority: string;
+    type: string;
+  };
+  serviceName: string;
 }
 
-// Lightweight markdown renderer for command output
+interface LogEntry {
+  requestId: string;
+  service: string;
+  size: number;
+  modified: string;
+}
+
+interface LogDetail {
+  requestId: string;
+  content: string;
+}
+
+interface ServiceItem {
+  name: string;
+  type?: string;
+}
+
+interface HubInfo {
+  project: string;
+  services: ServiceItem[];
+}
+
+// ── Inline event types appended to the output view ─────────────────────────
+
+interface OutputLine {
+  key: string;
+  type: 'chunk' | 'event' | 'log' | 'command-result';
+  requestId?: string;
+  service?: string;
+  text: string;
+  timestamp: number;
+  success?: boolean;
+}
+
+// ── Component ──────────────────────────────────────────────────────────────
+
+export function Console() {
+  // -- Data fetching --
+  const { data: requests, refresh: refreshRequests } = useApi<RequestItem[]>('/api/requests');
+  const { data: logs } = useApi<LogEntry[]>('/api/logs');
+  const { data: hub } = useApi<HubInfo>('/api/hub');
+  const { events } = useWebSocket();
+
+  // -- Output lines (session output + inline events + command results) --
+  const [outputLines, setOutputLines] = useState<OutputLine[]>([]);
+  const [serviceFilter, setServiceFilter] = useState<string>('all');
+
+  // -- Console input --
+  const [input, setInput] = useState('');
+  const [selectedService, setSelectedService] = useState('orchestrator');
+  const [cmdHistory, setCmdHistory] = useState<string[]>([]);
+  const [historyIdx, setHistoryIdx] = useState(-1);
+  const [executing, setExecuting] = useState(false);
+
+  const outputRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const lastEventIdx = useRef(0);
+
+  // -- Derive service list --
+  const services = useMemo(() => hub?.services?.map(s => s.name) ?? [], [hub]);
+
+  // -- Poll requests every 10s --
+  useEffect(() => {
+    const interval = setInterval(refreshRequests, 10000);
+    return () => clearInterval(interval);
+  }, [refreshRequests]);
+
+  // -- Load initial logs on mount --
+  useEffect(() => {
+    if (!logs || logs.length === 0) return;
+    // Load the most recent log files (up to 5)
+    const recent = logs.slice(0, 5);
+    Promise.all(
+      recent.map(async (l) => {
+        const res = await fetch(`/api/logs/${l.requestId}`);
+        if (!res.ok) return null;
+        const data: LogDetail = await res.json();
+        return data;
+      })
+    ).then(results => {
+      const lines: OutputLine[] = [];
+      for (const r of results) {
+        if (!r) continue;
+        const entry = logs.find(l => l.requestId === r.requestId);
+        lines.push({
+          key: `log-${r.requestId}`,
+          type: 'log',
+          requestId: r.requestId,
+          service: entry?.service ?? 'unknown',
+          text: r.content,
+          timestamp: entry ? new Date(entry.modified).getTime() : Date.now(),
+        });
+      }
+      setOutputLines(prev => [...lines, ...prev]);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logs?.length]);
+
+  // -- Process new WebSocket events --
+  useEffect(() => {
+    if (events.length <= lastEventIdx.current) return;
+    const newEvents = events.slice(lastEventIdx.current);
+    lastEventIdx.current = events.length;
+
+    const newLines: OutputLine[] = [];
+    for (const ev of newEvents) {
+      const d = ev.data as Record<string, unknown>;
+      const reqId = d.requestId as string | undefined;
+      const svc = d.service as string | undefined;
+
+      if (ev.type === 'worker:output') {
+        newLines.push({
+          key: `ws-${Date.now()}-${Math.random()}`,
+          type: 'chunk',
+          requestId: reqId,
+          service: svc,
+          text: d.chunk as string,
+          timestamp: Date.now(),
+        });
+      } else if (ev.type === 'request:claimed' || ev.type === 'request:completed' || ev.type === 'request:failed') {
+        const label = ev.type === 'request:claimed' ? 'CLAIMED'
+          : ev.type === 'request:completed' ? 'COMPLETED' : 'FAILED';
+        newLines.push({
+          key: `ev-${Date.now()}-${Math.random()}`,
+          type: 'event',
+          requestId: reqId,
+          service: svc,
+          text: `[${label}] ${reqId} (${svc})`,
+          timestamp: Date.now(),
+        });
+      }
+    }
+
+    if (newLines.length > 0) {
+      setOutputLines(prev => [...prev, ...newLines].slice(-500));
+    }
+  }, [events]);
+
+  // -- Auto-scroll --
+  useEffect(() => {
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+  }, [outputLines]);
+
+  // -- Auto-focus --
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  // -- Execute command --
+  const execute = useCallback(async () => {
+    const raw = input.trim();
+    if (!raw || executing) return;
+
+    setInput('');
+    setHistoryIdx(-1);
+    setCmdHistory(prev => [...prev, raw]);
+    setExecuting(true);
+
+    // Determine the actual command to send
+    const isCommand = raw.startsWith('/') || ['status', 'scan', 'check-inbox', 'validate', 'sync', 'services', 'requests', 'help'].includes(raw.split(/\s+/)[0]);
+    const command = isCommand
+      ? (raw.startsWith('/') ? raw.slice(1) : raw)
+      : `send ${selectedService} ${raw}`;
+
+    try {
+      const res = await fetch('/api/commands/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command }),
+      });
+      const data = await res.json();
+      setOutputLines(prev => [...prev, {
+        key: `cmd-${Date.now()}`,
+        type: 'command-result',
+        text: `$ ${command}\n${data.output ?? data.error ?? 'No output'}`,
+        timestamp: Date.now(),
+        success: data.success ?? false,
+      }]);
+      // Refresh requests after sending
+      if (!isCommand) {
+        refreshRequests();
+      }
+    } catch (err) {
+      setOutputLines(prev => [...prev, {
+        key: `cmd-err-${Date.now()}`,
+        type: 'command-result',
+        text: `$ ${command}\nNetwork error: ${err}`,
+        timestamp: Date.now(),
+        success: false,
+      }]);
+    } finally {
+      setExecuting(false);
+      inputRef.current?.focus();
+    }
+  }, [input, executing, selectedService, refreshRequests]);
+
+  // -- Key handling --
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      execute();
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (cmdHistory.length === 0) return;
+      const newIdx = historyIdx === -1 ? cmdHistory.length - 1 : Math.max(0, historyIdx - 1);
+      setHistoryIdx(newIdx);
+      setInput(cmdHistory[newIdx]);
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (historyIdx === -1) return;
+      const newIdx = historyIdx + 1;
+      if (newIdx >= cmdHistory.length) {
+        setHistoryIdx(-1);
+        setInput('');
+      } else {
+        setHistoryIdx(newIdx);
+        setInput(cmdHistory[newIdx]);
+      }
+    }
+  }, [execute, cmdHistory, historyIdx]);
+
+  // -- Compute request badges --
+  const badges = useMemo(() => {
+    if (!requests) return [];
+    const groups: Record<string, { pending: number; active: number }> = {};
+    for (const r of requests) {
+      const svc = r.serviceName;
+      if (!groups[svc]) groups[svc] = { pending: 0, active: 0 };
+      if (r.frontmatter.status === 'pending' || r.frontmatter.status === 'approved') {
+        groups[svc].pending++;
+      } else if (r.frontmatter.status === 'in-progress') {
+        groups[svc].active++;
+      }
+    }
+    return Object.entries(groups)
+      .filter(([, v]) => v.pending > 0 || v.active > 0)
+      .map(([name, v]) => ({ name, ...v }));
+  }, [requests]);
+
+  // -- Filter output lines --
+  const filteredLines = useMemo(() => {
+    if (serviceFilter === 'all') return outputLines;
+    return outputLines.filter(l => !l.service || l.service === serviceFilter);
+  }, [outputLines, serviceFilter]);
+
+  // -- Unique services seen in output (for filter tabs) --
+  const seenServices = useMemo(() => {
+    const set = new Set<string>();
+    for (const l of outputLines) {
+      if (l.service) set.add(l.service);
+    }
+    return Array.from(set);
+  }, [outputLines]);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Section 1: Request badges */}
+      <div style={{
+        padding: '8px 16px',
+        borderBottom: '1px solid #334155',
+        display: 'flex',
+        gap: 8,
+        alignItems: 'center',
+        flexShrink: 0,
+        flexWrap: 'wrap',
+        minHeight: 40,
+      }}>
+        {badges.length === 0 && (
+          <span style={{ color: '#64748b', fontSize: 13 }}>No active requests</span>
+        )}
+        {badges.map(b => (
+          <span key={b.name} style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            background: '#334155',
+            borderRadius: 12,
+            padding: '3px 10px',
+            fontSize: 12,
+            color: '#e2e8f0',
+          }}>
+            <span style={{ fontWeight: 600 }}>{b.name}</span>
+            {b.pending > 0 && (
+              <span style={{ color: '#fbbf24' }}>{b.pending} pending</span>
+            )}
+            {b.pending > 0 && b.active > 0 && <span style={{ color: '#64748b' }}>·</span>}
+            {b.active > 0 && (
+              <span style={{ color: '#4ade80' }}>{b.active} active</span>
+            )}
+          </span>
+        ))}
+      </div>
+
+      {/* Section 2: Session output (main area) */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* Filter tabs */}
+        <div style={{
+          padding: '4px 16px',
+          borderBottom: '1px solid #1e293b',
+          display: 'flex',
+          gap: 4,
+          flexShrink: 0,
+        }}>
+          {['all', ...seenServices].map(s => (
+            <button
+              key={s}
+              onClick={() => setServiceFilter(s)}
+              style={{
+                background: serviceFilter === s ? '#334155' : 'transparent',
+                border: '1px solid',
+                borderColor: serviceFilter === s ? '#475569' : 'transparent',
+                borderRadius: 4,
+                padding: '2px 8px',
+                fontSize: 11,
+                color: serviceFilter === s ? '#f1f5f9' : '#64748b',
+                cursor: 'pointer',
+              }}
+            >
+              {s === 'all' ? 'All' : s}
+            </button>
+          ))}
+        </div>
+
+        {/* Output area */}
+        <div
+          ref={outputRef}
+          style={{
+            flex: 1,
+            background: '#0f172a',
+            padding: 16,
+            overflow: 'auto',
+            fontFamily: 'monospace',
+            fontSize: 13,
+            lineHeight: 1.6,
+          }}
+        >
+          {filteredLines.length === 0 && (
+            <div style={{ color: '#64748b' }}>
+              Waiting for activity... Type a message below to send to a service.
+            </div>
+          )}
+          {filteredLines.map(line => (
+            <div key={line.key} style={{ marginBottom: 2 }}>
+              {line.type === 'event' && (
+                <div style={{
+                  color: line.text.includes('COMPLETED') ? '#4ade80'
+                    : line.text.includes('FAILED') ? '#f87171'
+                    : '#fbbf24',
+                  fontSize: 12,
+                  padding: '2px 0',
+                }}>
+                  {line.text}
+                </div>
+              )}
+              {line.type === 'chunk' && (
+                <span style={{ color: '#cbd5e1' }}>
+                  {line.text}
+                </span>
+              )}
+              {line.type === 'log' && (
+                <LogBlock requestId={line.requestId!} service={line.service!} text={line.text} />
+              )}
+              {line.type === 'command-result' && (
+                <CommandResult text={line.text} success={line.success} />
+              )}
+            </div>
+          ))}
+          {executing && (
+            <div style={{ color: '#64748b' }}>Executing...</div>
+          )}
+        </div>
+      </div>
+
+      {/* Section 3: Console input (fixed bottom) */}
+      <div style={{
+        padding: '8px 16px',
+        borderTop: '1px solid #334155',
+        display: 'flex',
+        gap: 8,
+        alignItems: 'center',
+        flexShrink: 0,
+        background: '#1e293b',
+      }}>
+        <select
+          value={selectedService}
+          onChange={e => setSelectedService(e.target.value)}
+          style={{
+            background: '#0f172a',
+            color: '#e2e8f0',
+            border: '1px solid #334155',
+            borderRadius: 6,
+            padding: '7px 8px',
+            fontSize: 13,
+            fontFamily: 'monospace',
+            outline: 'none',
+            flexShrink: 0,
+          }}
+        >
+          {services.length === 0 && <option value="orchestrator">orchestrator</option>}
+          {services.map(s => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+        <input
+          ref={inputRef}
+          type="text"
+          value={input}
+          onChange={e => { setInput(e.target.value); setHistoryIdx(-1); }}
+          onKeyDown={handleKeyDown}
+          disabled={executing}
+          placeholder="Type a message or command (status, help, /scan...)"
+          style={{
+            flex: 1,
+            background: '#0f172a',
+            border: '1px solid #334155',
+            borderRadius: 6,
+            padding: '8px 12px',
+            color: '#f1f5f9',
+            fontFamily: 'monospace',
+            fontSize: 13,
+            outline: 'none',
+          }}
+        />
+        <button
+          onClick={execute}
+          disabled={executing || !input.trim()}
+          style={{
+            background: '#3b82f6',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 6,
+            padding: '8px 16px',
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: executing || !input.trim() ? 'not-allowed' : 'pointer',
+            opacity: executing || !input.trim() ? 0.5 : 1,
+            flexShrink: 0,
+          }}
+        >
+          Send
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Sub-components ──────────────────────────────────────────────────────────
+
+function LogBlock({ requestId, service, text }: { requestId: string; service: string; text: string }) {
+  const [collapsed, setCollapsed] = useState(true);
+  const preview = text.split('\n').slice(1, 4).join(' ').slice(0, 120);
+
+  return (
+    <div style={{ margin: '4px 0' }}>
+      <div
+        onClick={() => setCollapsed(!collapsed)}
+        style={{
+          cursor: 'pointer',
+          color: '#94a3b8',
+          fontSize: 12,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+        }}
+      >
+        <span>{collapsed ? '\u25B8' : '\u25BE'}</span>
+        <span style={{ color: '#64748b' }}>[{service}]</span>
+        <span style={{ color: '#e2e8f0', fontWeight: 500 }}>{requestId}</span>
+        {collapsed && (
+          <span style={{ color: '#475569', marginLeft: 4 }}>{preview}...</span>
+        )}
+      </div>
+      {!collapsed && (
+        <pre style={{
+          color: '#cbd5e1',
+          fontSize: 12,
+          whiteSpace: 'pre-wrap',
+          marginLeft: 16,
+          marginTop: 4,
+          padding: 8,
+          background: '#1e293b',
+          borderRadius: 4,
+          maxHeight: 400,
+          overflow: 'auto',
+        }}>
+          {text}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function CommandResult({ text, success }: { text: string; success?: boolean }) {
+  const lines = text.split('\n');
+  const cmdLine = lines[0] ?? '';
+  const output = lines.slice(1).join('\n');
+
+  return (
+    <div style={{ margin: '8px 0' }}>
+      <div style={{ color: '#4ade80', fontSize: 13 }}>{cmdLine}</div>
+      <div style={{ color: success === false ? '#f87171' : '#cbd5e1', marginTop: 2, whiteSpace: 'pre-wrap' }}>
+        {renderMarkdown(output)}
+      </div>
+    </div>
+  );
+}
+
+// ── Lightweight markdown renderer (reused from old Console) ─────────────────
+
 function renderMarkdown(text: string): React.ReactNode[] {
   const lines = text.split('\n');
   const nodes: React.ReactNode[] = [];
@@ -16,7 +537,6 @@ function renderMarkdown(text: string): React.ReactNode[] {
   while (i < lines.length) {
     const line = lines[i];
 
-    // Heading: ## ...
     if (line.startsWith('## ')) {
       nodes.push(
         <div key={i} style={{ fontWeight: 700, fontSize: 14, color: '#f1f5f9', margin: '8px 0 4px' }}>
@@ -27,7 +547,6 @@ function renderMarkdown(text: string): React.ReactNode[] {
       continue;
     }
 
-    // Table: detect | ... | lines
     if (line.includes('|') && line.trim().startsWith('|')) {
       const tableLines: string[] = [];
       while (i < lines.length && lines[i].trim().startsWith('|')) {
@@ -38,7 +557,6 @@ function renderMarkdown(text: string): React.ReactNode[] {
       continue;
     }
 
-    // Bullet: - ...
     if (line.startsWith('- ')) {
       nodes.push(
         <div key={i} style={{ paddingLeft: 16, color: '#cbd5e1' }}>
@@ -49,14 +567,12 @@ function renderMarkdown(text: string): React.ReactNode[] {
       continue;
     }
 
-    // Empty line
     if (line.trim() === '') {
       nodes.push(<div key={i} style={{ height: 6 }} />);
       i++;
       continue;
     }
 
-    // Plain line
     nodes.push(
       <div key={i} style={{ color: '#cbd5e1' }}>{applyInline(line)}</div>
     );
@@ -67,7 +583,6 @@ function renderMarkdown(text: string): React.ReactNode[] {
 }
 
 function applyInline(text: string): React.ReactNode {
-  // Bold: **...**
   const parts: React.ReactNode[] = [];
   const re = /\*\*(.+?)\*\*/g;
   let last = 0;
@@ -86,7 +601,6 @@ function applyInline(text: string): React.ReactNode {
     parts.push(text.slice(last));
   }
 
-  // Inline code: `...`
   if (parts.length === 1 && typeof parts[0] === 'string') {
     const codeRe = /`(.+?)`/g;
     const codeParts: React.ReactNode[] = [];
@@ -119,7 +633,6 @@ function applyInline(text: string): React.ReactNode {
 }
 
 function renderTable(lines: string[], baseKey: number): React.ReactNode {
-  // Filter out separator rows (|---|---|)
   const dataLines = lines.filter(l => !/^\|[\s\-|]+\|$/.test(l.trim()));
   if (dataLines.length === 0) return null;
 
@@ -158,183 +671,5 @@ function renderTable(lines: string[], baseKey: number): React.ReactNode {
         ))}
       </tbody>
     </table>
-  );
-}
-
-export function Console() {
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
-  const [input, setInput] = useState('');
-  const [cmdHistory, setCmdHistory] = useState<string[]>([]);
-  const [historyIdx, setHistoryIdx] = useState(-1);
-  const [executing, setExecuting] = useState(false);
-  const outputRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  // Auto-scroll to bottom
-  useEffect(() => {
-    if (outputRef.current) {
-      outputRef.current.scrollTop = outputRef.current.scrollHeight;
-    }
-  }, [history]);
-
-  // Auto-focus on mount
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  const execute = useCallback(async () => {
-    const cmd = input.trim();
-    if (!cmd || executing) return;
-
-    setInput('');
-    setHistoryIdx(-1);
-    setCmdHistory(prev => [...prev, cmd]);
-    setExecuting(true);
-
-    try {
-      const res = await fetch('/api/commands/execute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: cmd }),
-      });
-      const data = await res.json();
-      setHistory(prev => [...prev, {
-        command: cmd,
-        output: data.output ?? data.error ?? 'No output',
-        success: data.success ?? false,
-        timestamp: data.timestamp ?? new Date().toISOString(),
-      }]);
-    } catch (err) {
-      setHistory(prev => [...prev, {
-        command: cmd,
-        output: `Network error: ${err}`,
-        success: false,
-        timestamp: new Date().toISOString(),
-      }]);
-    } finally {
-      setExecuting(false);
-      inputRef.current?.focus();
-    }
-  }, [input, executing]);
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      execute();
-      return;
-    }
-    if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (cmdHistory.length === 0) return;
-      const newIdx = historyIdx === -1 ? cmdHistory.length - 1 : Math.max(0, historyIdx - 1);
-      setHistoryIdx(newIdx);
-      setInput(cmdHistory[newIdx]);
-      return;
-    }
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      if (historyIdx === -1) return;
-      const newIdx = historyIdx + 1;
-      if (newIdx >= cmdHistory.length) {
-        setHistoryIdx(-1);
-        setInput('');
-      } else {
-        setHistoryIdx(newIdx);
-        setInput(cmdHistory[newIdx]);
-      }
-    }
-  }, [execute, cmdHistory, historyIdx]);
-
-  return (
-    <div>
-      <h2 style={{ color: '#f1f5f9', fontSize: 22, marginBottom: 24 }}>Console</h2>
-
-      {/* Output area */}
-      <div
-        ref={outputRef}
-        style={{
-          background: '#0f172a',
-          border: '1px solid #334155',
-          borderRadius: 8,
-          padding: 16,
-          minHeight: 300,
-          maxHeight: 'calc(100vh - 220px)',
-          overflow: 'auto',
-          fontFamily: 'monospace',
-          fontSize: 13,
-          lineHeight: 1.6,
-          marginBottom: 12,
-        }}
-      >
-        {/* Welcome message */}
-        <div style={{ color: '#64748b', marginBottom: 8 }}>
-          Welcome to Accord Console. Type 'help' for available commands.
-        </div>
-
-        {history.map((entry, i) => (
-          <div key={i} style={{ marginBottom: 12 }}>
-            {/* Command line */}
-            <div style={{ color: '#4ade80' }}>
-              $ {entry.command}
-            </div>
-            {/* Output */}
-            <div style={{ color: entry.success ? '#cbd5e1' : '#f87171', marginTop: 2 }}>
-              {renderMarkdown(entry.output)}
-            </div>
-          </div>
-        ))}
-
-        {executing && (
-          <div style={{ color: '#64748b' }}>Executing...</div>
-        )}
-      </div>
-
-      {/* Input area */}
-      <div style={{ display: 'flex', gap: 8 }}>
-        <span style={{
-          color: '#4ade80',
-          fontFamily: 'monospace',
-          fontSize: 14,
-          lineHeight: '36px',
-          flexShrink: 0,
-        }}>$</span>
-        <input
-          ref={inputRef}
-          type="text"
-          value={input}
-          onChange={e => { setInput(e.target.value); setHistoryIdx(-1); }}
-          onKeyDown={handleKeyDown}
-          disabled={executing}
-          placeholder="Type a command..."
-          style={{
-            flex: 1,
-            background: '#1e293b',
-            border: '1px solid #334155',
-            borderRadius: 6,
-            padding: '8px 12px',
-            color: '#f1f5f9',
-            fontFamily: 'monospace',
-            fontSize: 14,
-            outline: 'none',
-          }}
-        />
-        <button
-          onClick={execute}
-          disabled={executing || !input.trim()}
-          style={{
-            background: '#3b82f6',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 6,
-            padding: '8px 16px',
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: executing || !input.trim() ? 'not-allowed' : 'pointer',
-            opacity: executing || !input.trim() ? 0.5 : 1,
-          }}
-        >
-          Run
-        </button>
-      </div>
-    </div>
   );
 }
