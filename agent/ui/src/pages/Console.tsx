@@ -202,7 +202,20 @@ export function Console() {
     }
 
     if (newLines.length > 0) {
-      setOutputLines(prev => [...prev, ...newLines].slice(-500));
+      setOutputLines(prev => {
+        const merged = [...prev];
+        for (const line of newLines) {
+          const last = merged.length > 0 ? merged[merged.length - 1] : null;
+          // Merge consecutive chunks from the same request into one line
+          if (line.type === 'chunk' && last?.type === 'chunk'
+              && last.requestId === line.requestId && last.service === line.service) {
+            merged[merged.length - 1] = { ...last, text: last.text + line.text };
+          } else {
+            merged.push(line);
+          }
+        }
+        return merged.slice(-500);
+      });
     }
   }, [events]);
 
@@ -508,9 +521,9 @@ export function Console() {
                   </div>
                 )}
                 {line.type === 'chunk' && (
-                  <span style={{ color: '#cbd5e1' }}>
+                  <pre style={{ color: '#cbd5e1', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                     {line.text}
-                  </span>
+                  </pre>
                 )}
                 {line.type === 'log' && (
                   <LogBlock requestId={line.requestId!} service={line.service!} text={line.text} />

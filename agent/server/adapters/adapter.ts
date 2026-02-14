@@ -127,32 +127,17 @@ class ClaudeCodeV1Adapter implements AgentAdapter {
           sessionId = msg.session_id;
           logger.debug(`[claude-code] Session started: ${sessionId}`);
         } else if (msg.type === 'assistant' && msg.message) {
-          // Complete assistant message — extract full text
-          const text = typeof msg.message === 'string'
-            ? msg.message
-            : (msg.message as { content?: Array<{ type: string; text?: string }> })?.content
-                ?.filter((c: { type: string }) => c.type === 'text')
-                .map((c: { text?: string }) => c.text ?? '')
-                .join('') ?? '';
-          if (text && params.onOutput) {
-            params.onOutput(text);
-          }
+          // With includePartialMessages, text is already streamed via stream_event.
+          // The assistant message contains the full accumulated text — skip to avoid duplicates.
+          // (Only used for metadata if needed in the future.)
         } else if ((msg as Record<string, unknown>).type === 'stream_event') {
-          // Streaming text delta — real-time output chunk
+          // Streaming text delta — real-time output, token by token
           const event = (msg as Record<string, unknown>).event as Record<string, unknown> | undefined;
           if (event?.type === 'content_block_delta') {
             const delta = event.delta as Record<string, unknown> | undefined;
             if (delta?.type === 'text_delta' && typeof delta.text === 'string') {
               if (params.onOutput) params.onOutput(delta.text);
             }
-          }
-        } else if ((msg as Record<string, unknown>).type === 'tool_progress') {
-          // Tool execution progress — show which tool is running
-          const m = msg as Record<string, unknown>;
-          const toolName = m.tool_name as string | undefined;
-          const elapsed = m.elapsed_time_seconds as number | undefined;
-          if (toolName && params.onOutput) {
-            params.onOutput(`[tool: ${toolName}${elapsed ? ` ${elapsed.toFixed(0)}s` : ''}]\n`);
           }
         } else if (msg.type === 'result') {
           sessionId = msg.session_id;
@@ -357,31 +342,15 @@ class ClaudeCodeV2Adapter implements AgentAdapter {
         if (sessionId) managed.sessionId = sessionId;
         logger.debug(`[claude-code-v2] Session ID: ${sessionId}`);
       } else if (m.type === 'assistant' && m.message) {
-        // Complete assistant message — extract full text
-        const message = m.message;
-        const text = typeof message === 'string'
-          ? message
-          : (message as { content?: Array<{ type: string; text?: string }> })?.content
-              ?.filter((c: { type: string }) => c.type === 'text')
-              .map((c: { text?: string }) => c.text ?? '')
-              .join('') ?? '';
-        if (text && onOutput) {
-          onOutput(text);
-        }
+        // With streaming, text already delivered via stream_event — skip duplicates.
       } else if (m.type === 'stream_event') {
-        // Streaming text delta — real-time output chunk
+        // Streaming text delta — real-time output, token by token
         const event = m.event as Record<string, unknown> | undefined;
         if (event?.type === 'content_block_delta') {
           const delta = event.delta as Record<string, unknown> | undefined;
           if (delta?.type === 'text_delta' && typeof delta.text === 'string') {
             if (onOutput) onOutput(delta.text);
           }
-        }
-      } else if (m.type === 'tool_progress') {
-        const toolName = m.tool_name as string | undefined;
-        const elapsed = m.elapsed_time_seconds as number | undefined;
-        if (toolName && onOutput) {
-          onOutput(`[tool: ${toolName}${elapsed ? ` ${elapsed.toFixed(0)}s` : ''}]\n`);
         }
       } else if (m.type === 'result') {
         sessionId = m.session_id as string | undefined;
