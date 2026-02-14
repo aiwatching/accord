@@ -52,6 +52,46 @@ export function registerCommandRoutes(app: FastifyInstance): void {
       return { command: raw, output: `ERROR: ${message}`, success: false, timestamp } satisfies ExecResult;
     }
   });
+
+  // GET /api/logs — list session log files
+  app.get('/api/logs', async () => {
+    const { config, hubDir } = getHubState();
+    const accordDir = getAccordDir(hubDir, config);
+    const sessionsDir = path.join(accordDir, 'comms', 'sessions');
+
+    if (!fs.existsSync(sessionsDir)) {
+      return [];
+    }
+
+    const files = fs.readdirSync(sessionsDir).filter(f => f.endsWith('.log'));
+    const result = files.map(f => {
+      const filePath = path.join(sessionsDir, f);
+      const stat = fs.statSync(filePath);
+      const requestId = f.replace(/\.log$/, '');
+      // Read first line to extract service name from header
+      const firstLine = fs.readFileSync(filePath, 'utf-8').split('\n')[0] ?? '';
+      const match = firstLine.match(/--- .+? \| (.+?) \|/);
+      const service = match ? match[1] : 'unknown';
+      return { requestId, service, size: stat.size, modified: stat.mtime.toISOString() };
+    });
+
+    result.sort((a, b) => b.modified.localeCompare(a.modified));
+    return result;
+  });
+
+  // GET /api/logs/:requestId — read a log file
+  app.get<{ Params: { requestId: string } }>('/api/logs/:requestId', async (req, reply) => {
+    const { config, hubDir } = getHubState();
+    const accordDir = getAccordDir(hubDir, config);
+    const logFile = path.join(accordDir, 'comms', 'sessions', `${req.params.requestId}.log`);
+
+    if (!fs.existsSync(logFile)) {
+      return reply.status(404).send({ error: 'Log not found' });
+    }
+
+    const content = fs.readFileSync(logFile, 'utf-8');
+    return { requestId: req.params.requestId, content };
+  });
 }
 
 async function runCommand(cmd: string, args: string[]): Promise<string> {
@@ -142,14 +182,26 @@ function formatRequests(accordDir: string, args: string[]): string {
 }
 
 function handleSend(accordDir: string, args: string[]): string {
-  if (args.length < 2) {
-    return 'Usage: `send <service> <message>`\n\nExample: `send device-manager fix the authentication bug`';
+  if (args.length === 0) {
+    return 'Usage: `send [service] <message>`\n\nExample: `send device-manager fix the authentication bug`\n\nIf no service is specified, defaults to orchestrator.';
   }
 
   const { config } = getHubState();
-  const service = args[0];
-  const message = args.slice(1).join(' ');
   const serviceNames = getServiceNames(config);
+
+  // If first arg is a known service, use it; otherwise default to orchestrator
+  let service: string;
+  let message: string;
+  if (serviceNames.includes(args[0])) {
+    service = args[0];
+    message = args.slice(1).join(' ');
+    if (!message) {
+      return 'Usage: `send [service] <message>`\n\nMessage is required.';
+    }
+  } else {
+    service = 'orchestrator';
+    message = args.join(' ');
+  }
 
   if (!serviceNames.includes(service)) {
     return `Unknown service: **${service}**\n\nAvailable services: ${serviceNames.join(', ')}`;

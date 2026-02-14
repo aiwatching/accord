@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import type { AccordConfig, AccordRequest, DispatcherConfig, RequestResult, WorkerState } from './types.js';
 import type { AgentAdapter } from './adapters/adapter.js';
 import { SessionManager } from './session-manager.js';
@@ -218,8 +220,15 @@ export class Worker {
       : undefined;
     const resumeId = existingSession?.sessionId;
 
+    // Session log file for persistence
+    const sessionsDir = path.join(accordDir, 'comms', 'sessions');
+    fs.mkdirSync(sessionsDir, { recursive: true });
+    const logFile = path.join(sessionsDir, `${reqId}.log`);
+    fs.appendFileSync(logFile, `--- ${reqId} | ${serviceName} | ${new Date().toISOString()} ---\n`);
+
     let streamIndex = 0;
     const onOutput = (chunk: string) => {
+      fs.appendFileSync(logFile, chunk);
       eventBus.emit('worker:output', {
         workerId: this.id,
         service: serviceName,
@@ -241,7 +250,10 @@ export class Worker {
         onOutput,
       });
 
-      // Step 5: Success
+      // Step 5: Success — finalize log
+      const durationMs = Date.now() - startTime;
+      fs.appendFileSync(logFile, `\n--- completed | ${durationMs}ms ---\n`);
+
       if (result.sessionId) {
         this.sessionManager.updateSession(serviceName, result.sessionId);
       }
@@ -251,7 +263,6 @@ export class Worker {
       setRequestStatus(request.filePath, 'completed');
       archiveRequest(request.filePath, accordDir);
 
-      const durationMs = Date.now() - startTime;
       writeHistory({
         historyDir,
         requestId: reqId,
@@ -281,6 +292,7 @@ export class Worker {
       // Step 6: Failure handling
       const error = String(err);
       logger.error(`Worker ${this.id}: agent failed for ${reqId}: ${error}`);
+      fs.appendFileSync(logFile, `\n--- failed | ${error} ---\n`);
 
       // Write checkpoint for crash recovery
       this.sessionManager.writeCheckpoint(accordDir, reqId, `Error: ${error}\nAttempt: ${attempts}`);
