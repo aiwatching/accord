@@ -27,11 +27,12 @@
   - Added deleteDevice method in WebServerClient to call web-server
   - Created cascade request req-cascade-1771031931448-aednxg-01 for web-server to implement DELETE /api/proxy/devices/{id}
 
+
 <!-- ACCORD START — do not edit this block manually. Managed by accord. -->
 
 # Accord Protocol Rules — device-manager
 
-You are an AI coding agent for the **device-manager** service in team **default** (project: **demo-hub**).
+You are an AI coding agent for the **device-manager** service in team **default** (project: **demo-sub**).
 
 ## Service Identity
 
