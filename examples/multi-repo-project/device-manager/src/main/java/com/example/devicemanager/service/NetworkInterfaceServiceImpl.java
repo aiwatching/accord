@@ -1,8 +1,13 @@
 package com.example.devicemanager.service;
 
+import com.example.devicemanager.dto.AllInterfacesResponse;
 import com.example.devicemanager.dto.CreateInterfaceRequest;
+import com.example.devicemanager.dto.InterfaceWithDevice;
+import com.example.devicemanager.dto.PaginationMetadata;
 import com.example.devicemanager.dto.UpdateInterfaceRequest;
+import com.example.devicemanager.model.Device;
 import com.example.devicemanager.model.InterfaceStatus;
+import com.example.devicemanager.model.InterfaceType;
 import com.example.devicemanager.model.NetworkInterface;
 import com.example.devicemanager.repository.DeviceRepository;
 import com.example.devicemanager.repository.NetworkInterfaceRepository;
@@ -13,6 +18,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 @Service
 public class NetworkInterfaceServiceImpl implements NetworkInterfaceService {
@@ -139,5 +145,64 @@ public class NetworkInterfaceServiceImpl implements NetworkInterfaceService {
         }
         interfaceRepository.deleteById(interfaceId);
         return true;
+    }
+
+    @Override
+    public AllInterfacesResponse listAllInterfaces(String deviceId, InterfaceType type,
+                                                   InterfaceStatus status, Boolean enabled,
+                                                   int page, int pageSize) {
+        // Validate pagination parameters
+        if (page < 1) {
+            throw new IllegalArgumentException("Page must be >= 1");
+        }
+        if (pageSize < 1 || pageSize > 100) {
+            throw new IllegalArgumentException("Page size must be between 1 and 100");
+        }
+
+        // Get filtered results
+        List<NetworkInterface> allInterfaces = interfaceRepository.findAllWithFilters(
+                deviceId, type, status, enabled);
+
+        // Count total items
+        long totalItems = allInterfaces.size();
+
+        // Apply pagination
+        int startIndex = (page - 1) * pageSize;
+        int endIndex = Math.min(startIndex + pageSize, allInterfaces.size());
+
+        List<NetworkInterface> paginatedInterfaces = allInterfaces.subList(
+                Math.min(startIndex, allInterfaces.size()),
+                endIndex
+        );
+
+        // Enrich with device names
+        List<InterfaceWithDevice> enrichedInterfaces = paginatedInterfaces.stream()
+                .map(this::enrichWithDeviceName)
+                .collect(Collectors.toList());
+
+        // Create pagination metadata
+        PaginationMetadata pagination = new PaginationMetadata(page, pageSize, totalItems);
+
+        return new AllInterfacesResponse(enrichedInterfaces, pagination);
+    }
+
+    private InterfaceWithDevice enrichWithDeviceName(NetworkInterface networkInterface) {
+        InterfaceWithDevice result = new InterfaceWithDevice();
+        result.setId(networkInterface.getId());
+        result.setDeviceId(networkInterface.getDeviceId());
+        result.setName(networkInterface.getName());
+        result.setType(networkInterface.getType());
+        result.setMacAddress(networkInterface.getMacAddress());
+        result.setIpAddress(networkInterface.getIpAddress());
+        result.setStatus(networkInterface.getStatus());
+        result.setEnabled(networkInterface.getEnabled());
+        result.setCreatedAt(networkInterface.getCreatedAt());
+        result.setUpdatedAt(networkInterface.getUpdatedAt());
+
+        // Get device name from repository
+        Optional<Device> device = deviceRepository.findById(networkInterface.getDeviceId());
+        result.setDeviceName(device.map(Device::getName).orElse("Unknown"));
+
+        return result;
     }
 }

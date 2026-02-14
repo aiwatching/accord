@@ -173,10 +173,17 @@ export function scanInboxes(accordDir: string, config: AccordConfig, hubDir?: st
   return requests;
 }
 
+function isRequestFile(filename: string): boolean {
+  return filename.startsWith('req-') && filename.endsWith('.md')
+    && !filename.endsWith('.summary.md')
+    && !filename.endsWith('.resolution.md')
+    && !filename.endsWith('.session.md');
+}
+
 function scanDirectory(dir: string, results: AccordRequest[], seen?: Set<string>): void {
   if (!fs.existsSync(dir)) return;
 
-  const files = fs.readdirSync(dir).filter(f => f.startsWith('req-') && f.endsWith('.md'));
+  const files = fs.readdirSync(dir).filter(isRequestFile);
   for (const file of files) {
     const req = parseRequest(path.join(dir, file));
     if (req) {
@@ -216,7 +223,7 @@ export function isRequestCompleted(accordDir: string, requestId: string): boolea
   const archiveDir = path.join(accordDir, 'comms', 'archive');
   if (!fs.existsSync(archiveDir)) return false;
 
-  const files = fs.readdirSync(archiveDir).filter(f => f.endsWith('.md'));
+  const files = fs.readdirSync(archiveDir).filter(isRequestFile);
   for (const file of files) {
     const filePath = path.join(archiveDir, file);
     const req = parseRequest(filePath);
