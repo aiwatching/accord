@@ -2,10 +2,18 @@ import { describe, it, expect } from 'vitest';
 import { createAdapter } from '../server/adapters/adapter.js';
 
 describe('createAdapter', () => {
-  it('creates claude-code adapter', () => {
+  it('creates claude-code (V1) adapter', () => {
     const adapter = createAdapter({ agent: 'claude-code' });
     expect(adapter.name).toBe('claude-code');
     expect(adapter.supportsResume).toBe(true);
+    expect(adapter.closeAll).toBeUndefined();
+  });
+
+  it('creates claude-code-v2 adapter', () => {
+    const adapter = createAdapter({ agent: 'claude-code-v2' });
+    expect(adapter.name).toBe('claude-code-v2');
+    expect(adapter.supportsResume).toBe(true);
+    expect(adapter.closeAll).toBeTypeOf('function');
   });
 
   it('creates shell adapter', () => {
@@ -27,7 +35,17 @@ describe('createAdapter', () => {
   it('passes model to claude-code adapter', () => {
     const adapter = createAdapter({ agent: 'claude-code', model: 'claude-opus-4-6' });
     expect(adapter.name).toBe('claude-code');
-    // Model is used internally during invoke, not exposed — just verify construction succeeds
+  });
+
+  it('passes model to claude-code-v2 adapter', () => {
+    const adapter = createAdapter({ agent: 'claude-code-v2', model: 'claude-opus-4-6' });
+    expect(adapter.name).toBe('claude-code-v2');
+  });
+
+  it('v2 closeAll resolves with no sessions', async () => {
+    const adapter = createAdapter({ agent: 'claude-code-v2' });
+    // closeAll should resolve cleanly when no sessions exist
+    await expect(adapter.closeAll!()).resolves.toBeUndefined();
   });
 });
 

@@ -19,7 +19,7 @@ if (!process.env.PATH?.includes(nodeDir)) {
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
-export type AgentAdapterType = 'claude-code' | 'shell';
+export type AgentAdapterType = 'claude-code' | 'claude-code-v2' | 'shell';
 
 export interface AgentInvocationParams {
   prompt: string;
@@ -49,6 +49,9 @@ export interface AgentAdapter {
 
   /** Invoke the agent with the given prompt and parameters */
   invoke(params: AgentInvocationParams): Promise<AgentInvocationResult>;
+
+  /** Close all managed sessions (for graceful shutdown). Only applicable to V2 adapter. */
+  closeAll?(): Promise<void>;
 }
 
 // ── Factory ─────────────────────────────────────────────────────────────────
@@ -62,7 +65,10 @@ export interface AdapterConfig {
 export function createAdapter(config: AdapterConfig): AgentAdapter {
   switch (config.agent) {
     case 'claude-code':
-      return new ClaudeCodeAdapter(config.model);
+      return new ClaudeCodeV1Adapter(config.model);
+
+    case 'claude-code-v2':
+      return new ClaudeCodeV2Adapter(config.model);
 
     case 'shell':
       return new ShellAdapter(
@@ -70,13 +76,13 @@ export function createAdapter(config: AdapterConfig): AgentAdapter {
       );
 
     default:
-      throw new Error(`Unknown agent adapter: ${config.agent}. Supported: claude-code, shell`);
+      throw new Error(`Unknown agent adapter: ${config.agent}. Supported: claude-code, claude-code-v2, shell`);
   }
 }
 
 // ── Claude Code Adapter ─────────────────────────────────────────────────────
 
-class ClaudeCodeAdapter implements AgentAdapter {
+class ClaudeCodeV1Adapter implements AgentAdapter {
   readonly name = 'claude-code';
   readonly supportsResume = true;
   private defaultModel?: string;
@@ -153,6 +159,240 @@ class ClaudeCodeAdapter implements AgentAdapter {
     } finally {
       clearTimeout(timer);
     }
+  }
+}
+
+// ── Claude Code V2 Adapter (Persistent Sessions) ───────────────────────────
+
+interface ManagedSession {
+  session: { sessionId: string; send(msg: string): Promise<void>; stream(): AsyncGenerator<unknown, void>; close(): void };
+  cwd: string;
+  sessionId: string;
+  createdAt: number;
+  requestCount: number;
+  lastUsedAt: number;
+  busy: boolean;
+  activeStream: AsyncGenerator<unknown, void>;
+}
+
+/**
+ * V2 adapter using the Claude Agent SDK's persistent session API
+ * (`unstable_v2_createSession` / `unstable_v2_resumeSession`).
+ *
+ * Key differences from V1:
+ * - Sessions persist across requests — no 2-5s startup overhead per request
+ * - Uses `process.chdir()` workaround (SDK lacks `cwd` option)
+ * - Requires `~/.claude/settings.json` permission allows (SDK can't bypass permissions)
+ * - Project CLAUDE.md is NOT loaded by the SDK (context must be in prompt)
+ *
+ * Opt-in via `agent: 'claude-code-v2'` in config.
+ */
+class ClaudeCodeV2Adapter implements AgentAdapter {
+  readonly name = 'claude-code-v2';
+  readonly supportsResume = true;
+  private defaultModel?: string;
+  private sessions = new Map<string, ManagedSession>();
+  private readonly maxRequests: number;
+  private readonly maxAgeMs: number;
+
+  constructor(defaultModel?: string, maxRequests = 50, maxAgeHours = 4) {
+    this.defaultModel = defaultModel;
+    this.maxRequests = maxRequests;
+    this.maxAgeMs = maxAgeHours * 60 * 60 * 1000;
+  }
+
+  async invoke(params: AgentInvocationParams): Promise<AgentInvocationResult> {
+    const managed = await this.getOrCreateSession(params.cwd, params.model, params.resumeSessionId);
+    managed.busy = true;
+    const startTime = Date.now();
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      // Send prompt to the persistent session
+      await managed.session.send(params.prompt);
+
+      // Collect streamed messages with timeout via Promise.race
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Agent timed out after ${params.timeout}s`)),
+          params.timeout * 1000,
+        );
+      });
+
+      const result = await Promise.race([
+        this.collectStream(managed, params.onOutput),
+        timeoutPromise,
+      ]);
+
+      managed.requestCount++;
+      managed.lastUsedAt = Date.now();
+
+      if (this.shouldRotate(managed)) {
+        await this.closeSession(params.cwd);
+      }
+
+      return { ...result, durationMs: Date.now() - startTime };
+    } catch (err) {
+      // On error (including timeout), close the session to avoid stale state
+      await this.closeSession(params.cwd);
+      throw err;
+    } finally {
+      if (timer) clearTimeout(timer);
+      const s = this.sessions.get(params.cwd);
+      if (s) s.busy = false;
+    }
+  }
+
+  async closeAll(): Promise<void> {
+    const cwds = [...this.sessions.keys()];
+    for (const cwd of cwds) {
+      await this.closeSession(cwd);
+    }
+    if (cwds.length > 0) {
+      logger.info(`[claude-code-v2] All ${cwds.length} session(s) closed`);
+    }
+  }
+
+  // ── Private helpers ─────────────────────────────────────────────────────
+
+  private async getOrCreateSession(
+    cwd: string,
+    model?: string,
+    resumeSessionId?: string,
+  ): Promise<ManagedSession> {
+    const existing = this.sessions.get(cwd);
+    if (existing && !this.shouldRotate(existing)) {
+      return existing;
+    }
+    if (existing) {
+      await this.closeSession(cwd);
+    }
+    return this.createManagedSession(cwd, model, resumeSessionId);
+  }
+
+  private async createManagedSession(
+    cwd: string,
+    model?: string,
+    resumeSessionId?: string,
+  ): Promise<ManagedSession> {
+    // Dynamic import — keeps the SDK optional (tests can run without it)
+    const sdk = await import('@anthropic-ai/claude-agent-sdk');
+    const resolvedModel = model ?? this.defaultModel ?? 'claude-sonnet-4-5-20250929';
+    const options = { model: resolvedModel, env: process.env };
+
+    // process.chdir() workaround: the V2 SDK has no `cwd` option.
+    // Safe because createSession/resumeSession are synchronous and
+    // the Dispatcher prevents concurrent same-cwd access.
+    const originalCwd = process.cwd();
+    let session: ManagedSession['session'];
+    try {
+      process.chdir(cwd);
+      if (resumeSessionId) {
+        session = sdk.unstable_v2_resumeSession(resumeSessionId, options);
+        logger.info(`[claude-code-v2] Resumed session ${resumeSessionId} for ${cwd}`);
+      } else {
+        session = sdk.unstable_v2_createSession(options);
+        logger.info(`[claude-code-v2] Created new session for ${cwd}`);
+      }
+    } finally {
+      process.chdir(originalCwd);
+    }
+
+    // Start the long-lived stream — persists across send() calls
+    const activeStream = session.stream();
+
+    const managed: ManagedSession = {
+      session,
+      cwd,
+      sessionId: resumeSessionId ?? '',
+      createdAt: Date.now(),
+      requestCount: 0,
+      lastUsedAt: Date.now(),
+      busy: false,
+      activeStream,
+    };
+
+    this.sessions.set(cwd, managed);
+    return managed;
+  }
+
+  /**
+   * Iterate the session's stream until a `result` message arrives.
+   * Uses `.next()` instead of `for await` to avoid closing the generator on break.
+   */
+  private async collectStream(
+    managed: ManagedSession,
+    onOutput?: (chunk: string) => void,
+  ): Promise<Omit<AgentInvocationResult, 'durationMs'>> {
+    let sessionId: string | undefined;
+    let costUsd: number | undefined;
+    let numTurns: number | undefined;
+
+    while (true) {
+      const { value: msg, done } = await managed.activeStream.next();
+      if (done || !msg) break;
+
+      const m = msg as Record<string, unknown>;
+
+      if (m.type === 'system' && m.subtype === 'init') {
+        sessionId = m.session_id as string | undefined;
+        if (sessionId) managed.sessionId = sessionId;
+        logger.debug(`[claude-code-v2] Session ID: ${sessionId}`);
+      } else if (m.type === 'assistant' && m.message) {
+        // Extract text content (same format as V1)
+        const message = m.message;
+        const text = typeof message === 'string'
+          ? message
+          : (message as { content?: Array<{ type: string; text?: string }> })?.content
+              ?.filter((c: { type: string }) => c.type === 'text')
+              .map((c: { text?: string }) => c.text ?? '')
+              .join('') ?? '';
+        if (text && onOutput) {
+          onOutput(text);
+        }
+      } else if (m.type === 'result') {
+        sessionId = m.session_id as string | undefined;
+        costUsd = m.total_cost_usd as number | undefined;
+        numTurns = m.num_turns as number | undefined;
+
+        if (m.is_error) {
+          const errors = m.errors as string[] | undefined;
+          throw new Error(`Agent error (${m.subtype}): ${errors?.join(', ') ?? 'unknown'}`);
+        }
+
+        logger.info(`[claude-code-v2] Completed: ${numTurns} turns, $${costUsd?.toFixed(4)}`);
+        break; // This interaction is complete — stream stays alive for next send()
+      }
+    }
+
+    return { sessionId, costUsd, numTurns };
+  }
+
+  private shouldRotate(managed: ManagedSession): boolean {
+    if (managed.requestCount >= this.maxRequests) {
+      logger.info(`[claude-code-v2] Session for ${managed.cwd} exceeded max requests (${managed.requestCount}/${this.maxRequests})`);
+      return true;
+    }
+    if (Date.now() - managed.createdAt >= this.maxAgeMs) {
+      const ageHours = (Date.now() - managed.createdAt) / (1000 * 60 * 60);
+      logger.info(`[claude-code-v2] Session for ${managed.cwd} exceeded max age (${ageHours.toFixed(1)}h)`);
+      return true;
+    }
+    return false;
+  }
+
+  private async closeSession(cwd: string): Promise<void> {
+    const managed = this.sessions.get(cwd);
+    if (!managed) return;
+
+    try {
+      managed.session.close();
+    } catch (err) {
+      logger.warn(`[claude-code-v2] Error closing session for ${cwd}: ${err}`);
+    }
+
+    this.sessions.delete(cwd);
+    logger.info(`[claude-code-v2] Session closed for ${cwd}`);
   }
 }
 

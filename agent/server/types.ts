@@ -62,8 +62,8 @@ export interface DispatcherConfig {
   debug: boolean;
   /** HTTP server port (default: 3000) */
   port?: number;
-  /** Agent adapter type: "claude-code" (default) or "shell" */
-  agent: 'claude-code' | 'shell';
+  /** Agent adapter type: "claude-code" (default), "claude-code-v2" (persistent sessions), or "shell" */
+  agent: 'claude-code' | 'claude-code-v2' | 'shell';
   /** Shell command for the "shell" adapter (e.g. "claude -p", "codex -q") */
   agent_cmd?: string;
 }
@@ -130,6 +130,8 @@ export interface RequestResult {
   numTurns?: number;
   error?: string;
   sessionId?: string;
+  /** ISO 8601 timestamp when this result was produced */
+  completedAt?: string;
 }
 
 // ── Dispatcher types ───────────────────────────────────────────────────────
