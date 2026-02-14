@@ -11,6 +11,16 @@ public class Device {
     private DeviceStatus status;
     private Instant lastSeen;
 
+    // Authentication fields
+    private String authUsername;
+    private String authPassword;  // Encrypted
+    private String authToken;
+    private AuthType authType;
+    private String sshPublicKey;
+    private String certificate;
+    private Boolean authEnabled;
+    private Instant lastAuthUpdate;
+
     public Device() {}
 
     public Device(String id, String name, String ipAddress, String macAddress, DeviceStatus status) {
@@ -39,4 +49,28 @@ public class Device {
 
     public Instant getLastSeen() { return lastSeen; }
     public void setLastSeen(Instant lastSeen) { this.lastSeen = lastSeen; }
+
+    public String getAuthUsername() { return authUsername; }
+    public void setAuthUsername(String authUsername) { this.authUsername = authUsername; }
+
+    public String getAuthPassword() { return authPassword; }
+    public void setAuthPassword(String authPassword) { this.authPassword = authPassword; }
+
+    public String getAuthToken() { return authToken; }
+    public void setAuthToken(String authToken) { this.authToken = authToken; }
+
+    public AuthType getAuthType() { return authType; }
+    public void setAuthType(AuthType authType) { this.authType = authType; }
+
+    public String getSshPublicKey() { return sshPublicKey; }
+    public void setSshPublicKey(String sshPublicKey) { this.sshPublicKey = sshPublicKey; }
+
+    public String getCertificate() { return certificate; }
+    public void setCertificate(String certificate) { this.certificate = certificate; }
+
+    public Boolean getAuthEnabled() { return authEnabled; }
+    public void setAuthEnabled(Boolean authEnabled) { this.authEnabled = authEnabled; }
+
+    public Instant getLastAuthUpdate() { return lastAuthUpdate; }
+    public void setLastAuthUpdate(Instant lastAuthUpdate) { this.lastAuthUpdate = lastAuthUpdate; }
 }
