@@ -311,10 +311,6 @@ export function Console() {
 
   // -- Key handling --
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      execute();
-      return;
-    }
     if (e.key === 'ArrowUp') {
       e.preventDefault();
       if (cmdHistory.length === 0) return;

@@ -126,6 +126,12 @@ export function registerCommandRoutes(app: FastifyInstance): void {
 
     logger.info(`[session] Orchestrator message: ${message.slice(0, 80)}...`);
 
+    // Persist session output to log file
+    const sessionsDir = path.join(accordDir, 'comms', 'sessions');
+    fs.mkdirSync(sessionsDir, { recursive: true });
+    const logFile = path.join(sessionsDir, 'orchestrator-session.log');
+    fs.appendFileSync(logFile, `--- orchestrator | orchestrator | ${new Date().toISOString()} ---\n[YOU] ${message}\n`);
+
     eventBus.emit('session:start', {
       service: 'orchestrator',
       message: message.slice(0, 200),
@@ -141,6 +147,7 @@ export function registerCommandRoutes(app: FastifyInstance): void {
         maxTurns: 50,
         maxBudgetUsd: dispatcherConfig.max_budget_usd,
         onOutput: (chunk: string) => {
+          fs.appendFileSync(logFile, chunk);
           eventBus.emit('session:output', {
             service: 'orchestrator',
             chunk,
@@ -156,6 +163,7 @@ export function registerCommandRoutes(app: FastifyInstance): void {
       }
 
       const durationMs = Date.now() - startTime;
+      fs.appendFileSync(logFile, `\n--- completed | ${durationMs}ms ---\n`);
 
       eventBus.emit('session:complete', {
         service: 'orchestrator',
@@ -174,6 +182,7 @@ export function registerCommandRoutes(app: FastifyInstance): void {
     } catch (err) {
       const error = String(err);
       logger.error(`[session] Orchestrator error: ${error}`);
+      fs.appendFileSync(logFile, `\n--- failed | ${error} ---\n`);
 
       eventBus.emit('session:error', {
         service: 'orchestrator',

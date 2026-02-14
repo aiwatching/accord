@@ -1303,6 +1303,64 @@ scaffold_orchestrator_v2() {
                 fi
             done
         fi
+
+        # Clean current team's runtime content (old requests, directives, history, sessions)
+        if [[ -d "$team_dir" ]]; then
+            local cleaned=0
+            # Inbox requests
+            local inbox_files
+            inbox_files="$(find "$team_dir/comms/inbox" -name "req-*.md" 2>/dev/null || true)"
+            if [[ -n "$inbox_files" ]]; then
+                local count
+                count="$(echo "$inbox_files" | wc -l | xargs)"
+                log "Removing $count stale request(s) from inbox..."
+                echo "$inbox_files" | while IFS= read -r f; do rm -f "$f"; done
+                cleaned=$((cleaned + count))
+            fi
+            # Archived requests
+            local archive_files
+            archive_files="$(find "$team_dir/comms/archive" -name "req-*.md" 2>/dev/null || true)"
+            if [[ -n "$archive_files" ]]; then
+                local count
+                count="$(echo "$archive_files" | wc -l | xargs)"
+                log "Removing $count stale request(s) from archive..."
+                echo "$archive_files" | while IFS= read -r f; do rm -f "$f"; done
+                cleaned=$((cleaned + count))
+            fi
+            # Directives
+            local directive_files
+            directive_files="$(find "$team_dir/directives" -name "dir-*.md" 2>/dev/null || true)"
+            if [[ -n "$directive_files" ]]; then
+                local count
+                count="$(echo "$directive_files" | wc -l | xargs)"
+                log "Removing $count stale directive(s)..."
+                echo "$directive_files" | while IFS= read -r f; do rm -f "$f"; done
+                cleaned=$((cleaned + count))
+            fi
+            # History logs
+            local history_files
+            history_files="$(find "$team_dir/comms/history" -name "*.jsonl" 2>/dev/null || true)"
+            if [[ -n "$history_files" ]]; then
+                local count
+                count="$(echo "$history_files" | wc -l | xargs)"
+                log "Removing $count stale history log(s)..."
+                echo "$history_files" | while IFS= read -r f; do rm -f "$f"; done
+                cleaned=$((cleaned + count))
+            fi
+            # Session logs + checkpoints
+            if [[ -d "$team_dir/comms/sessions" ]]; then
+                local session_count
+                session_count="$(find "$team_dir/comms/sessions" -type f 2>/dev/null | wc -l | xargs)"
+                if [[ "$session_count" -gt 0 ]]; then
+                    log "Removing $session_count stale session file(s)..."
+                    find "$team_dir/comms/sessions" -type f -delete
+                    cleaned=$((cleaned + session_count))
+                fi
+            fi
+            if [[ $cleaned -gt 0 ]]; then
+                log "Cleaned $cleaned stale file(s) from teams/$TEAM/"
+            fi
+        fi
     fi
 
     # Root-level accord.yaml
