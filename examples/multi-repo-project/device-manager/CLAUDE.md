@@ -50,9 +50,18 @@
     - Device existence check before creating interface
   - Added 24 comprehensive tests (14 service tests, 10 controller tests) — all passing
   - Updated device-manager.yaml contract with interface management endpoints marked as proposed
-
-
-
+- 2026-02-14: req-003-add-all-interfaces-endpoint — Added global interfaces query endpoint
+  - Created new GET /api/interfaces endpoint for system-wide interface queries
+  - Implemented query parameter filtering (deviceId, type, status, enabled)
+  - Implemented pagination with configurable page and pageSize (max 100)
+  - Created response DTOs: InterfaceWithDevice, PaginationMetadata, AllInterfacesResponse
+  - Extended NetworkInterfaceRepository with findAllWithFilters and countWithFilters methods
+  - Extended NetworkInterfaceService with listAllInterfaces method
+  - Created AllInterfacesController with comprehensive parameter validation
+  - Enriched interface responses with device names (JOIN with Device table)
+  - Implemented pagination metadata calculation (page, pageSize, totalItems, totalPages)
+  - Added 14 comprehensive tests (6 service tests, 8 controller tests) — all passing (47 total tests)
+  - Updated device-manager.yaml contract with new /api/interfaces endpoint marked as proposed
 
 
 

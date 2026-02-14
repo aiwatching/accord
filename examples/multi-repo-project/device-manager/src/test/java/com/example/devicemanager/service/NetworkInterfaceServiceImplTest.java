@@ -1,7 +1,10 @@
 package com.example.devicemanager.service;
 
+import com.example.devicemanager.dto.AllInterfacesResponse;
 import com.example.devicemanager.dto.CreateInterfaceRequest;
 import com.example.devicemanager.dto.UpdateInterfaceRequest;
+import com.example.devicemanager.model.Device;
+import com.example.devicemanager.model.DeviceStatus;
 import com.example.devicemanager.model.InterfaceStatus;
 import com.example.devicemanager.model.InterfaceType;
 import com.example.devicemanager.model.NetworkInterface;
@@ -20,6 +23,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -285,6 +289,113 @@ class NetworkInterfaceServiceImplTest {
         // Assert
         assertFalse(result);
         verify(interfaceRepository, never()).deleteById(anyString());
+    }
+
+    @Test
+    void listAllInterfaces_noFilters_returnsAllWithPagination() {
+        // Arrange
+        NetworkInterface iface1 = createTestInterface("iface1", "device1", "eth0");
+        NetworkInterface iface2 = createTestInterface("iface2", "device2", "wlan0");
+        List<NetworkInterface> interfaces = Arrays.asList(iface1, iface2);
+
+        Device device1 = new Device("device1", "Device-1", "192.168.1.1", "AA:BB:CC:DD:EE:FF", DeviceStatus.ONLINE);
+        Device device2 = new Device("device2", "Device-2", "192.168.1.2", "AA:BB:CC:DD:EE:00", DeviceStatus.ONLINE);
+
+        when(interfaceRepository.findAllWithFilters(null, null, null, null)).thenReturn(interfaces);
+        when(deviceRepository.findById("device1")).thenReturn(Optional.of(device1));
+        when(deviceRepository.findById("device2")).thenReturn(Optional.of(device2));
+
+        // Act
+        AllInterfacesResponse response = interfaceService.listAllInterfaces(null, null, null, null, 1, 50);
+
+        // Assert
+        assertEquals(2, response.getInterfaces().size());
+        assertEquals("Device-1", response.getInterfaces().get(0).getDeviceName());
+        assertEquals("Device-2", response.getInterfaces().get(1).getDeviceName());
+        assertEquals(1, response.getPagination().getPage());
+        assertEquals(50, response.getPagination().getPageSize());
+        assertEquals(2, response.getPagination().getTotalItems());
+        assertEquals(1, response.getPagination().getTotalPages());
+    }
+
+    @Test
+    void listAllInterfaces_withFilters_returnsFilteredResults() {
+        // Arrange
+        NetworkInterface iface1 = createTestInterface("iface1", "device1", "eth0");
+        iface1.setType(InterfaceType.ETHERNET);
+        List<NetworkInterface> interfaces = Arrays.asList(iface1);
+
+        Device device1 = new Device("device1", "Device-1", "192.168.1.1", "AA:BB:CC:DD:EE:FF", DeviceStatus.ONLINE);
+
+        when(interfaceRepository.findAllWithFilters(eq("device1"), eq(InterfaceType.ETHERNET), eq(null), eq(true)))
+                .thenReturn(interfaces);
+        when(deviceRepository.findById("device1")).thenReturn(Optional.of(device1));
+
+        // Act
+        AllInterfacesResponse response = interfaceService.listAllInterfaces(
+                "device1", InterfaceType.ETHERNET, null, true, 1, 50);
+
+        // Assert
+        assertEquals(1, response.getInterfaces().size());
+        assertEquals("Device-1", response.getInterfaces().get(0).getDeviceName());
+    }
+
+    @Test
+    void listAllInterfaces_pagination_returnsCorrectPage() {
+        // Arrange
+        NetworkInterface iface1 = createTestInterface("iface1", "device1", "eth0");
+        NetworkInterface iface2 = createTestInterface("iface2", "device2", "wlan0");
+        NetworkInterface iface3 = createTestInterface("iface3", "device3", "eth1");
+        List<NetworkInterface> interfaces = Arrays.asList(iface1, iface2, iface3);
+
+        Device device = new Device("device1", "Device", "192.168.1.1", "AA:BB:CC:DD:EE:FF", DeviceStatus.ONLINE);
+
+        when(interfaceRepository.findAllWithFilters(null, null, null, null)).thenReturn(interfaces);
+        when(deviceRepository.findById(anyString())).thenReturn(Optional.of(device));
+
+        // Act - Get page 2 with pageSize 2
+        AllInterfacesResponse response = interfaceService.listAllInterfaces(null, null, null, null, 2, 2);
+
+        // Assert
+        assertEquals(1, response.getInterfaces().size()); // Only 1 item on page 2
+        assertEquals("iface3", response.getInterfaces().get(0).getId());
+        assertEquals(2, response.getPagination().getPage());
+        assertEquals(2, response.getPagination().getPageSize());
+        assertEquals(3, response.getPagination().getTotalItems());
+        assertEquals(2, response.getPagination().getTotalPages());
+    }
+
+    @Test
+    void listAllInterfaces_invalidPage_throwsException() {
+        // Act & Assert
+        assertThrows(IllegalArgumentException.class, () ->
+                interfaceService.listAllInterfaces(null, null, null, null, 0, 50));
+    }
+
+    @Test
+    void listAllInterfaces_invalidPageSize_throwsException() {
+        // Act & Assert
+        assertThrows(IllegalArgumentException.class, () ->
+                interfaceService.listAllInterfaces(null, null, null, null, 1, 101));
+        assertThrows(IllegalArgumentException.class, () ->
+                interfaceService.listAllInterfaces(null, null, null, null, 1, 0));
+    }
+
+    @Test
+    void listAllInterfaces_deviceNotFound_returnsUnknownDeviceName() {
+        // Arrange
+        NetworkInterface iface1 = createTestInterface("iface1", "device1", "eth0");
+        List<NetworkInterface> interfaces = Arrays.asList(iface1);
+
+        when(interfaceRepository.findAllWithFilters(null, null, null, null)).thenReturn(interfaces);
+        when(deviceRepository.findById("device1")).thenReturn(Optional.empty());
+
+        // Act
+        AllInterfacesResponse response = interfaceService.listAllInterfaces(null, null, null, null, 1, 50);
+
+        // Assert
+        assertEquals(1, response.getInterfaces().size());
+        assertEquals("Unknown", response.getInterfaces().get(0).getDeviceName());
     }
 
     private NetworkInterface createTestInterface(String id, String deviceId, String name) {

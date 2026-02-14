@@ -1,5 +1,7 @@
 package com.example.devicemanager.repository;
 
+import com.example.devicemanager.model.InterfaceStatus;
+import com.example.devicemanager.model.InterfaceType;
 import com.example.devicemanager.model.NetworkInterface;
 
 import java.util.List;
@@ -14,4 +16,10 @@ public interface NetworkInterfaceRepository {
     void deleteById(String id);
     boolean existsById(String id);
     boolean existsByIdAndDeviceId(String id, String deviceId);
+
+    // New methods for filtering and pagination
+    List<NetworkInterface> findAllWithFilters(String deviceId, InterfaceType type,
+                                               InterfaceStatus status, Boolean enabled);
+    long countWithFilters(String deviceId, InterfaceType type,
+                         InterfaceStatus status, Boolean enabled);
 }
