@@ -4,8 +4,18 @@
 //   - claude-code: Claude Agent SDK (native, supports session resume + streaming)
 //   - shell: any CLI agent via child_process (e.g. "claude -p", "codex", custom scripts)
 
+import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { logger } from '../logger.js';
+
+// Ensure the current node binary's directory is in PATH.
+// The Claude Agent SDK spawns `node` as a child process; if the server
+// was started from a context with a limited PATH (IDE, daemon, launchd),
+// `node` may not be found.  Fix once at module load time.
+const nodeDir = path.dirname(process.execPath);
+if (!process.env.PATH?.includes(nodeDir)) {
+  process.env.PATH = `${nodeDir}${path.delimiter}${process.env.PATH ?? ''}`;
+}
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
