@@ -22,6 +22,12 @@
 - Calls web-server for data aggregation
 
 ## Recent Changes
+- 2026-02-14: req-001-device-list-page — Device list page verified and tested
+  - GET /api/pages/devices endpoint already implemented in PageController.java:38-42
+  - Endpoint fetches device data via WebServerClient.getDashboardDevices()
+  - Returns PageData with title "Devices" and device array
+  - Added comprehensive unit tests for device list page (success and empty list scenarios)
+  - Tests added in PageControllerTest.java:132-156
 - 2026-02-13: req-002-add-batch-delete-ui — Batch delete API already implemented
   - POST /api/pages/devices/batch-delete endpoint exists in PageController
   - BatchDeleteRequest/Response models already created
