@@ -67,6 +67,14 @@ export function syncPush(targetDir: string, _config: AccordConfig): void {
   }
 }
 
+export function cloneRepo(repoUrl: string, targetDir: string): void {
+  execFileSync('git', ['clone', repoUrl, targetDir], {
+    stdio: 'pipe',
+    timeout: 60_000,
+  });
+  logger.info(`Cloned ${repoUrl} → ${targetDir}`);
+}
+
 export function gitCommit(targetDir: string, message: string): boolean {
   try {
     execFileSync('git', ['add', '-A'], {
