@@ -5,8 +5,10 @@ import com.example.devicemanager.dto.BatchDeleteResponse.BatchDeleteError;
 import com.example.devicemanager.model.Device;
 import com.example.devicemanager.model.DeviceStatus;
 import com.example.devicemanager.repository.DeviceRepository;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -16,9 +18,11 @@ import java.util.UUID;
 public class DeviceServiceImpl implements DeviceService {
 
     private final DeviceRepository deviceRepository;
+    private final PasswordEncoder passwordEncoder;
 
-    public DeviceServiceImpl(DeviceRepository deviceRepository) {
+    public DeviceServiceImpl(DeviceRepository deviceRepository, PasswordEncoder passwordEncoder) {
         this.deviceRepository = deviceRepository;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Override
@@ -40,6 +44,20 @@ public class DeviceServiceImpl implements DeviceService {
         if (device.getStatus() == null) {
             device.setStatus(DeviceStatus.UNKNOWN);
         }
+
+        // Encrypt password if provided
+        if (device.getAuthPassword() != null && !device.getAuthPassword().isEmpty()) {
+            String encryptedPassword = passwordEncoder.encode(device.getAuthPassword());
+            device.setAuthPassword(encryptedPassword);
+            device.setLastAuthUpdate(Instant.now());
+        }
+
+        // Set lastAuthUpdate if any auth fields are provided
+        if (device.getAuthType() != null || device.getAuthToken() != null ||
+            device.getSshPublicKey() != null || device.getCertificate() != null) {
+            device.setLastAuthUpdate(Instant.now());
+        }
+
         return deviceRepository.save(device);
     }
 

@@ -1,13 +1,18 @@
 package com.example.devicemanager.service;
 
 import com.example.devicemanager.dto.BatchDeleteResponse;
+import com.example.devicemanager.model.AuthType;
+import com.example.devicemanager.model.Device;
+import com.example.devicemanager.model.DeviceStatus;
 import com.example.devicemanager.repository.DeviceRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.Arrays;
 import java.util.List;
@@ -20,6 +25,9 @@ class DeviceServiceImplTest {
 
     @Mock
     private DeviceRepository deviceRepository;
+
+    @Mock
+    private PasswordEncoder passwordEncoder;
 
     @InjectMocks
     private DeviceServiceImpl deviceService;
@@ -115,5 +123,137 @@ class DeviceServiceImplTest {
         assertTrue(response.getDeleted().contains("device2"));
         assertEquals("device1", response.getFailed().get(0).getDeviceId());
         assertTrue(response.getFailed().get(0).getError().contains("Database error"));
+    }
+
+    @Test
+    void createDevice_withBasicAuth_encryptsPassword() {
+        // Arrange
+        Device device = new Device();
+        device.setName("Test Device");
+        device.setAuthType(AuthType.BASIC);
+        device.setAuthUsername("admin");
+        device.setAuthPassword("plainPassword123");
+        device.setAuthEnabled(true);
+
+        when(passwordEncoder.encode("plainPassword123")).thenReturn("$2a$10$encryptedPasswordHash");
+        when(deviceRepository.save(any(Device.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // Act
+        Device result = deviceService.createDevice(device);
+
+        // Assert
+        assertNotNull(result.getId());
+        assertEquals("$2a$10$encryptedPasswordHash", result.getAuthPassword());
+        assertNotNull(result.getLastAuthUpdate());
+        verify(passwordEncoder, times(1)).encode("plainPassword123");
+        verify(deviceRepository, times(1)).save(any(Device.class));
+    }
+
+    @Test
+    void createDevice_withTokenAuth_setsLastAuthUpdate() {
+        // Arrange
+        Device device = new Device();
+        device.setName("Test Device");
+        device.setAuthType(AuthType.TOKEN);
+        device.setAuthToken("abc123xyz");
+        device.setAuthEnabled(true);
+
+        when(deviceRepository.save(any(Device.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // Act
+        Device result = deviceService.createDevice(device);
+
+        // Assert
+        assertNotNull(result.getId());
+        assertEquals("abc123xyz", result.getAuthToken());
+        assertNotNull(result.getLastAuthUpdate());
+        verify(passwordEncoder, never()).encode(anyString());
+        verify(deviceRepository, times(1)).save(any(Device.class));
+    }
+
+    @Test
+    void createDevice_withSSHKey_setsLastAuthUpdate() {
+        // Arrange
+        Device device = new Device();
+        device.setName("Test Device");
+        device.setAuthType(AuthType.SSH_KEY);
+        device.setSshPublicKey("ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ...");
+        device.setAuthEnabled(true);
+
+        when(deviceRepository.save(any(Device.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // Act
+        Device result = deviceService.createDevice(device);
+
+        // Assert
+        assertNotNull(result.getId());
+        assertEquals("ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ...", result.getSshPublicKey());
+        assertNotNull(result.getLastAuthUpdate());
+        verify(passwordEncoder, never()).encode(anyString());
+        verify(deviceRepository, times(1)).save(any(Device.class));
+    }
+
+    @Test
+    void createDevice_withCertificate_setsLastAuthUpdate() {
+        // Arrange
+        Device device = new Device();
+        device.setName("Test Device");
+        device.setAuthType(AuthType.CERTIFICATE);
+        device.setCertificate("-----BEGIN CERTIFICATE-----\nMIIC...");
+        device.setAuthEnabled(true);
+
+        when(deviceRepository.save(any(Device.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // Act
+        Device result = deviceService.createDevice(device);
+
+        // Assert
+        assertNotNull(result.getId());
+        assertEquals("-----BEGIN CERTIFICATE-----\nMIIC...", result.getCertificate());
+        assertNotNull(result.getLastAuthUpdate());
+        verify(passwordEncoder, never()).encode(anyString());
+        verify(deviceRepository, times(1)).save(any(Device.class));
+    }
+
+    @Test
+    void createDevice_withoutAuthFields_noPasswordEncryption() {
+        // Arrange
+        Device device = new Device();
+        device.setName("Test Device");
+        device.setStatus(DeviceStatus.ONLINE);
+
+        when(deviceRepository.save(any(Device.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // Act
+        Device result = deviceService.createDevice(device);
+
+        // Assert
+        assertNotNull(result.getId());
+        assertEquals(DeviceStatus.ONLINE, result.getStatus());
+        assertNull(result.getAuthPassword());
+        assertNull(result.getLastAuthUpdate());
+        verify(passwordEncoder, never()).encode(anyString());
+        verify(deviceRepository, times(1)).save(any(Device.class));
+    }
+
+    @Test
+    void createDevice_withEmptyPassword_noEncryption() {
+        // Arrange
+        Device device = new Device();
+        device.setName("Test Device");
+        device.setAuthPassword("");
+        device.setAuthType(AuthType.BASIC);
+
+        when(deviceRepository.save(any(Device.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // Act
+        Device result = deviceService.createDevice(device);
+
+        // Assert
+        assertNotNull(result.getId());
+        assertEquals("", result.getAuthPassword());
+        assertNotNull(result.getLastAuthUpdate()); // Still sets because authType is provided
+        verify(passwordEncoder, never()).encode(anyString());
+        verify(deviceRepository, times(1)).save(any(Device.class));
     }
 }

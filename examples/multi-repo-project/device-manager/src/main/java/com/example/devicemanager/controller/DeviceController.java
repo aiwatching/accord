@@ -29,12 +29,15 @@ public class DeviceController {
         List<Device> devices = deviceService.listDevices(status);
         int from = Math.min(page * size, devices.size());
         int to = Math.min(from + size, devices.size());
-        return devices.subList(from, to);
+        return devices.subList(from, to).stream()
+                .map(this::sanitizeDevice)
+                .toList();
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<Device> getDevice(@PathVariable String id) {
         return deviceService.getDevice(id)
+                .map(this::sanitizeDevice)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -55,4 +58,15 @@ public class DeviceController {
     }
 
     // TODO: POST /api/devices/{id}/reboot — pending req-002-reboot-device approval
+
+    /**
+     * Sanitize device by removing password from response
+     * (passwords should never be returned in API responses)
+     */
+    private Device sanitizeDevice(Device device) {
+        if (device != null) {
+            device.setAuthPassword(null);  // Never return passwords
+        }
+        return device;
+    }
 }

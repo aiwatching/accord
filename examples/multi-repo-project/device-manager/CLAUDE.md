@@ -77,6 +77,29 @@
   - Fixed test code to match actual DTO structure and method signatures
   - All 57 tests now passing (24 interface management + 14 global query + 10 batch delete + 9 device tests)
   - Verified comprehensive coverage for all interface endpoints including edge cases and error scenarios
+- 2026-02-15: req-007-add-device-auth-fields — Added authentication fields to Device entity
+  - Created AuthType enum with values: NONE, BASIC, TOKEN, SSH_KEY, CERTIFICATE, API_KEY
+  - Updated Device entity with authentication fields:
+    - authUsername, authPassword (encrypted), authToken, authType
+    - sshPublicKey, certificate (for certificate-based auth)
+    - authEnabled, lastAuthUpdate (timestamp)
+  - Added Spring Security dependency (spring-boot-starter-security) to pom.xml
+  - Configured PasswordEncoder bean using BCryptPasswordEncoder for password encryption
+  - Updated SecurityConfig to disable authentication for all endpoints (only using PasswordEncoder for device password storage)
+  - Updated DeviceServiceImpl to automatically encrypt passwords when creating devices
+  - Added sanitizeDevice() method in DeviceController to ensure passwords are never returned in API responses
+  - Updated DeviceController GET endpoints to sanitize devices (password set to null in responses)
+  - Added 6 comprehensive tests for authentication fields (service layer):
+    - Password encryption for BASIC auth
+    - lastAuthUpdate set for TOKEN, SSH_KEY, CERTIFICATE auth types
+    - No encryption when no auth fields provided
+    - No encryption for empty passwords
+  - Added 4 comprehensive tests for controller layer:
+    - Password not returned in GET /api/devices/{id}
+    - Password not returned in GET /api/devices (list)
+    - Token, SSH key returned normally (only password is hidden)
+  - Updated device-manager.yaml contract with Device schema including auth fields (marked as proposed)
+  - All 67 tests passing (10 device service + 9 device controller + 12 all-interfaces controller + 10 network-interface controller + 26 network-interface service)
 
 
 
