@@ -181,6 +181,65 @@ export function loadRegistryYaml(teamDir: string, serviceName: string): Registry
   return null;
 }
 
+/**
+ * Find the config file path within a target directory.
+ * Same search logic as loadConfig() — returns the first match.
+ */
+export function findConfigPath(targetDir: string): string {
+  const candidates = [
+    path.join(targetDir, '.accord', 'config.yaml'),
+    path.join(targetDir, 'config.yaml'),
+  ];
+
+  for (const c of candidates) {
+    if (fs.existsSync(c)) {
+      return c;
+    }
+  }
+
+  // Check multi-team hub: accord.yaml → teams/{team}/config.yaml
+  const orgPath = path.join(targetDir, 'accord.yaml');
+  if (fs.existsSync(orgPath)) {
+    const orgRaw = fs.readFileSync(orgPath, 'utf-8');
+    const orgConfig = YAML.parse(orgRaw) as OrgConfig;
+    if (orgConfig.teams) {
+      for (const t of orgConfig.teams) {
+        const candidate = path.join(targetDir, 'teams', t.name, 'config.yaml');
+        if (fs.existsSync(candidate)) {
+          return candidate;
+        }
+      }
+    }
+  }
+
+  throw new Error(`No config.yaml found in ${targetDir}`);
+}
+
+/**
+ * Write config back to disk atomically.
+ * Only persists the canonical fields (omits runtime fields like team, teamDir).
+ */
+export function saveConfig(targetDir: string, config: AccordConfig): void {
+  const configPath = findConfigPath(targetDir);
+
+  // Build a clean object with only persistent fields
+  const persistent: Record<string, unknown> = {
+    version: config.version,
+    project: config.project,
+    repo_model: config.repo_model,
+  };
+  if (config.hub) persistent.hub = config.hub;
+  if (config.role) persistent.role = config.role;
+  persistent.services = config.services;
+  if (config.settings) persistent.settings = config.settings;
+  if (config.dispatcher) persistent.dispatcher = config.dispatcher;
+
+  const yamlStr = YAML.stringify(persistent);
+  const tmpPath = configPath + '.tmp';
+  fs.writeFileSync(tmpPath, yamlStr, 'utf-8');
+  fs.renameSync(tmpPath, configPath);
+}
+
 function parseMarkdownRegistry(filePath: string): RegistryYaml | null {
   try {
     const raw = fs.readFileSync(filePath, 'utf-8');
