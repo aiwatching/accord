@@ -99,6 +99,17 @@ export interface SessionPlanTimeoutEvent {
   service: string;
 }
 
+export interface ServiceAddedEvent {
+  name: string;
+  type: string;
+  directory?: string;
+  repo?: string;
+}
+
+export interface ServiceRemovedEvent {
+  name: string;
+}
+
 // ── Event map ────────────────────────────────────────────────────────────────
 
 export interface EventMap {
@@ -119,6 +130,8 @@ export interface EventMap {
   'session:plan-ready': SessionPlanReadyEvent;
   'session:plan-canceled': SessionPlanCanceledEvent;
   'session:plan-timeout': SessionPlanTimeoutEvent;
+  'service:added': ServiceAddedEvent;
+  'service:removed': ServiceRemovedEvent;
 }
 
 export type EventName = keyof EventMap;
@@ -160,6 +173,7 @@ class AccordEventBus extends EventEmitter {
       'sync:pull', 'sync:push', 'scheduler:tick',
       'session:start', 'session:output', 'session:complete', 'session:error',
       'session:plan-generating', 'session:plan-ready', 'session:plan-canceled', 'session:plan-timeout',
+      'service:added', 'service:removed',
     ];
 
     const handlers = new Map<string, (...args: unknown[]) => void>();
