@@ -7,6 +7,7 @@ import { scanInboxes, scanArchives } from '../scanner.js';
 import { executeCommand } from '../commands.js';
 import { eventBus } from '../event-bus.js';
 import { logger } from '../logger.js';
+import { generatePlan } from '../planner.js';
 
 interface ExecBody {
   command: string;
@@ -97,25 +98,23 @@ export function registerCommandRoutes(app: FastifyInstance): void {
   // POST /api/session/send — direct orchestrator session interaction
   // Invokes the AI agent on the hub directory, streams output via WebSocket,
   // and maintains session continuity across messages.
+  // When planner is enabled, generates a plan first and waits for approval.
   let sessionBusy = false;
 
-  app.post<{ Body: { message: string } }>('/api/session/send', async (req, reply) => {
-    const message = (req.body.message ?? '').trim();
-    if (!message) {
-      return reply.status(400).send({ error: 'message is required' });
-    }
+  // Pending plan state (for two-phase planner flow)
+  let pendingPlan: {
+    plan: string;
+    userMessage: string;
+    timeoutHandle: ReturnType<typeof setTimeout>;
+  } | null = null;
 
-    if (sessionBusy) {
-      return reply.status(409).send({ error: 'Orchestrator session is busy. Wait for the current message to complete.' });
-    }
-
-    sessionBusy = true;
+  /** Execute the orchestrator session (shared by direct and post-plan flows). */
+  async function executeOrchestratorSession(message: string, approvedPlan?: string) {
     const { hubDir, config, dispatcherConfig, dispatcher } = getHubState();
     const adapter = dispatcher.getAdapter();
     const sessionManager = dispatcher.getSessionManager();
     const accordDir = getAccordDir(hubDir, config);
 
-    // Resolve existing session for resume
     const existing = adapter.supportsResume
       ? sessionManager.getSession('orchestrator')
       : undefined;
@@ -124,9 +123,6 @@ export function registerCommandRoutes(app: FastifyInstance): void {
     const startTime = Date.now();
     let streamIndex = 0;
 
-    logger.info(`[session] Orchestrator message: ${message.slice(0, 80)}...`);
-
-    // Persist session output to log file
     const sessionsDir = path.join(accordDir, 'comms', 'sessions');
     fs.mkdirSync(sessionsDir, { recursive: true });
     const logFile = path.join(sessionsDir, 'orchestrator-session.log');
@@ -137,9 +133,8 @@ export function registerCommandRoutes(app: FastifyInstance): void {
       message: message.slice(0, 200),
     });
 
-    // Build orchestrator-constrained prompt: enforce protocol rules
     const serviceNames = getServiceNames(config);
-    const orchestratorPrompt = buildOrchestratorPrompt(message, serviceNames, accordDir);
+    const orchestratorPrompt = buildOrchestratorPrompt(message, serviceNames, accordDir, approvedPlan);
 
     try {
       const result = await adapter.invoke({
@@ -160,7 +155,6 @@ export function registerCommandRoutes(app: FastifyInstance): void {
         },
       });
 
-      // Update session for future resume
       if (result.sessionId) {
         sessionManager.updateSession('orchestrator', result.sessionId);
         sessionManager.saveToDisk(accordDir);
@@ -193,15 +187,132 @@ export function registerCommandRoutes(app: FastifyInstance): void {
         error,
       });
 
-      return reply.status(500).send({
-        success: false,
-        error,
-        durationMs: Date.now() - startTime,
-      });
+      throw err;
     } finally {
       sessionBusy = false;
     }
+  }
+
+  app.post<{ Body: { message: string } }>('/api/session/send', async (req, reply) => {
+    const message = (req.body.message ?? '').trim();
+    if (!message) {
+      return reply.status(400).send({ error: 'message is required' });
+    }
+
+    if (sessionBusy) {
+      return reply.status(409).send({ error: 'Orchestrator session is busy. Wait for the current message to complete.' });
+    }
+
+    sessionBusy = true;
+    logger.info(`[session] Orchestrator message: ${message.slice(0, 80)}...`);
+
+    const { dispatcherConfig, config, hubDir } = getHubState();
+    const accordDir = getAccordDir(hubDir, config);
+    const serviceNames = getServiceNames(config);
+
+    // If planner is disabled, execute directly
+    if (!dispatcherConfig.planner_enabled) {
+      try {
+        const result = await executeOrchestratorSession(message);
+        return result;
+      } catch (err) {
+        return reply.status(500).send({
+          success: false,
+          error: String(err),
+        });
+      }
+    }
+
+    // Planner enabled — generate plan first
+    eventBus.emit('session:plan-generating', {
+      service: 'orchestrator',
+      message: message.slice(0, 200),
+    });
+
+    let streamIndex = 0;
+
+    try {
+      const planResult = await generatePlan({
+        userMessage: message,
+        serviceNames,
+        accordDir,
+        model: dispatcherConfig.planner_model,
+        onOutput: (chunk: string) => {
+          eventBus.emit('session:output', {
+            service: 'orchestrator',
+            chunk,
+            streamIndex: streamIndex++,
+          });
+        },
+      });
+
+      // Store pending plan and start timeout
+      const timeoutMs = (dispatcherConfig.planner_timeout ?? 300) * 1000;
+      const timeoutHandle = setTimeout(() => {
+        if (pendingPlan) {
+          pendingPlan = null;
+          sessionBusy = false;
+          eventBus.emit('session:plan-timeout', { service: 'orchestrator' });
+          logger.info('[session] Plan approval timed out');
+        }
+      }, timeoutMs);
+
+      pendingPlan = { plan: planResult.plan, userMessage: message, timeoutHandle };
+
+      eventBus.emit('session:plan-ready', {
+        service: 'orchestrator',
+        plan: planResult.plan,
+        costUsd: planResult.costUsd,
+      });
+
+      return { planReady: true, plan: planResult.plan, costUsd: planResult.costUsd };
+    } catch (err) {
+      sessionBusy = false;
+      const error = String(err);
+      logger.error(`[session] Planner error: ${error}`);
+      eventBus.emit('session:error', { service: 'orchestrator', error });
+      return reply.status(500).send({ success: false, error });
+    }
   });
+
+  // POST /api/session/approve-plan — approve, edit, or cancel a pending plan
+  app.post<{ Body: { action: 'approve' | 'cancel'; editedPlan?: string } }>(
+    '/api/session/approve-plan',
+    async (req, reply) => {
+      const { action, editedPlan } = req.body;
+
+      if (!pendingPlan) {
+        return reply.status(404).send({ error: 'No pending plan to approve' });
+      }
+
+      if (action === 'cancel') {
+        clearTimeout(pendingPlan.timeoutHandle);
+        pendingPlan = null;
+        sessionBusy = false;
+        eventBus.emit('session:plan-canceled', { service: 'orchestrator' });
+        logger.info('[session] Plan canceled by user');
+        return { success: true, action: 'canceled' };
+      }
+
+      // action === 'approve'
+      const plan = editedPlan ?? pendingPlan.plan;
+      const userMessage = pendingPlan.userMessage;
+      clearTimeout(pendingPlan.timeoutHandle);
+      pendingPlan = null;
+
+      logger.info('[session] Plan approved, executing orchestrator');
+
+      try {
+        const result = await executeOrchestratorSession(userMessage, plan);
+        return result;
+      } catch (err) {
+        return reply.status(500).send({
+          success: false,
+          error: String(err),
+        });
+      }
+    },
+  );
 }
 
 async function runCommand(cmd: string, args: string[]): Promise<string> {
@@ -347,10 +458,19 @@ ${message}
 
 // ── Orchestrator prompt builder ─────────────────────────────────────────────
 
-function buildOrchestratorPrompt(userMessage: string, serviceNames: string[], accordDir: string): string {
+function buildOrchestratorPrompt(userMessage: string, serviceNames: string[], accordDir: string, approvedPlan?: string): string {
   // Read the request template if available
   const templatePath = path.join(accordDir, 'comms', 'TEMPLATE.md');
   const hasTemplate = fs.existsSync(templatePath);
+
+  const planSection = approvedPlan
+    ? `\n## Approved Execution Plan
+
+Follow this plan closely:
+
+${approvedPlan}
+`
+    : '';
 
   return `## CRITICAL ROLE CONSTRAINT
 
@@ -365,7 +485,7 @@ You are the **orchestrator**. You MUST follow these rules absolutely:
 ## Available Services
 
 ${serviceNames.map(s => `- ${s}`).join('\n')}
-
+${planSection}
 ## What You Must Do
 
 When the user describes a feature or task:

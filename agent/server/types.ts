@@ -66,6 +66,12 @@ export interface DispatcherConfig {
   agent: 'claude-code' | 'claude-code-v2' | 'shell';
   /** Shell command for the "shell" adapter (e.g. "claude -p", "codex -q") */
   agent_cmd?: string;
+  /** Enable planning stage before orchestrator execution (default: false) */
+  planner_enabled?: boolean;
+  /** Model for plan generation (default: 'claude-haiku-4-5-20251001') */
+  planner_model?: string;
+  /** Seconds to wait for user approval before auto-cancel (default: 300) */
+  planner_timeout?: number;
 }
 
 export interface AccordSettings {

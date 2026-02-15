@@ -13,6 +13,9 @@ const DISPATCHER_DEFAULTS: DispatcherConfig = {
   model: 'claude-sonnet-4-5-20250929',
   debug: false,
   agent: 'claude-code',
+  planner_enabled: false,
+  planner_model: 'claude-haiku-4-5-20251001',
+  planner_timeout: 300,
 };
 
 export function loadConfig(targetDir: string): AccordConfig {

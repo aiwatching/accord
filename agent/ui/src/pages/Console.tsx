@@ -89,6 +89,13 @@ export function Console() {
   const [historyIdx, setHistoryIdx] = useState(-1);
   const [executing, setExecuting] = useState(false);
 
+  // -- Planner state --
+  const [pendingPlan, setPendingPlan] = useState<{
+    plan: string;
+    editing: boolean;
+    editedText: string;
+  } | null>(null);
+
   const outputRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const lastEventIdx = useRef(0);
@@ -185,6 +192,35 @@ export function Console() {
           type: 'event',
           service: svc,
           text: `[ERROR] ${svc}: ${d.error as string}`,
+          timestamp: Date.now(),
+        });
+      } else if (ev.type === 'session:plan-generating') {
+        newLines.push({
+          key: `ev-${Date.now()}-${Math.random()}`,
+          type: 'event',
+          service: svc,
+          text: `[PLANNING] Generating execution plan...`,
+          timestamp: Date.now(),
+        });
+      } else if (ev.type === 'session:plan-ready') {
+        const plan = d.plan as string;
+        setPendingPlan({ plan, editing: false, editedText: plan });
+      } else if (ev.type === 'session:plan-canceled') {
+        setPendingPlan(null);
+        newLines.push({
+          key: `ev-${Date.now()}-${Math.random()}`,
+          type: 'event',
+          service: svc,
+          text: `[CANCELED] Plan canceled`,
+          timestamp: Date.now(),
+        });
+      } else if (ev.type === 'session:plan-timeout') {
+        setPendingPlan(null);
+        newLines.push({
+          key: `ev-${Date.now()}-${Math.random()}`,
+          type: 'event',
+          service: svc,
+          text: `[TIMEOUT] Plan approval timed out`,
           timestamp: Date.now(),
         });
       } else if (ev.type === 'request:claimed' || ev.type === 'request:completed' || ev.type === 'request:failed') {
@@ -396,8 +432,62 @@ export function Console() {
     return Array.from(set);
   }, [outputLines]);
 
+  // -- Plan approval handlers --
+  const handlePlanApprove = useCallback(async () => {
+    if (!pendingPlan) return;
+    const editedPlan = pendingPlan.editing ? pendingPlan.editedText : undefined;
+    setPendingPlan(null);
+
+    setOutputLines(prev => [...prev, {
+      key: `ev-${Date.now()}-${Math.random()}`,
+      type: 'event',
+      service: 'orchestrator',
+      text: '[APPROVED] Executing orchestrator with plan...',
+      timestamp: Date.now(),
+    }]);
+
+    try {
+      const res = await fetch('/api/session/approve-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'approve', editedPlan }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setOutputLines(prev => [...prev, {
+          key: `err-${Date.now()}`,
+          type: 'event',
+          service: 'orchestrator',
+          text: `[ERROR] ${data.error ?? res.statusText}`,
+          timestamp: Date.now(),
+        }]);
+      }
+    } catch (err) {
+      setOutputLines(prev => [...prev, {
+        key: `err-${Date.now()}`,
+        type: 'event',
+        service: 'orchestrator',
+        text: `[ERROR] Network error: ${err}`,
+        timestamp: Date.now(),
+      }]);
+    }
+  }, [pendingPlan]);
+
+  const handlePlanCancel = useCallback(async () => {
+    setPendingPlan(null);
+    try {
+      await fetch('/api/session/approve-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel' }),
+      });
+    } catch {
+      // Ignore network errors on cancel
+    }
+  }, []);
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
       {/* Section 1: Services overview */}
       <div style={{
         padding: '8px 12px',
@@ -539,6 +629,108 @@ export function Console() {
           )}
         </div>
       </div>
+
+      {/* Plan review modal */}
+      {pendingPlan && (
+        <div style={{
+          position: 'absolute',
+          bottom: 60,
+          left: 16,
+          right: 16,
+          background: '#1e293b',
+          border: '1px solid #475569',
+          borderRadius: 8,
+          padding: 16,
+          zIndex: 10,
+          maxHeight: '60%',
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
+        }}>
+          <div style={{ fontWeight: 700, color: '#f1f5f9', fontSize: 14, marginBottom: 8 }}>
+            Review Execution Plan
+          </div>
+          <div style={{ flex: 1, overflow: 'auto', marginBottom: 12 }}>
+            {pendingPlan.editing ? (
+              <textarea
+                value={pendingPlan.editedText}
+                onChange={e => setPendingPlan(prev => prev ? { ...prev, editedText: e.target.value } : null)}
+                style={{
+                  width: '100%',
+                  minHeight: 150,
+                  background: '#0f172a',
+                  color: '#cbd5e1',
+                  border: '1px solid #334155',
+                  borderRadius: 4,
+                  padding: 8,
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  resize: 'vertical',
+                  outline: 'none',
+                }}
+              />
+            ) : (
+              <pre style={{
+                color: '#cbd5e1',
+                fontSize: 12,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                margin: 0,
+                padding: 8,
+                background: '#0f172a',
+                borderRadius: 4,
+              }}>
+                {pendingPlan.plan}
+              </pre>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button
+              onClick={handlePlanCancel}
+              style={{
+                background: 'transparent',
+                color: '#94a3b8',
+                border: '1px solid #475569',
+                borderRadius: 6,
+                padding: '6px 14px',
+                fontSize: 13,
+                cursor: 'pointer',
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => setPendingPlan(prev => prev ? { ...prev, editing: !prev.editing } : null)}
+              style={{
+                background: 'transparent',
+                color: '#94a3b8',
+                border: '1px solid #475569',
+                borderRadius: 6,
+                padding: '6px 14px',
+                fontSize: 13,
+                cursor: 'pointer',
+              }}
+            >
+              {pendingPlan.editing ? 'Preview' : 'Edit'}
+            </button>
+            <button
+              onClick={handlePlanApprove}
+              style={{
+                background: '#22c55e',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 6,
+                padding: '6px 14px',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Approve
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Section 3: Console input (fixed bottom) */}
       <div style={{
