@@ -1,8 +1,8 @@
 import type { AccordConfig } from './types.js';
 import type { Dispatcher } from './dispatcher.js';
 import { eventBus } from './event-bus.js';
-import { syncPull } from './git-sync.js';
-import { scanInboxes, getDispatchableRequests, sortByPriority } from './scanner.js';
+import { syncPull, gitCommit } from './git-sync.js';
+import { scanInboxes, getDispatchableRequests, sortByPriority, archiveRequest } from './scanner.js';
 import { loadConfig, getAccordDir } from './config.js';
 import { setHubState, getHubState } from './hub-state.js';
 import { logger } from './logger.js';
@@ -95,6 +95,18 @@ export class Scheduler {
       // 2. Scan inboxes (pass hubDir for multi-team support)
       const accordDir = getAccordDir(this.hubDir, this.config);
       const allRequests = scanInboxes(accordDir, this.config, this.hubDir);
+
+      // 2.5. Archive terminal-state requests still in inboxes
+      const terminalStates = new Set(['completed', 'failed', 'rejected']);
+      const stale = allRequests.filter(r => terminalStates.has(r.frontmatter.status));
+      if (stale.length > 0) {
+        for (const req of stale) {
+          logger.info(`Auto-archiving ${req.frontmatter.id} (status: ${req.frontmatter.status})`);
+          archiveRequest(req.filePath, accordDir);
+        }
+        gitCommit(this.hubDir, `accord: auto-archive ${stale.length} terminal request(s)`);
+      }
+
       const pending = sortByPriority(getDispatchableRequests(allRequests));
 
       // 3. Dispatch
