@@ -119,6 +119,12 @@ export function Console() {
     return () => clearInterval(interval);
   }, [refreshRequests]);
 
+  // -- Poll services every 15s --
+  useEffect(() => {
+    const interval = setInterval(refreshServices, 15000);
+    return () => clearInterval(interval);
+  }, [refreshServices]);
+
   // -- Load initial logs on mount --
   useEffect(() => {
     if (!logs || logs.length === 0) return;

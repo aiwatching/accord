@@ -67,6 +67,22 @@ export function syncPush(targetDir: string, _config: AccordConfig): void {
   }
 }
 
+/**
+ * Get the remote origin URL for a git repo directory.
+ * Returns null if not a git repo or no remote configured.
+ */
+export function getRemoteUrl(targetDir: string): string | null {
+  try {
+    return execFileSync('git', ['remote', 'get-url', 'origin'], {
+      cwd: targetDir,
+      stdio: 'pipe',
+      timeout: 5_000,
+    }).toString().trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 export function cloneRepo(repoUrl: string, targetDir: string): void {
   execFileSync('git', ['clone', repoUrl, targetDir], {
     stdio: 'pipe',

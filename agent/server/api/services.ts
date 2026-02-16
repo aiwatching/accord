@@ -5,12 +5,123 @@ import YAML from 'yaml';
 import { getHubState, setHubState } from '../hub-state.js';
 import { getAccordDir, getServiceDir, loadConfig, loadRegistryYaml, saveConfig } from '../config.js';
 import { scanInboxes, scanArchives } from '../scanner.js';
-import { gitCommit, syncPush, cloneRepo } from '../git-sync.js';
+import { gitCommit, syncPush, cloneRepo, getRemoteUrl } from '../git-sync.js';
 import { eventBus } from '../event-bus.js';
 import { logger } from '../logger.js';
 import type { ServiceConfig, MaintainerType } from '../types.js';
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
+
+const AUTO_SYNC_HOOK = `#!/usr/bin/env bash
+# Accord Auto-Sync Hook for Claude Code
+# Installed as a Claude Code hook (SessionStart / Stop).
+# Syncs the hub clone at .accord/.hub/ so the agent sees latest state.
+
+set -euo pipefail
+
+PROJECT_DIR="\${CLAUDE_PROJECT_DIR:-.}"
+cd "$PROJECT_DIR"
+
+HOOK_INPUT=""
+if ! tty -s 2>/dev/null; then
+    HOOK_INPUT="$(cat)"
+fi
+
+# Only run if we have a hub clone
+HUB_DIR=".accord/.hub"
+[[ -d "$HUB_DIR" ]] || exit 0
+
+# Find the hub clone subdirectory
+HUB_CLONE=""
+for d in "$HUB_DIR"/*/; do
+    [[ -d "$d/.git" ]] && HUB_CLONE="$d" && break
+done
+[[ -z "$HUB_CLONE" ]] && exit 0
+
+# Determine event type
+EVENT=""
+if [[ -n "$HOOK_INPUT" ]]; then
+    EVENT="$(echo "$HOOK_INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('hook_event_name',''))" 2>/dev/null || true)"
+fi
+
+# Time-gating for Stop events (5 min interval)
+TIMESTAMP_FILE=".accord/.last-sync-pull"
+INTERVAL=300
+if [[ "$EVENT" == "Stop" ]]; then
+    if [[ -f "$TIMESTAMP_FILE" ]]; then
+        LAST_SYNC="$(cat "$TIMESTAMP_FILE")"
+        NOW="$(date +%s)"
+        ELAPSED=$((NOW - LAST_SYNC))
+        if [[ "$ELAPSED" -lt "$INTERVAL" ]]; then
+            exit 0
+        fi
+    fi
+fi
+
+# Pull latest from hub
+(cd "$HUB_CLONE" && git pull --rebase --quiet) 2>/dev/null || true
+date +%s > "$TIMESTAMP_FILE"
+echo "[accord-auto-sync] Hub sync completed."
+`;
+
+/**
+ * Initialize a service repo's .accord/ directory after cloning.
+ * Creates: service.yaml, .hub/ (cloned from hub), .gitignore, hooks/accord-auto-sync.sh
+ */
+function initServiceRepo(
+  svcDir: string,
+  serviceName: string,
+  hubDir: string,
+  team: string | undefined,
+): void {
+  const accordDir = path.join(svcDir, '.accord');
+  fs.mkdirSync(accordDir, { recursive: true });
+
+  // 1. service.yaml — service identity
+  const hubUrl = getRemoteUrl(hubDir);
+  const serviceYaml: Record<string, unknown> = {
+    version: '1.0',
+    service: serviceName,
+  };
+  if (team) serviceYaml.team = team;
+  if (hubUrl) serviceYaml.hub = hubUrl;
+  fs.writeFileSync(
+    path.join(accordDir, 'service.yaml'),
+    YAML.stringify(serviceYaml),
+    'utf-8',
+  );
+
+  // 2. .hub/ — clone the hub repo into it
+  const hubCloneDir = path.join(accordDir, '.hub');
+  fs.mkdirSync(hubCloneDir, { recursive: true });
+  if (hubUrl) {
+    try {
+      const hubBasename = path.basename(hubUrl, '.git');
+      cloneRepo(hubUrl, path.join(hubCloneDir, hubBasename));
+    } catch (err) {
+      logger.warn(`Failed to clone hub into service .accord/.hub/: ${err}`);
+      // Non-fatal — service can still work without hub clone
+    }
+  }
+
+  // 3. .gitignore — runtime files
+  fs.writeFileSync(
+    path.join(accordDir, '.gitignore'),
+    '.hub/\n.last-sync-pull\n.agent.pid\n',
+    'utf-8',
+  );
+
+  // 4. hooks/accord-auto-sync.sh
+  const hooksDir = path.join(accordDir, 'hooks');
+  fs.mkdirSync(hooksDir, { recursive: true });
+  const hookPath = path.join(hooksDir, 'accord-auto-sync.sh');
+  fs.writeFileSync(hookPath, AUTO_SYNC_HOOK, { mode: 0o755 });
+
+  // 5. Commit the .accord/ setup in the service repo
+  gitCommit(svcDir, `accord: initialize .accord/ for ${serviceName}`);
+
+  logger.info(`Initialized service repo .accord/ at ${accordDir}`);
+}
 
 interface AddServiceBody {
   name: string;
@@ -193,6 +304,8 @@ export function registerServiceRoutes(app: FastifyInstance): void {
           return reply.status(500).send({ error: `Failed to clone repo: ${err}` });
         }
       }
+      // Initialize the service repo's .accord/ directory
+      initServiceRepo(svcDir, name, hubDir, fresh.team);
     }
 
     // Git commit + push
