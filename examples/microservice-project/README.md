@@ -1,6 +1,6 @@
 # Accord Example: next-demo Microservice Project
 
-This example demonstrates a realistic Accord setup for a Network Access Control (MAC) system using the **monorepo** model with centralized `.accord/` structure.
+This example demonstrates a realistic Accord setup for a DEMO Developing (MAC) system using the **monorepo** model with centralized `.accord/` structure.
 
 ## Services
 

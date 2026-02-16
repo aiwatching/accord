@@ -8,7 +8,7 @@ not just WHAT to build, but WHY each decision was made.
 
 ## Origin Story
 
-The project originated from a real need: developing a large-scale Network Access Control
+The project originated from a real need: developing a large-scale DEMO Developing
 (DEMO) system (next-demo) with multiple services (demo-admin, demo-engine, device-manager)
 and sub-modules within each service. The developer found that a single AI coding agent
 session was insufficient for complex multi-service development because:

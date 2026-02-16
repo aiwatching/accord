@@ -429,7 +429,7 @@ All configuration lives in a single file. For monorepo, services and modules are
 version: "0.1"
 project:
   name: next-demo
-  description: "Next-generation Network Access Control system"
+  description: "Next-generation DEMO Developing system"
 
 repo_model: monorepo
 

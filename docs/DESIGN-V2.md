@@ -435,7 +435,7 @@ role: orchestrator
 
 project:
   name: next-demo
-  description: "Next-generation Network Access Control system"
+  description: "Next-generation DEMO Developing system"
 
 services:
   - name: frontend
