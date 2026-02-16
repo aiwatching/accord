@@ -288,11 +288,23 @@ export class Worker {
         durationMs,
         costUsd: result.costUsd,
         numTurns: result.numTurns,
+        usage: result.usage,
+        modelUsage: result.modelUsage,
       });
 
       gitCommit(serviceDir, `accord: completed ${reqId}`);
 
-      const requestResult = { ...result, requestId: reqId, success: true, durationMs, completedAt };
+      const requestResult = {
+        requestId: reqId,
+        success: true,
+        durationMs,
+        completedAt,
+        sessionId: result.sessionId,
+        costUsd: result.costUsd,
+        numTurns: result.numTurns,
+        usage: result.usage,
+        modelUsage: result.modelUsage,
+      };
 
       eventBus.emit('request:completed', {
         requestId: reqId,

@@ -128,6 +128,21 @@ export interface WorkerStatus {
 
 // ── Result types ───────────────────────────────────────────────────────────
 
+export interface TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens: number;
+  cache_read_input_tokens: number;
+}
+
+export interface ModelUsageEntry {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  costUSD: number;
+}
+
 export interface RequestResult {
   requestId: string;
   success: boolean;
@@ -138,6 +153,10 @@ export interface RequestResult {
   sessionId?: string;
   /** ISO 8601 timestamp when this result was produced */
   completedAt?: string;
+  /** Token-level usage breakdown */
+  usage?: TokenUsage;
+  /** Per-model usage breakdown */
+  modelUsage?: Record<string, ModelUsageEntry>;
 }
 
 // ── Dispatcher types ───────────────────────────────────────────────────────

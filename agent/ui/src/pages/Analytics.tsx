@@ -3,6 +3,22 @@ import { useApi } from '../hooks/useApi';
 
 // ── Types (mirror server AnalyticsData) ─────────────────────────────────────
 
+interface TokenBreakdown {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+}
+
+interface ModelUsage {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  costUsd: number;
+}
+
 interface AnalyticsRequestEntry {
   requestId: string;
   service: string;
@@ -11,6 +27,8 @@ interface AnalyticsRequestEntry {
   durationMs: number;
   timestamp: string;
   status: string;
+  tokens?: TokenBreakdown;
+  modelUsage?: ModelUsage[];
 }
 
 interface AnalyticsServiceAggregate {
@@ -38,9 +56,11 @@ interface AnalyticsData {
     avgCost: number;
     avgTurns: number;
     successRate: number;
+    tokens: TokenBreakdown;
   };
   byService: AnalyticsServiceAggregate[];
   byDay: AnalyticsDayEntry[];
+  byModel: ModelUsage[];
   requests: AnalyticsRequestEntry[];
 }
 
@@ -80,6 +100,11 @@ const thStyle: React.CSSProperties = {
   userSelect: 'none',
 };
 
+const thStyleStatic: React.CSSProperties = {
+  ...thStyle,
+  cursor: 'default',
+};
+
 const tdStyle: React.CSSProperties = {
   padding: '6px 12px',
   color: '#cbd5e1',
@@ -100,6 +125,13 @@ function fmt$(v: number): string {
   return `$${v.toFixed(4)}`;
 }
 
+function fmtTokens(n: number): string {
+  if (n === 0) return '0';
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
 function fmtDuration(ms: number): string {
   if (ms === 0) return '-';
   if (ms < 1000) return `${ms}ms`;
@@ -118,6 +150,13 @@ function statusColor(status: string): string {
   if (status === 'failed') return '#f87171';
   return '#fbbf24';
 }
+
+const TOKEN_COLORS = {
+  input: '#3b82f6',
+  output: '#8b5cf6',
+  cacheRead: '#22c55e',
+  cacheCreation: '#f59e0b',
+};
 
 // ── Component ───────────────────────────────────────────────────────────────
 
@@ -179,7 +218,10 @@ export function Analytics() {
 
   if (!data) return null;
 
-  const { totals, byDay, requests } = data;
+  const { totals, byDay, byModel, requests } = data;
+  const { tokens } = totals;
+  const totalAllTokens = tokens.inputTokens + tokens.outputTokens + tokens.cacheCreationTokens + tokens.cacheReadTokens;
+  const hasTokenData = totalAllTokens > 0;
 
   return (
     <div style={{ height: '100%', overflow: 'auto', padding: 20, background: '#0f172a' }}>
@@ -209,7 +251,113 @@ export function Analytics() {
         </div>
       </div>
 
-      {/* Section 2: Per-service table */}
+      {/* Section 2: Token Distribution */}
+      {hasTokenData && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={sectionTitle}>Token Distribution</div>
+          <div style={{
+            background: '#1e293b',
+            border: '1px solid #334155',
+            borderRadius: 8,
+            padding: 16,
+          }}>
+            {/* Stacked bar */}
+            <div style={{ display: 'flex', height: 32, borderRadius: 6, overflow: 'hidden', marginBottom: 12 }}>
+              {[
+                { key: 'input', label: 'Input', value: tokens.inputTokens, color: TOKEN_COLORS.input },
+                { key: 'output', label: 'Output', value: tokens.outputTokens, color: TOKEN_COLORS.output },
+                { key: 'cacheRead', label: 'Cache Read', value: tokens.cacheReadTokens, color: TOKEN_COLORS.cacheRead },
+                { key: 'cacheCreation', label: 'Cache Creation', value: tokens.cacheCreationTokens, color: TOKEN_COLORS.cacheCreation },
+              ].filter(s => s.value > 0).map(s => (
+                <div
+                  key={s.key}
+                  title={`${s.label}: ${fmtTokens(s.value)} (${fmtPct(s.value / totalAllTokens)})`}
+                  style={{
+                    width: `${(s.value / totalAllTokens) * 100}%`,
+                    background: s.color,
+                    minWidth: s.value > 0 ? 2 : 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 11,
+                    color: '#fff',
+                    fontWeight: 600,
+                    overflow: 'hidden',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {(s.value / totalAllTokens) > 0.08 ? fmtTokens(s.value) : ''}
+                </div>
+              ))}
+            </div>
+
+            {/* Legend with values */}
+            <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+              {[
+                { label: 'Input', value: tokens.inputTokens, color: TOKEN_COLORS.input },
+                { label: 'Output', value: tokens.outputTokens, color: TOKEN_COLORS.output },
+                { label: 'Cache Read', value: tokens.cacheReadTokens, color: TOKEN_COLORS.cacheRead },
+                { label: 'Cache Creation', value: tokens.cacheCreationTokens, color: TOKEN_COLORS.cacheCreation },
+              ].map(item => (
+                <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: 2, background: item.color }} />
+                  <span style={{ color: '#94a3b8', fontSize: 12 }}>{item.label}:</span>
+                  <span style={{ color: '#f1f5f9', fontSize: 13, fontWeight: 600 }}>{fmtTokens(item.value)}</span>
+                  <span style={{ color: '#64748b', fontSize: 11 }}>({totalAllTokens > 0 ? fmtPct(item.value / totalAllTokens) : '0%'})</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Cache efficiency */}
+            {(tokens.cacheReadTokens > 0 || tokens.cacheCreationTokens > 0) && (
+              <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #334155' }}>
+                <span style={{ color: '#94a3b8', fontSize: 12 }}>Cache Hit Rate: </span>
+                <span style={{ color: '#4ade80', fontSize: 14, fontWeight: 700 }}>
+                  {fmtPct(tokens.cacheReadTokens / (tokens.cacheReadTokens + tokens.cacheCreationTokens + tokens.inputTokens))}
+                </span>
+                <span style={{ color: '#64748b', fontSize: 11, marginLeft: 8 }}>
+                  ({fmtTokens(tokens.cacheReadTokens)} cached of {fmtTokens(tokens.cacheReadTokens + tokens.cacheCreationTokens + tokens.inputTokens)} input)
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Section 3: Per-model usage */}
+      {byModel.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={sectionTitle}>By Model</div>
+          <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={thStyleStatic}>Model</th>
+                  <th style={thStyleStatic}>Input</th>
+                  <th style={thStyleStatic}>Output</th>
+                  <th style={thStyleStatic}>Cache Read</th>
+                  <th style={thStyleStatic}>Cache Creation</th>
+                  <th style={thStyleStatic}>Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byModel.map(mu => (
+                  <tr key={mu.model}>
+                    <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12, fontWeight: 600, color: '#f1f5f9' }}>{mu.model}</td>
+                    <td style={tdStyle}>{fmtTokens(mu.inputTokens)}</td>
+                    <td style={tdStyle}>{fmtTokens(mu.outputTokens)}</td>
+                    <td style={tdStyle}>{fmtTokens(mu.cacheReadTokens)}</td>
+                    <td style={tdStyle}>{fmtTokens(mu.cacheCreationTokens)}</td>
+                    <td style={{ ...tdStyle, fontWeight: 600 }}>{fmt$(mu.costUsd)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Section 4: Per-service table */}
       <div style={{ marginBottom: 24 }}>
         <div style={sectionTitle}>By Service</div>
         <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, overflow: 'hidden' }}>
@@ -248,7 +396,7 @@ export function Analytics() {
         </div>
       </div>
 
-      {/* Section 3: Daily cost chart (CSS bars) */}
+      {/* Section 5: Daily cost chart (CSS bars) */}
       {byDay.length > 0 && (
         <div style={{ marginBottom: 24 }}>
           <div style={sectionTitle}>Daily Cost</div>
@@ -308,25 +456,26 @@ export function Analytics() {
         </div>
       )}
 
-      {/* Section 4: Request history table */}
+      {/* Section 6: Request history table */}
       <div>
         <div style={sectionTitle}>Request History</div>
         <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                <th style={thStyle}>Request ID</th>
-                <th style={thStyle}>Service</th>
-                <th style={thStyle}>Status</th>
-                <th style={thStyle}>Cost</th>
-                <th style={thStyle}>Turns</th>
-                <th style={thStyle}>Duration</th>
-                <th style={thStyle}>Timestamp</th>
+                <th style={thStyleStatic}>Request ID</th>
+                <th style={thStyleStatic}>Service</th>
+                <th style={thStyleStatic}>Status</th>
+                <th style={thStyleStatic}>Cost</th>
+                <th style={thStyleStatic}>Turns</th>
+                <th style={thStyleStatic}>Tokens (in/out)</th>
+                <th style={thStyleStatic}>Duration</th>
+                <th style={thStyleStatic}>Timestamp</th>
               </tr>
             </thead>
             <tbody>
               {requests.length === 0 && (
-                <tr><td colSpan={7} style={{ ...tdStyle, color: '#64748b', textAlign: 'center' }}>No requests</td></tr>
+                <tr><td colSpan={8} style={{ ...tdStyle, color: '#64748b', textAlign: 'center' }}>No requests</td></tr>
               )}
               {requests.map(req => (
                 <tr key={req.requestId}>
@@ -337,6 +486,16 @@ export function Analytics() {
                   </td>
                   <td style={tdStyle}>{req.costUsd > 0 ? fmt$(req.costUsd) : '-'}</td>
                   <td style={tdStyle}>{req.numTurns > 0 ? req.numTurns : '-'}</td>
+                  <td style={tdStyle}>
+                    {req.tokens
+                      ? <span title={`Cache read: ${fmtTokens(req.tokens.cacheReadTokens)}, Cache creation: ${fmtTokens(req.tokens.cacheCreationTokens)}`}>
+                          <span style={{ color: TOKEN_COLORS.input }}>{fmtTokens(req.tokens.inputTokens)}</span>
+                          {' / '}
+                          <span style={{ color: TOKEN_COLORS.output }}>{fmtTokens(req.tokens.outputTokens)}</span>
+                        </span>
+                      : '-'
+                    }
+                  </td>
                   <td style={tdStyle}>{fmtDuration(req.durationMs)}</td>
                   <td style={{ ...tdStyle, fontSize: 12, color: '#94a3b8' }}>
                     {req.timestamp ? new Date(req.timestamp).toLocaleString() : '-'}

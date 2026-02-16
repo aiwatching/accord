@@ -33,11 +33,28 @@ export interface AgentInvocationParams {
   onOutput?: (chunk: string) => void;
 }
 
+export interface TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens: number;
+  cache_read_input_tokens: number;
+}
+
+export interface ModelUsageEntry {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  costUSD: number;
+}
+
 export interface AgentInvocationResult {
   sessionId?: string;
   costUsd?: number;
   numTurns?: number;
   durationMs: number;
+  usage?: TokenUsage;
+  modelUsage?: Record<string, ModelUsageEntry>;
 }
 
 export interface AgentAdapter {
@@ -141,6 +158,8 @@ class ClaudeCodeV1Adapter implements AgentAdapter {
       let sessionId: string | undefined;
       let costUsd: number | undefined;
       let numTurns: number | undefined;
+      let usage: TokenUsage | undefined;
+      let modelUsage: Record<string, ModelUsageEntry> | undefined;
 
       for await (const msg of response) {
         if (msg.type === 'system' && msg.subtype === 'init') {
@@ -156,12 +175,27 @@ class ClaudeCodeV1Adapter implements AgentAdapter {
           costUsd = msg.total_cost_usd;
           numTurns = msg.num_turns;
 
+          // Capture token-level usage data
+          const resultAny = msg as Record<string, unknown>;
+          if (resultAny.usage) {
+            const u = resultAny.usage as Record<string, number>;
+            usage = {
+              input_tokens: u.input_tokens ?? 0,
+              output_tokens: u.output_tokens ?? 0,
+              cache_creation_input_tokens: u.cache_creation_input_tokens ?? 0,
+              cache_read_input_tokens: u.cache_read_input_tokens ?? 0,
+            };
+          }
+          if (resultAny.modelUsage) {
+            modelUsage = resultAny.modelUsage as Record<string, ModelUsageEntry>;
+          }
+
           if (msg.is_error) {
-            const errors = (msg as Record<string, unknown>).errors as string[] | undefined;
+            const errors = resultAny.errors as string[] | undefined;
             throw new Error(`Agent error (${msg.subtype}): ${errors?.join(', ') ?? 'unknown'}`);
           }
 
-          logger.info(`[claude-code] Completed: ${numTurns} turns, $${costUsd?.toFixed(4)}`);
+          logger.info(`[claude-code] Completed: ${numTurns} turns, $${costUsd?.toFixed(4)}, input=${usage?.input_tokens ?? '?'}, output=${usage?.output_tokens ?? '?'}, cache_read=${usage?.cache_read_input_tokens ?? '?'}`);
         }
       }
 
@@ -170,6 +204,8 @@ class ClaudeCodeV1Adapter implements AgentAdapter {
         costUsd,
         numTurns,
         durationMs: Date.now() - startTime,
+        usage,
+        modelUsage,
       };
     } finally {
       clearTimeout(timer);
@@ -342,6 +378,8 @@ class ClaudeCodeV2Adapter implements AgentAdapter {
     let sessionId: string | undefined;
     let costUsd: number | undefined;
     let numTurns: number | undefined;
+    let usage: TokenUsage | undefined;
+    let modelUsage: Record<string, ModelUsageEntry> | undefined;
 
     while (true) {
       const { value: msg, done } = await managed.activeStream.next();
@@ -362,17 +400,31 @@ class ClaudeCodeV2Adapter implements AgentAdapter {
         costUsd = m.total_cost_usd as number | undefined;
         numTurns = m.num_turns as number | undefined;
 
+        // Capture token-level usage data
+        if (m.usage) {
+          const u = m.usage as Record<string, number>;
+          usage = {
+            input_tokens: u.input_tokens ?? 0,
+            output_tokens: u.output_tokens ?? 0,
+            cache_creation_input_tokens: u.cache_creation_input_tokens ?? 0,
+            cache_read_input_tokens: u.cache_read_input_tokens ?? 0,
+          };
+        }
+        if (m.modelUsage) {
+          modelUsage = m.modelUsage as Record<string, ModelUsageEntry>;
+        }
+
         if (m.is_error) {
           const errors = m.errors as string[] | undefined;
           throw new Error(`Agent error (${m.subtype}): ${errors?.join(', ') ?? 'unknown'}`);
         }
 
-        logger.info(`[claude-code-v2] Completed: ${numTurns} turns, $${costUsd?.toFixed(4)}`);
+        logger.info(`[claude-code-v2] Completed: ${numTurns} turns, $${costUsd?.toFixed(4)}, input=${usage?.input_tokens ?? '?'}, output=${usage?.output_tokens ?? '?'}, cache_read=${usage?.cache_read_input_tokens ?? '?'}`);
         break; // This interaction is complete — stream stays alive for next send()
       }
     }
 
-    return { sessionId, costUsd, numTurns };
+    return { sessionId, costUsd, numTurns, usage, modelUsage };
   }
 
   private shouldRotate(managed: ManagedSession): boolean {

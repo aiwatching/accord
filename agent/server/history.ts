@@ -3,6 +3,21 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { logger } from './logger.js';
 
+export interface HistoryTokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens: number;
+  cache_read_input_tokens: number;
+}
+
+export interface HistoryModelUsageEntry {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  costUSD: number;
+}
+
 export interface HistoryEntry {
   historyDir: string;
   requestId: string;
@@ -14,6 +29,8 @@ export interface HistoryEntry {
   durationMs?: number;
   costUsd?: number;
   numTurns?: number;
+  usage?: HistoryTokenUsage;
+  modelUsage?: Record<string, HistoryModelUsageEntry>;
 }
 
 /**
@@ -66,7 +83,7 @@ function writeHistoryDirect(entry: HistoryEntry): void {
   const filename = `${date}-${entry.actor}.jsonl`;
   const filepath = path.join(entry.historyDir, filename);
 
-  const record: Record<string, string | number> = {
+  const record: Record<string, unknown> = {
     ts: new Date().toISOString(),
     request_id: entry.requestId,
     from_status: entry.fromStatus,
@@ -78,6 +95,8 @@ function writeHistoryDirect(entry: HistoryEntry): void {
   if (entry.durationMs !== undefined) record['duration_ms'] = entry.durationMs;
   if (entry.costUsd !== undefined) record['cost_usd'] = entry.costUsd;
   if (entry.numTurns !== undefined) record['num_turns'] = entry.numTurns;
+  if (entry.usage) record['usage'] = entry.usage;
+  if (entry.modelUsage) record['model_usage'] = entry.modelUsage;
 
   fs.appendFileSync(filepath, JSON.stringify(record) + '\n', 'utf-8');
 }
