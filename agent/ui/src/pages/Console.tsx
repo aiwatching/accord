@@ -85,6 +85,10 @@ export function Console() {
   const [outputLines, setOutputLines] = useState<OutputLine[]>([]);
   const [serviceFilter, setServiceFilter] = useState<string>('all');
 
+  // -- Log expand/collapse --
+  const [logsExpanded, setLogsExpanded] = useState(true);
+  const [logsGeneration, setLogsGeneration] = useState(0);
+
   // -- Console input --
   const [input, setInput] = useState('');
   const [selectedService, setSelectedService] = useState('orchestrator');
@@ -601,6 +605,7 @@ export function Console() {
           display: 'flex',
           gap: 4,
           flexShrink: 0,
+          alignItems: 'center',
         }}>
           {['all', ...seenServices].map(s => (
             <button
@@ -620,6 +625,28 @@ export function Console() {
               {s === 'all' ? 'All' : s}
             </button>
           ))}
+          {filteredLines.some(l => l.type === 'log') && (
+            <>
+              <div style={{ flex: 1 }} />
+              <button
+                onClick={() => {
+                  setLogsExpanded(prev => !prev);
+                  setLogsGeneration(prev => prev + 1);
+                }}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid #334155',
+                  borderRadius: 4,
+                  padding: '2px 8px',
+                  fontSize: 11,
+                  color: '#94a3b8',
+                  cursor: 'pointer',
+                }}
+              >
+                {logsExpanded ? 'Collapse All' : 'Expand All'}
+              </button>
+            </>
+          )}
         </div>
 
         {/* Output area */}
@@ -661,7 +688,7 @@ export function Console() {
                   </pre>
                 )}
                 {line.type === 'log' && (
-                  <LogBlock requestId={line.requestId!} service={line.service!} text={line.text} />
+                  <LogBlock key={`${line.key}-g${logsGeneration}`} requestId={line.requestId!} service={line.service!} text={line.text} defaultExpanded={logsExpanded} />
                 )}
                 {line.type === 'command-result' && (
                   <CommandResult text={line.text} success={line.success} />
@@ -860,8 +887,8 @@ export function Console() {
 
 // ── Sub-components ──────────────────────────────────────────────────────────
 
-function LogBlock({ requestId, service, text }: { requestId: string; service: string; text: string }) {
-  const [collapsed, setCollapsed] = useState(true);
+function LogBlock({ requestId, service, text, defaultExpanded = false }: { requestId: string; service: string; text: string; defaultExpanded?: boolean }) {
+  const [collapsed, setCollapsed] = useState(!defaultExpanded);
   const preview = text.split('\n').slice(1, 4).join(' ').slice(0, 120);
 
   return (
