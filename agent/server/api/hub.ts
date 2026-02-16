@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { execFileSync } from 'node:child_process';
 import { getHubState } from '../hub-state.js';
 import { getAccordDir } from '../config.js';
-import { aggregateMetrics } from '../metrics.js';
+import { aggregateMetrics, collectAnalytics } from '../metrics.js';
 import * as path from 'node:path';
 
 export function registerHubRoutes(app: FastifyInstance): void {
@@ -46,6 +46,14 @@ export function registerHubRoutes(app: FastifyInstance): void {
         totalCostUsd: parseFloat(metrics.totalCostUsd.toFixed(4)),
       },
     };
+  });
+
+  // GET /api/hub/analytics — detailed cost/usage analytics
+  app.get('/api/hub/analytics', async () => {
+    const { hubDir, config } = getHubState();
+    const accordDir = getAccordDir(hubDir, config);
+    const historyDir = path.join(accordDir, 'comms', 'history');
+    return collectAnalytics(historyDir);
   });
 
   // POST /api/hub/sync — trigger manual sync (pull + push)

@@ -2,7 +2,15 @@ import React from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useApi } from '../hooks/useApi';
 
-export function Layout({ children }: { children: React.ReactNode }) {
+export type TabId = 'console' | 'analytics';
+
+interface LayoutProps {
+  children: React.ReactNode;
+  activeTab: TabId;
+  onTabChange: (tab: TabId) => void;
+}
+
+export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
   const { connected } = useWebSocket();
   const { data: hub } = useApi<{ project: string }>('/api/hub/status');
 
@@ -21,8 +29,31 @@ export function Layout({ children }: { children: React.ReactNode }) {
         padding: '0 20px',
         flexShrink: 0,
       }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: '#f1f5f9' }}>
-          Accord Hub — {projectName}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: '#f1f5f9' }}>
+            Accord Hub — {projectName}
+          </div>
+          <div style={{ display: 'flex', gap: 2 }}>
+            {(['console', 'analytics'] as const).map(tab => (
+              <button
+                key={tab}
+                onClick={() => onTabChange(tab)}
+                style={{
+                  background: activeTab === tab ? '#334155' : 'transparent',
+                  border: '1px solid',
+                  borderColor: activeTab === tab ? '#475569' : 'transparent',
+                  borderRadius: 4,
+                  padding: '4px 12px',
+                  fontSize: 13,
+                  color: activeTab === tab ? '#f1f5f9' : '#94a3b8',
+                  cursor: 'pointer',
+                  fontWeight: activeTab === tab ? 600 : 400,
+                }}
+              >
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
         <div style={{
           fontSize: 12,
