@@ -68,6 +68,7 @@ export interface AnalyticsServiceAggregate {
   avgTurns: number;
   completed: number;
   failed: number;
+  tokens: AnalyticsTokenBreakdown;
 }
 
 export interface AnalyticsDayEntry {
@@ -288,7 +289,7 @@ export function collectAnalytics(historyDir: string): AnalyticsData {
 
   // Build per-request entries
   const requestEntries: AnalyticsRequestEntry[] = [];
-  const serviceMap = new Map<string, { totalCost: number; totalTurns: number; completed: number; failed: number; count: number }>();
+  const serviceMap = new Map<string, { totalCost: number; totalTurns: number; completed: number; failed: number; count: number; tokens: AnalyticsTokenBreakdown }>();
   const dayMap = new Map<string, { totalCost: number; count: number }>();
 
   for (const [requestId, record] of terminalByRequest) {
@@ -348,7 +349,7 @@ export function collectAnalytics(historyDir: string): AnalyticsData {
     // Accumulate per-service
     let svc = serviceMap.get(service);
     if (!svc) {
-      svc = { totalCost: 0, totalTurns: 0, completed: 0, failed: 0, count: 0 };
+      svc = { totalCost: 0, totalTurns: 0, completed: 0, failed: 0, count: 0, tokens: { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 } };
       serviceMap.set(service, svc);
     }
     svc.count += 1;
@@ -356,6 +357,12 @@ export function collectAnalytics(historyDir: string): AnalyticsData {
     svc.totalTurns += numTurns;
     if (status === 'completed') svc.completed += 1;
     else svc.failed += 1;
+    if (tokens) {
+      svc.tokens.inputTokens += tokens.inputTokens;
+      svc.tokens.outputTokens += tokens.outputTokens;
+      svc.tokens.cacheCreationTokens += tokens.cacheCreationTokens;
+      svc.tokens.cacheReadTokens += tokens.cacheReadTokens;
+    }
 
     // Accumulate per-day
     const dateKey = timestamp ? timestamp.slice(0, 10) : 'unknown';
@@ -383,6 +390,7 @@ export function collectAnalytics(historyDir: string): AnalyticsData {
       avgTurns: data.count > 0 ? data.totalTurns / data.count : 0,
       completed: data.completed,
       failed: data.failed,
+      tokens: data.tokens,
     });
   }
   byService.sort((a, b) => b.totalCost - a.totalCost);
