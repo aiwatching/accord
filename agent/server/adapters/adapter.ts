@@ -17,6 +17,15 @@ if (!process.env.PATH?.includes(nodeDir)) {
   process.env.PATH = `${nodeDir}${path.delimiter}${process.env.PATH ?? ''}`;
 }
 
+// ── Stream event types ──────────────────────────────────────────────────────
+
+export type StreamEvent =
+  | { type: 'text'; text: string }
+  | { type: 'tool_use'; tool: string; input: string }
+  | { type: 'tool_result'; tool: string; output: string; isError?: boolean }
+  | { type: 'thinking'; text: string }
+  | { type: 'status'; text: string };
+
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export type AgentAdapterType = 'claude-code' | 'claude-code-v2' | 'shell';
@@ -29,8 +38,8 @@ export interface AgentInvocationParams {
   model?: string;
   maxTurns?: number;
   maxBudgetUsd?: number;
-  /** Streaming callback — receives text chunks as the agent produces output. */
-  onOutput?: (chunk: string) => void;
+  /** Streaming callback — receives structured events as the agent produces output. */
+  onOutput?: (event: StreamEvent) => void;
 }
 
 export interface TokenUsage {
@@ -99,7 +108,109 @@ export function createAdapter(config: AdapterConfig): AgentAdapter {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Extract readable text from an SDK assistant message content blocks. */
+/** Format tool input into a human-readable summary. */
+function formatToolInput(name: string, input: Record<string, unknown>): string {
+  switch (name) {
+    case 'Read':
+      return String(input.file_path ?? '');
+    case 'Write':
+      return String(input.file_path ?? '');
+    case 'Edit': {
+      const fp = String(input.file_path ?? '');
+      const old = String(input.old_string ?? '').slice(0, 60);
+      return `${fp} — "${old}${(input.old_string as string)?.length > 60 ? '...' : ''}"`;
+    }
+    case 'Bash':
+      return String(input.command ?? '').slice(0, 300);
+    case 'Glob':
+      return `${input.pattern ?? ''}${input.path ? ` in ${input.path}` : ''}`;
+    case 'Grep':
+      return `/${input.pattern ?? ''}/` + (input.path ? ` in ${input.path}` : '');
+    case 'NotebookEdit':
+      return String(input.notebook_path ?? '');
+    case 'WebFetch':
+      return String(input.url ?? '');
+    case 'WebSearch':
+      return String(input.query ?? '');
+    default:
+      return JSON.stringify(input).slice(0, 200);
+  }
+}
+
+/** Extract text from tool result content (string or content block array). */
+function extractToolResultText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((b: Record<string, unknown>) => b.type === 'text')
+      .map((b: Record<string, unknown>) => b.text)
+      .join('\n');
+  }
+  return String(content ?? '');
+}
+
+/** Emit structured stream events from an assistant message's content blocks. */
+function emitAssistantEvents(
+  message: unknown,
+  toolNames: Map<string, string>,
+  onOutput?: (event: StreamEvent) => void,
+): void {
+  if (!onOutput) return;
+
+  const msg = message as { content?: Array<Record<string, unknown>> };
+  const blocks = msg?.content;
+  if (!Array.isArray(blocks)) {
+    if (typeof message === 'string' && message) {
+      onOutput({ type: 'text', text: message });
+    }
+    return;
+  }
+
+  for (const block of blocks) {
+    if (block.type === 'text' && block.text) {
+      onOutput({ type: 'text', text: block.text as string });
+    } else if (block.type === 'tool_use' && block.name) {
+      toolNames.set(block.id as string, block.name as string);
+      onOutput({
+        type: 'tool_use',
+        tool: block.name as string,
+        input: formatToolInput(block.name as string, (block.input ?? {}) as Record<string, unknown>),
+      });
+    } else if (block.type === 'thinking' && block.thinking) {
+      onOutput({ type: 'thinking', text: block.thinking as string });
+    }
+  }
+}
+
+/** Emit stream events from a user message (tool results). */
+function emitToolResultEvents(
+  message: unknown,
+  toolNames: Map<string, string>,
+  onOutput?: (event: StreamEvent) => void,
+): void {
+  if (!onOutput) return;
+
+  const msg = message as { content?: Array<Record<string, unknown>> };
+  const blocks = msg?.content;
+  if (!Array.isArray(blocks)) return;
+
+  for (const block of blocks) {
+    if (block.type === 'tool_result') {
+      const toolName = toolNames.get(block.tool_use_id as string) ?? 'unknown';
+      const text = extractToolResultText(block.content);
+      const maxLen = 2000;
+      const truncated = text.length > maxLen ? text.slice(0, maxLen) + '\n... (truncated)' : text;
+      onOutput({
+        type: 'tool_result',
+        tool: toolName,
+        output: truncated,
+        isError: block.is_error === true,
+      });
+    }
+  }
+}
+
+/** Extract readable text (legacy, used by shell adapter fallback). */
 function extractAssistantText(message: unknown): string {
   if (typeof message === 'string') return message;
 
@@ -161,24 +272,28 @@ class ClaudeCodeV1Adapter implements AgentAdapter {
       let usage: TokenUsage | undefined;
       let modelUsage: Record<string, ModelUsageEntry> | undefined;
 
+      // Track tool_use_id → tool name for labeling tool results
+      const toolNames = new Map<string, string>();
+
       for await (const msg of response) {
-        if (msg.type === 'system' && msg.subtype === 'init') {
-          sessionId = msg.session_id;
-        } else if (msg.type === 'assistant' && msg.message) {
-          // Output text from each assistant turn
-          const text = extractAssistantText(msg.message);
-          if (text && params.onOutput) {
-            params.onOutput(text);
-          }
-        } else if (msg.type === 'result') {
-          sessionId = msg.session_id;
-          costUsd = msg.total_cost_usd;
-          numTurns = msg.num_turns;
+        const m = msg as Record<string, unknown>;
+
+        if (m.type === 'system' && m.subtype === 'init') {
+          sessionId = (m as { session_id?: string }).session_id;
+        } else if (m.type === 'assistant' && m.message) {
+          // Emit structured events for text, tool_use, and thinking blocks
+          emitAssistantEvents(m.message, toolNames, params.onOutput);
+        } else if (m.type === 'user' && m.message) {
+          // Emit tool result events
+          emitToolResultEvents(m.message, toolNames, params.onOutput);
+        } else if (m.type === 'result') {
+          sessionId = m.session_id as string | undefined;
+          costUsd = m.total_cost_usd as number | undefined;
+          numTurns = m.num_turns as number | undefined;
 
           // Capture token-level usage data
-          const resultAny = msg as Record<string, unknown>;
-          if (resultAny.usage) {
-            const u = resultAny.usage as Record<string, number>;
+          if (m.usage) {
+            const u = m.usage as Record<string, number>;
             usage = {
               input_tokens: u.input_tokens ?? 0,
               output_tokens: u.output_tokens ?? 0,
@@ -186,13 +301,13 @@ class ClaudeCodeV1Adapter implements AgentAdapter {
               cache_read_input_tokens: u.cache_read_input_tokens ?? 0,
             };
           }
-          if (resultAny.modelUsage) {
-            modelUsage = resultAny.modelUsage as Record<string, ModelUsageEntry>;
+          if (m.modelUsage) {
+            modelUsage = m.modelUsage as Record<string, ModelUsageEntry>;
           }
 
-          if (msg.is_error) {
-            const errors = resultAny.errors as string[] | undefined;
-            throw new Error(`Agent error (${msg.subtype}): ${errors?.join(', ') ?? 'unknown'}`);
+          if (m.is_error) {
+            const errors = m.errors as string[] | undefined;
+            throw new Error(`Agent error (${m.subtype}): ${errors?.join(', ') ?? 'unknown'}`);
           }
 
           logger.info(`[claude-code] Completed: ${numTurns} turns, $${costUsd?.toFixed(4)}, input=${usage?.input_tokens ?? '?'}, output=${usage?.output_tokens ?? '?'}, cache_read=${usage?.cache_read_input_tokens ?? '?'}`);
@@ -373,13 +488,16 @@ class ClaudeCodeV2Adapter implements AgentAdapter {
    */
   private async collectStream(
     managed: ManagedSession,
-    onOutput?: (chunk: string) => void,
+    onOutput?: (event: StreamEvent) => void,
   ): Promise<Omit<AgentInvocationResult, 'durationMs'>> {
     let sessionId: string | undefined;
     let costUsd: number | undefined;
     let numTurns: number | undefined;
     let usage: TokenUsage | undefined;
     let modelUsage: Record<string, ModelUsageEntry> | undefined;
+
+    // Track tool_use_id → tool name for labeling tool results
+    const toolNames = new Map<string, string>();
 
     while (true) {
       const { value: msg, done } = await managed.activeStream.next();
@@ -391,10 +509,9 @@ class ClaudeCodeV2Adapter implements AgentAdapter {
         sessionId = m.session_id as string | undefined;
         if (sessionId) managed.sessionId = sessionId;
       } else if (m.type === 'assistant' && m.message) {
-        const text = extractAssistantText(m.message);
-        if (text && onOutput) {
-          onOutput(text);
-        }
+        emitAssistantEvents(m.message, toolNames, onOutput);
+      } else if (m.type === 'user' && m.message) {
+        emitToolResultEvents(m.message, toolNames, onOutput);
       } else if (m.type === 'result') {
         sessionId = m.session_id as string | undefined;
         costUsd = m.total_cost_usd as number | undefined;
@@ -482,9 +599,9 @@ class ShellAdapter implements AgentAdapter {
         maxBuffer: 50 * 1024 * 1024,  // 50 MB
       });
 
-      // Send entire output as a single chunk if callback provided
+      // Send entire output as a single text event if callback provided
       if (params.onOutput && output) {
-        params.onOutput(output.toString());
+        params.onOutput({ type: 'text', text: output.toString() });
       }
 
       return {

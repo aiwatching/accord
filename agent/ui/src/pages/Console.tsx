@@ -43,12 +43,16 @@ interface HubInfo {
 
 interface OutputLine {
   key: string;
-  type: 'chunk' | 'event' | 'log' | 'command-result';
+  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'event' | 'log' | 'command-result';
   requestId?: string;
   service?: string;
   text: string;
   timestamp: number;
   success?: boolean;
+  /** Tool name (for tool_use and tool_result types). */
+  tool?: string;
+  /** Whether a tool result is an error (for tool_result type). */
+  isError?: boolean;
 }
 
 function formatTime(ts: number): string {
@@ -173,14 +177,75 @@ export function Console() {
       const svc = d.service as string | undefined;
 
       if (ev.type === 'worker:output' || ev.type === 'session:output') {
-        newLines.push({
-          key: `ws-${Date.now()}-${Math.random()}`,
-          type: 'chunk',
-          requestId: reqId,
-          service: svc,
-          text: d.chunk as string,
-          timestamp: Date.now(),
-        });
+        // Check for structured stream event
+        const streamEvent = d.event as { type?: string; text?: string; tool?: string; input?: string; output?: string; isError?: boolean } | undefined;
+        if (streamEvent?.type) {
+          switch (streamEvent.type) {
+            case 'text':
+              newLines.push({
+                key: `ws-${Date.now()}-${Math.random()}`,
+                type: 'text',
+                requestId: reqId,
+                service: svc,
+                text: streamEvent.text ?? '',
+                timestamp: Date.now(),
+              });
+              break;
+            case 'tool_use':
+              newLines.push({
+                key: `ws-${Date.now()}-${Math.random()}`,
+                type: 'tool_use',
+                requestId: reqId,
+                service: svc,
+                text: streamEvent.input ?? '',
+                tool: streamEvent.tool,
+                timestamp: Date.now(),
+              });
+              break;
+            case 'tool_result':
+              newLines.push({
+                key: `ws-${Date.now()}-${Math.random()}`,
+                type: 'tool_result',
+                requestId: reqId,
+                service: svc,
+                text: streamEvent.output ?? '',
+                tool: streamEvent.tool,
+                isError: streamEvent.isError,
+                timestamp: Date.now(),
+              });
+              break;
+            case 'thinking':
+              newLines.push({
+                key: `ws-${Date.now()}-${Math.random()}`,
+                type: 'thinking',
+                requestId: reqId,
+                service: svc,
+                text: streamEvent.text ?? '',
+                timestamp: Date.now(),
+              });
+              break;
+            default:
+              // Unknown event type — fall through to legacy chunk
+              newLines.push({
+                key: `ws-${Date.now()}-${Math.random()}`,
+                type: 'text',
+                requestId: reqId,
+                service: svc,
+                text: d.chunk as string,
+                timestamp: Date.now(),
+              });
+          }
+        } else {
+          // Legacy: no structured event — treat as text chunk
+          newLines.push({
+            key: `ws-${Date.now()}-${Math.random()}`,
+            type: 'text',
+            requestId: reqId,
+            service: svc,
+            text: d.chunk as string,
+            timestamp: Date.now(),
+          });
+        }
       } else if (ev.type === 'session:start') {
         newLines.push({
           key: `ev-${Date.now()}-${Math.random()}`,
@@ -271,8 +336,8 @@ export function Console() {
         const merged = [...prev];
         for (const line of newLines) {
           const last = merged.length > 0 ? merged[merged.length - 1] : null;
-          // Merge consecutive chunks from the same request into one line
-          if (line.type === 'chunk' && last?.type === 'chunk'
+          // Only merge consecutive text chunks from the same request
+          if (line.type === 'text' && last?.type === 'text'
               && last.requestId === line.requestId && last.service === line.service) {
             merged[merged.length - 1] = { ...last, text: last.text + line.text };
           } else {
@@ -682,10 +747,19 @@ export function Console() {
                     {line.text}
                   </div>
                 )}
-                {line.type === 'chunk' && (
+                {line.type === 'text' && (
                   <pre style={{ color: '#cbd5e1', margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                     {line.text}
                   </pre>
+                )}
+                {line.type === 'tool_use' && (
+                  <ToolUseBlock tool={line.tool ?? 'unknown'} input={line.text} />
+                )}
+                {line.type === 'tool_result' && (
+                  <ToolResultBlock tool={line.tool} output={line.text} isError={line.isError} />
+                )}
+                {line.type === 'thinking' && (
+                  <ThinkingBlock text={line.text} />
                 )}
                 {line.type === 'log' && (
                   <LogBlock key={`${line.key}-g${logsGeneration}`} requestId={line.requestId!} service={line.service!} text={line.text} defaultExpanded={logsExpanded} />
@@ -886,6 +960,130 @@ export function Console() {
 }
 
 // ── Sub-components ──────────────────────────────────────────────────────────
+
+// Tool colors for consistent visual identity
+const TOOL_COLORS: Record<string, { bg: string; fg: string }> = {
+  Read:    { bg: '#1e3a5f', fg: '#7dd3fc' },
+  Write:   { bg: '#3b1f2b', fg: '#f9a8d4' },
+  Edit:    { bg: '#3b2f1e', fg: '#fbbf24' },
+  Bash:    { bg: '#1a2e1a', fg: '#86efac' },
+  Glob:    { bg: '#2e1a3b', fg: '#c4b5fd' },
+  Grep:    { bg: '#2e1a3b', fg: '#c4b5fd' },
+  WebFetch:    { bg: '#1e3a5f', fg: '#7dd3fc' },
+  WebSearch:   { bg: '#1e3a5f', fg: '#7dd3fc' },
+  NotebookEdit: { bg: '#3b2f1e', fg: '#fbbf24' },
+};
+const DEFAULT_TOOL_COLOR = { bg: '#1e293b', fg: '#94a3b8' };
+
+function ToolUseBlock({ tool, input }: { tool: string; input: string }) {
+  const color = TOOL_COLORS[tool] ?? DEFAULT_TOOL_COLOR;
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '3px 0' }}>
+      <span style={{
+        background: color.bg,
+        color: color.fg,
+        padding: '1px 8px',
+        borderRadius: 4,
+        fontSize: 11,
+        fontWeight: 600,
+        fontFamily: 'monospace',
+        flexShrink: 0,
+        lineHeight: '18px',
+      }}>{tool}</span>
+      <span style={{
+        color: '#94a3b8',
+        fontSize: 12,
+        fontFamily: 'monospace',
+        wordBreak: 'break-all',
+        lineHeight: '18px',
+      }}>{input}</span>
+    </div>
+  );
+}
+
+function ToolResultBlock({ tool, output, isError }: { tool?: string; output: string; isError?: boolean }) {
+  const [collapsed, setCollapsed] = useState(true);
+  const lines = output.split('\n');
+  const preview = lines.slice(0, 3).join('\n');
+  const hasMore = lines.length > 3;
+
+  return (
+    <div style={{
+      margin: '1px 0',
+      borderLeft: `2px solid ${isError ? '#ef4444' : '#334155'}`,
+      paddingLeft: 10,
+    }}>
+      <div
+        onClick={() => hasMore && setCollapsed(!collapsed)}
+        style={{ cursor: hasMore ? 'pointer' : 'default', position: 'relative' }}
+      >
+        {hasMore && (
+          <span style={{
+            position: 'absolute',
+            right: 0,
+            top: 0,
+            color: '#475569',
+            fontSize: 10,
+            userSelect: 'none',
+          }}>
+            {collapsed ? `${lines.length} lines \u25B8` : '\u25BE'}
+          </span>
+        )}
+        <pre style={{
+          color: isError ? '#fca5a5' : '#64748b',
+          fontSize: 11,
+          margin: 0,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+          maxHeight: collapsed ? 65 : 400,
+          overflow: collapsed ? 'hidden' : 'auto',
+        }}>
+          {collapsed ? preview : output}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
+function ThinkingBlock({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const preview = text.slice(0, 80).replace(/\n/g, ' ');
+
+  return (
+    <div style={{ margin: '2px 0' }}>
+      <div
+        onClick={() => setOpen(!open)}
+        style={{
+          cursor: 'pointer',
+          color: '#6b7280',
+          fontSize: 11,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          userSelect: 'none',
+        }}
+      >
+        <span style={{ fontSize: 10 }}>{open ? '\u25BE' : '\u25B8'}</span>
+        <span style={{ fontStyle: 'italic' }}>thinking{!open && `: ${preview}...`}</span>
+      </div>
+      {open && (
+        <pre style={{
+          color: '#6b7280',
+          fontSize: 11,
+          margin: 0,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+          marginLeft: 14,
+          marginTop: 2,
+          maxHeight: 300,
+          overflow: 'auto',
+        }}>
+          {text}
+        </pre>
+      )}
+    </div>
+  );
+}
 
 function LogBlock({ requestId, service, text, defaultExpanded = false }: { requestId: string; service: string; text: string; defaultExpanded?: boolean }) {
   const [collapsed, setCollapsed] = useState(!defaultExpanded);

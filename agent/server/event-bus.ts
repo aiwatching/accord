@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type { AccordRequest, RequestResult, WorkerState } from './types.js';
+import type { StreamEvent } from './adapters/adapter.js';
 
 // ── Event payload types ─────────────────────────────────────────────────────
 
@@ -36,6 +37,8 @@ export interface WorkerOutputEvent {
   requestId: string;
   chunk: string;
   streamIndex: number;
+  /** Structured stream event (when available from SDK adapter). */
+  event?: StreamEvent;
 }
 
 export interface WorkerFinishedEvent {
@@ -66,6 +69,8 @@ export interface SessionOutputEvent {
   service: string;
   chunk: string;
   streamIndex: number;
+  /** Structured stream event (when available from SDK adapter). */
+  event?: StreamEvent;
 }
 
 export interface SessionCompleteEvent {

@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { AccordConfig, AccordRequest, DispatcherConfig, RequestResult, WorkerState } from './types.js';
-import type { AgentAdapter } from './adapters/adapter.js';
+import type { AgentAdapter, StreamEvent } from './adapters/adapter.js';
 import { SessionManager } from './session-manager.js';
 import { logger } from './logger.js';
 import { eventBus } from './event-bus.js';
@@ -240,13 +240,35 @@ export class Worker {
     fs.appendFileSync(logFile, `--- ${reqId} | ${serviceName} | ${new Date().toISOString()} ---\n`);
 
     let streamIndex = 0;
-    const onOutput = (chunk: string) => {
-      fs.appendFileSync(logFile, chunk);
+    const onOutput = (event: StreamEvent) => {
+      // Format structured event into text for the log file
+      let logText: string;
+      switch (event.type) {
+        case 'text':
+          logText = event.text;
+          break;
+        case 'tool_use':
+          logText = `\n[${event.tool}] ${event.input}\n`;
+          break;
+        case 'tool_result':
+          logText = `${event.output}\n`;
+          break;
+        case 'thinking':
+          logText = `[thinking] ${event.text.slice(0, 500)}...\n`;
+          break;
+        case 'status':
+          logText = `[status] ${event.text}\n`;
+          break;
+        default:
+          logText = JSON.stringify(event) + '\n';
+      }
+      fs.appendFileSync(logFile, logText);
       eventBus.emit('worker:output', {
         workerId: this.id,
         service: serviceName,
         requestId: reqId,
-        chunk,
+        chunk: logText,
+        event,
         streamIndex: streamIndex++,
       });
     };

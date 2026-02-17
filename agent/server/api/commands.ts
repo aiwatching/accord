@@ -8,6 +8,7 @@ import { executeCommand } from '../commands.js';
 import { eventBus } from '../event-bus.js';
 import { logger } from '../logger.js';
 import { generatePlan } from '../planner.js';
+import type { StreamEvent } from '../adapters/adapter.js';
 
 interface ExecBody {
   command: string;
@@ -145,11 +146,22 @@ export function registerCommandRoutes(app: FastifyInstance): void {
         model: dispatcherConfig.model,
         maxTurns: 50,
         maxBudgetUsd: dispatcherConfig.max_budget_usd,
-        onOutput: (chunk: string) => {
-          fs.appendFileSync(logFile, chunk);
+        onOutput: (event: StreamEvent) => {
+          // Format event for log file
+          let logText: string;
+          switch (event.type) {
+            case 'text': logText = event.text; break;
+            case 'tool_use': logText = `\n[${event.tool}] ${event.input}\n`; break;
+            case 'tool_result': logText = `${event.output}\n`; break;
+            case 'thinking': logText = `[thinking] ${event.text.slice(0, 500)}...\n`; break;
+            case 'status': logText = `[status] ${event.text}\n`; break;
+            default: logText = JSON.stringify(event) + '\n';
+          }
+          fs.appendFileSync(logFile, logText);
           eventBus.emit('session:output', {
             service: 'orchestrator',
-            chunk,
+            chunk: logText,
+            event,
             streamIndex: streamIndex++,
           });
         },
