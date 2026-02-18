@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Accord Installer
+# Accord Lite — Remote Installer
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/aiwatching/accord/main/install.sh | bash
@@ -8,24 +8,21 @@
 #   ACCORD_VERSION=v0.1.0 curl -fsSL https://raw.githubusercontent.com/aiwatching/accord/main/install.sh | bash
 #
 # What it does:
-#   1. Downloads Accord to ~/.accord/ (shallow clone)
-#   2. Checks out the specified version (or latest tag)
-#   3. Tells you how to initialize your project
-#
-# After install, run in your project directory:
-#   ~/.accord/init.sh
+#   1. Downloads Accord Lite to ~/.accord/ (shallow clone)
+#   2. Tells you how to initialize your project
 
 set -euo pipefail
 
 ACCORD_REPO="${ACCORD_REPO:-https://github.com/aiwatching/accord.git}"
 ACCORD_HOME="${ACCORD_HOME:-$HOME/.accord}"
 ACCORD_VERSION="${ACCORD_VERSION:-latest}"
+ACCORD_BRANCH="${ACCORD_BRANCH:-accord-lite}"
 
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
 RED='\033[0;31m'
-DIM='\033[2m'
 BOLD='\033[1m'
+DIM='\033[2m'
 NC='\033[0m'
 
 log() { echo -e "${CYAN}[accord]${NC} $*"; }
@@ -37,15 +34,14 @@ command -v git >/dev/null 2>&1 || err "git is required but not installed"
 
 resolve_version() {
     if [[ "$ACCORD_VERSION" == "latest" ]]; then
-        # Get latest tag from remote (without cloning)
         local latest_tag
         latest_tag="$(git ls-remote --tags --sort=-v:refname "$ACCORD_REPO" 'v*' 2>/dev/null \
             | head -1 | sed 's|.*refs/tags/||; s|\^{}||')"
         if [[ -n "$latest_tag" ]]; then
             ACCORD_VERSION="$latest_tag"
         else
-            ACCORD_VERSION="main"
-            log "No release tags found, using main branch"
+            ACCORD_VERSION="$ACCORD_BRANCH"
+            log "No release tags found, using $ACCORD_BRANCH branch"
         fi
     fi
 }
@@ -55,14 +51,15 @@ resolve_version() {
 resolve_version
 
 if [[ -d "$ACCORD_HOME/.git" ]]; then
-    log "Updating Accord at $ACCORD_HOME ..."
+    log "Updating Accord Lite at $ACCORD_HOME ..."
     (
         cd "$ACCORD_HOME"
         git fetch --quiet --tags origin 2>/dev/null
-        if [[ "$ACCORD_VERSION" != "main" ]]; then
-            git checkout --quiet "$ACCORD_VERSION" 2>/dev/null
+        if [[ "$ACCORD_VERSION" == "$ACCORD_BRANCH" ]]; then
+            git checkout --quiet "$ACCORD_BRANCH" 2>/dev/null
+            git pull --quiet origin "$ACCORD_BRANCH" 2>/dev/null
         else
-            git pull --quiet origin main 2>/dev/null
+            git checkout --quiet "$ACCORD_VERSION" 2>/dev/null
         fi
     ) || log "Update failed (offline?), using cached version"
     log "Updated to $ACCORD_VERSION"
@@ -70,9 +67,9 @@ else
     if [[ -d "$ACCORD_HOME" ]]; then
         rm -rf "$ACCORD_HOME"
     fi
-    log "Downloading Accord $ACCORD_VERSION to $ACCORD_HOME ..."
-    if [[ "$ACCORD_VERSION" == "main" ]]; then
-        git clone --depth 1 --branch main --quiet "$ACCORD_REPO" "$ACCORD_HOME" || \
+    log "Downloading Accord Lite to $ACCORD_HOME ..."
+    if [[ "$ACCORD_VERSION" == "$ACCORD_BRANCH" ]]; then
+        git clone --depth 1 --branch "$ACCORD_BRANCH" --quiet "$ACCORD_REPO" "$ACCORD_HOME" || \
             err "Failed to clone. Check your network and that $ACCORD_REPO is accessible."
     else
         git clone --branch "$ACCORD_VERSION" --quiet "$ACCORD_REPO" "$ACCORD_HOME" || \
@@ -81,74 +78,19 @@ else
     log "Downloaded successfully"
 fi
 
-chmod +x "$ACCORD_HOME/init.sh" "$ACCORD_HOME/setup.sh" "$ACCORD_HOME/uninstall.sh" "$ACCORD_HOME/upgrade.sh"
-
-# ── Build TypeScript agent (if Node.js available) ─────────────────────────────
-
-build_ts_agent() {
-    if ! command -v node >/dev/null 2>&1; then
-        log "Node.js not found — skipping TypeScript agent build (legacy bash agent will be used)"
-        return
-    fi
-
-    local node_ver
-    node_ver="$(node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1)"
-    if [[ -z "$node_ver" || "$node_ver" -lt 20 ]]; then
-        log "Node.js >= 20 required for TypeScript agent (found v${node_ver:-unknown}) — using legacy bash agent"
-        return
-    fi
-
-    if [[ ! -f "$ACCORD_HOME/agent/package.json" ]]; then
-        log "No agent/package.json found — skipping TypeScript agent build"
-        return
-    fi
-
-    log "Building TypeScript agent..."
-    if (cd "$ACCORD_HOME/agent" && npm install --quiet 2>/dev/null && npm run build 2>/dev/null); then
-        log "TypeScript agent built successfully"
-    else
-        log "TypeScript agent build failed — legacy bash agent will be used as fallback"
-    fi
-}
-
-build_ts_agent
-
-# ── Read installed version ────────────────────────────────────────────────────
-
-INSTALLED_VERSION="unknown"
-if [[ -f "$ACCORD_HOME/VERSION" ]]; then
-    INSTALLED_VERSION="$(cat "$ACCORD_HOME/VERSION" | tr -d '[:space:]')"
-fi
-
-# ── Create symlink for accord-hub command ────────────────────────────────────
-
-if [[ -f "$ACCORD_HOME/accord-hub.sh" ]]; then
-    LINK_DIR="/usr/local/bin"
-    if [[ -w "$LINK_DIR" ]]; then
-        ln -sf "$ACCORD_HOME/accord-hub.sh" "$LINK_DIR/accord-hub"
-        log "Created symlink: accord-hub → $ACCORD_HOME/accord-hub.sh"
-    else
-        # Try with sudo, or fall back to ~/.local/bin
-        LOCAL_BIN="$HOME/.local/bin"
-        mkdir -p "$LOCAL_BIN"
-        ln -sf "$ACCORD_HOME/accord-hub.sh" "$LOCAL_BIN/accord-hub"
-        if ! echo "$PATH" | grep -q "$LOCAL_BIN"; then
-            echo -e "${DIM}Add to PATH: export PATH=\"$LOCAL_BIN:\$PATH\"${NC}"
-        fi
-    fi
-fi
+chmod +x "$ACCORD_HOME/init.sh"
 
 # ── Done ──────────────────────────────────────────────────────────────────────
+
 echo ""
-echo -e "${GREEN}${BOLD}Accord v${INSTALLED_VERSION} installed at ~/.accord/${NC}"
+echo -e "${GREEN}${BOLD}Accord Lite installed at ~/.accord/${NC}"
 echo ""
-echo "Commands:"
+echo "To set up your project:"
 echo ""
-echo -e "  ${BOLD}accord-hub${NC}                 Start the Hub Service (API + Web UI)"
-echo -e "  ${BOLD}accord-hub update${NC}          Pull latest code + rebuild"
-echo -e "  ${BOLD}~/.accord/setup.sh${NC}         Set up a new project (interactive wizard)"
-echo -e "  ${BOLD}~/.accord/init.sh${NC}          Initialize a single repo (hub or service)"
+echo -e "  ${BOLD}cd your-project${NC}"
+echo -e "  ${BOLD}~/.accord/init.sh${NC}"
 echo ""
-echo -e "  ${DIM}Installed version: ${INSTALLED_VERSION}${NC}"
-echo -e "  ${DIM}Run any command with --help for options.${NC}"
+echo "This will create .accord/, install skills + commands, and update CLAUDE.md."
+echo ""
+echo -e "Then in Claude Code, run ${CYAN}/accord-scan full${NC} to build your knowledge base."
 echo ""

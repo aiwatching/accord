@@ -1,0 +1,35 @@
+---
+module: {{MODULE_NAME}}
+type: {{MODULE_TYPE}}
+status: draft
+last_scanned: ""
+---
+
+## Purpose
+
+{{DESCRIPTION}}
+
+## Public API
+
+### REST Endpoints
+{{REST_ENDPOINTS}}
+
+### Interfaces
+{{INTERFACES}}
+
+### Types
+{{TYPES}}
+
+## Dependencies
+{{DEPENDENCIES}}
+
+## Depended By
+{{DEPENDED_BY}}
+
+## Shared Resources
+{{SHARED_RESOURCES}}
+
+## Change Rules
+
+- Stability: {{STATUS}}
+- Before modifying public API: update this contract, then update all dependents

@@ -1,0 +1,20 @@
+## Accord Lite — Architecture-Aware Task Execution
+
+This project uses Accord Lite for architecture-aware development.
+
+### Knowledge Base
+- `.accord/module-map.yaml` — module definitions + dependency graph
+- `.accord/ARCHITECTURE.md` — one-page architecture overview
+- `.accord/contracts/<module>.md` — per-module boundary contracts
+- `.accord/plans/` — active and completed execution plans
+
+### Before ANY Task
+1. Read `.accord/ARCHITECTURE.md` (always)
+2. If task is specific to one module: read that module's contract, execute directly
+3. If task spans multiple modules: use `/accord-plan` to plan first
+
+### Rules
+- Never modify a module's public API without updating its contract
+- Never call an interface not listed in the target module's contract
+- Follow the execution order in the plan — do not skip ahead
+- After completing a step, update the plan file with actual changes
