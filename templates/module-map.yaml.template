@@ -1,0 +1,20 @@
+version: "0.1"
+scanned_at: ""
+project:
+  name: ""
+  root: "."
+
+modules: {}
+  # <module-name>:
+  #   path: <relative path>
+  #   type: service | library | module
+  #   description: ""
+  #   public_api:
+  #     rest: []
+  #     interfaces: []
+  #     types: []
+  #   depends_on: []
+  #   depended_by: []
+  #   shared_resources: []
+
+build_order: []
