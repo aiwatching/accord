@@ -7,6 +7,8 @@ import { Scheduler } from './scheduler.js';
 import { Dispatcher } from './dispatcher.js';
 import { setHubState } from './hub-state.js';
 import { logger } from './logger.js';
+import { startContractPipeline } from './a2a/contract-pipeline.js';
+import { getAccordDir } from './config.js';
 
 // ── CLI argument parsing ───────────────────────────────────────────────────
 
@@ -117,6 +119,10 @@ async function main(): Promise<void> {
 
   // Start scheduling
   scheduler.start();
+
+  // Start contract update pipeline (A2A artifact → validate → git commit)
+  const accordDir = getAccordDir(args.hubDir, config);
+  startContractPipeline(accordDir, args.hubDir);
 
   // Graceful shutdown
   const shutdown = async () => {
