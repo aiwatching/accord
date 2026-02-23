@@ -12,6 +12,8 @@ import { registerWorkerRoutes } from './api/workers.js';
 import { registerHubRoutes } from './api/hub.js';
 import { registerCommandRoutes } from './api/commands.js';
 import { logger } from './logger.js';
+import { getHubState } from './hub-state.js';
+import { ACCORD_EXTENSION_URI } from './a2a/extension.js';
 
 let app: FastifyInstance | null = null;
 
@@ -55,6 +57,29 @@ export async function startServer(port: number, hubDir: string): Promise<Fastify
   registerWorkerRoutes(app);
   registerHubRoutes(app);
   registerCommandRoutes(app);
+
+  // A2A Agent Card endpoint
+  app.get('/.well-known/agent-card.json', (_req, reply) => {
+    const { config } = getHubState();
+    reply.send({
+      name: config.project.name + '-hub',
+      description: 'Accord Hub — contract-first agent coordination',
+      url: `http://localhost:${port}/`,
+      version: '1.0.0',
+      capabilities: {
+        streaming: true,
+        pushNotifications: false,
+        extensions: [{
+          uri: ACCORD_EXTENSION_URI,
+          params: { role: 'hub' },
+        }],
+      },
+      skills: [
+        { id: 'dispatch', name: 'Request Dispatch', description: 'Dispatch accord requests to service agents' },
+        { id: 'contract-registry', name: 'Contract Registry', description: 'Manage service API contracts' },
+      ],
+    });
+  });
 
   // Serve static UI files in production
   // Try hub project's own ui/dist first, then fall back to agent's ui/dist (dev mode)

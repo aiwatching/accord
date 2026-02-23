@@ -115,6 +115,25 @@ export interface ServiceRemovedEvent {
   name: string;
 }
 
+// ── A2A event types ─────────────────────────────────────────────────────────
+
+export interface A2AStatusUpdateEvent {
+  requestId: string;
+  service: string;
+  taskId: string;
+  contextId: string;
+  state: string; // 'working' | 'input-required' | 'completed' | 'failed' | 'canceled'
+  message?: string;
+}
+
+export interface A2AArtifactUpdateEvent {
+  requestId: string;
+  service: string;
+  taskId: string;
+  artifactName: string;
+  artifactData: unknown;
+}
+
 // ── Event map ────────────────────────────────────────────────────────────────
 
 export interface EventMap {
@@ -137,6 +156,8 @@ export interface EventMap {
   'session:plan-timeout': SessionPlanTimeoutEvent;
   'service:added': ServiceAddedEvent;
   'service:removed': ServiceRemovedEvent;
+  'a2a:status-update': A2AStatusUpdateEvent;
+  'a2a:artifact-update': A2AArtifactUpdateEvent;
 }
 
 export type EventName = keyof EventMap;
@@ -179,6 +200,7 @@ class AccordEventBus extends EventEmitter {
       'session:start', 'session:output', 'session:complete', 'session:error',
       'session:plan-generating', 'session:plan-ready', 'session:plan-canceled', 'session:plan-timeout',
       'service:added', 'service:removed',
+      'a2a:status-update', 'a2a:artifact-update',
     ];
 
     const handlers = new Map<string, (...args: unknown[]) => void>();

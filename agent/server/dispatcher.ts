@@ -6,7 +6,9 @@ import { createAdapter, type AgentAdapter } from './adapters/adapter.js';
 import { logger } from './logger.js';
 import { getDependencyStatus } from './scanner.js';
 import { syncPush, gitCommit } from './git-sync.js';
-import { getAccordDir, getServiceDir, loadRegistryYaml } from './config.js';
+import { getAccordDir, getServiceDir, getServiceConfig, loadRegistryYaml } from './config.js';
+import { AccordA2AClient, type A2AStreamEvent } from './a2a/client.js';
+import { eventBus } from './event-bus.js';
 
 export class Dispatcher {
   private workers: Worker[] = [];
@@ -22,6 +24,8 @@ export class Dispatcher {
   private activeServices = new Set<string>();
   // Track which directories are in use — prevents concurrent access to same cwd
   private activeDirectories = new Set<string>();
+  // A2A client for remote service dispatch
+  private a2aClient = new AccordA2AClient();
 
   constructor(
     config: DispatcherConfig,
@@ -95,13 +99,22 @@ export class Dispatcher {
       return 0;
     }
 
-    // Process in parallel
-    const promises = assignments.map(({ worker, request }) =>
+    // Split A2A and Worker assignments
+    const a2aAssignments = assignments.filter(a => this.getA2AUrl(a.request) !== undefined);
+    const workerAssignments = assignments.filter(a => this.getA2AUrl(a.request) === undefined);
+
+    // A2A path: dispatch via A2A Client (fire-and-forget, events via SSE callback)
+    for (const { request } of a2aAssignments) {
+      this.processViaA2A(request);
+    }
+
+    // Worker path: existing logic unchanged
+    const promises = workerAssignments.map(({ worker, request }) =>
       this.processWithWorker(worker, request)
     );
 
     const results = await Promise.allSettled(promises);
-    let processed = 0;
+    let processed = a2aAssignments.length; // A2A dispatches count as processed
 
     for (const result of results) {
       if (result.status === 'fulfilled') {
@@ -115,13 +128,13 @@ export class Dispatcher {
       }
     }
 
-    // Commit and push any remaining changes
-    if (processed > 0) {
-      gitCommit(this.targetDir, `accord: dispatcher processed ${processed} request(s)`);
+    // Commit and push any remaining changes (worker path only)
+    if (workerAssignments.length > 0 && processed > a2aAssignments.length) {
+      gitCommit(this.targetDir, `accord: dispatcher processed ${processed - a2aAssignments.length} request(s)`);
       syncPush(this.targetDir, this.accordConfig);
     }
 
-    logger.debug(`Dispatch complete: processed ${processed}`);
+    logger.debug(`Dispatch complete: processed ${processed} (${a2aAssignments.length} via A2A, ${workerAssignments.length} via worker)`);
     return processed;
   }
 
@@ -231,6 +244,153 @@ export class Dispatcher {
     const serviceDir = path.resolve(getServiceDir(this.accordConfig, serviceName, this.targetDir));
     try {
       return await worker.processRequest(request);
+    } finally {
+      this.activeServices.delete(serviceName);
+      this.activeDirectories.delete(serviceDir);
+    }
+  }
+
+  // ── A2A dispatch ──────────────────────────────────────────────────────────
+
+  /**
+   * Get the A2A URL for a request's target service, if configured.
+   * Checks ServiceConfig.a2a_url first, then RegistryYaml.a2a_url.
+   */
+  private getA2AUrl(request: AccordRequest): string | undefined {
+    const serviceName = request.serviceName;
+
+    // Check ServiceConfig first
+    const svcConfig = getServiceConfig(this.accordConfig, serviceName);
+    if (svcConfig?.a2a_url) {
+      return svcConfig.a2a_url;
+    }
+
+    // Check RegistryYaml
+    const accordDir = getAccordDir(this.targetDir, this.accordConfig);
+    const registry = loadRegistryYaml(accordDir, serviceName);
+    if (registry?.a2a_url) {
+      return registry.a2a_url;
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Process a request via A2A Client (fire-and-forget).
+   * Listens to SSE events and maps them to the event bus.
+   */
+  private async processViaA2A(request: AccordRequest): Promise<void> {
+    const serviceName = request.serviceName;
+    const serviceDir = path.resolve(getServiceDir(this.accordConfig, serviceName, this.targetDir));
+    const a2aUrl = this.getA2AUrl(request)!;
+    const requestId = request.frontmatter.id;
+
+    logger.info(`A2A dispatch: ${requestId} → ${serviceName} via ${a2aUrl}`);
+
+    try {
+      let taskId = '';
+      let contextId = '';
+
+      for await (const event of this.a2aClient.sendRequest(a2aUrl, request)) {
+        // Extract taskId and contextId from Task events
+        if ('kind' in event && event.kind === 'task') {
+          const task = event as import('@a2a-js/sdk').Task;
+          taskId = task.id;
+          contextId = task.contextId;
+        }
+
+        // Handle TaskStatusUpdateEvent
+        if ('kind' in event && event.kind === 'status-update') {
+          const statusEvent = event as import('@a2a-js/sdk').TaskStatusUpdateEvent;
+          taskId = statusEvent.taskId;
+          contextId = statusEvent.contextId;
+          const state = statusEvent.status.state;
+          const message = statusEvent.status.message?.parts
+            ?.filter((p): p is import('@a2a-js/sdk').TextPart => p.kind === 'text')
+            .map(p => p.text)
+            .join('') ?? '';
+
+          eventBus.emit('a2a:status-update', {
+            requestId,
+            service: serviceName,
+            taskId,
+            contextId,
+            state,
+            message,
+          });
+
+          if (state === 'working') {
+            eventBus.emit('request:claimed', {
+              requestId,
+              service: serviceName,
+              workerId: -1, // A2A dispatch, no local worker
+            });
+          } else if (state === 'completed') {
+            // Extract contract updates from the final task
+            try {
+              const finalTask = await this.a2aClient.getTask(a2aUrl, taskId);
+              const contractUpdates = this.a2aClient.extractContractUpdates(finalTask);
+              for (const update of contractUpdates) {
+                eventBus.emit('a2a:artifact-update', {
+                  requestId,
+                  service: serviceName,
+                  taskId,
+                  artifactName: 'contract-update',
+                  artifactData: update,
+                });
+              }
+            } catch (err) {
+              logger.warn(`A2A: Failed to extract contract updates for ${requestId}: ${err}`);
+            }
+
+            this.totalProcessed += 1;
+            eventBus.emit('request:completed', {
+              requestId,
+              service: serviceName,
+              workerId: -1,
+              result: {
+                requestId,
+                success: true,
+                durationMs: 0,
+                completedAt: new Date().toISOString(),
+              },
+            });
+          } else if (state === 'failed' || state === 'canceled') {
+            this.totalProcessed += 1;
+            this.totalFailed += 1;
+            eventBus.emit('request:failed', {
+              requestId,
+              service: serviceName,
+              workerId: -1,
+              error: message || `A2A task ${state}`,
+              willRetry: false,
+            });
+          }
+        }
+
+        // Handle TaskArtifactUpdateEvent
+        if ('kind' in event && event.kind === 'artifact-update') {
+          const artifactEvent = event as import('@a2a-js/sdk').TaskArtifactUpdateEvent;
+          eventBus.emit('a2a:artifact-update', {
+            requestId,
+            service: serviceName,
+            taskId: artifactEvent.taskId,
+            artifactName: artifactEvent.artifact.name ?? 'unnamed',
+            artifactData: artifactEvent.artifact,
+          });
+        }
+      }
+    } catch (err) {
+      logger.error(`A2A dispatch failed for ${requestId}: ${err}`);
+      this.totalProcessed += 1;
+      this.totalFailed += 1;
+      eventBus.emit('request:failed', {
+        requestId,
+        service: serviceName,
+        workerId: -1,
+        error: `A2A dispatch error: ${err}`,
+        willRetry: false,
+      });
     } finally {
       this.activeServices.delete(serviceName);
       this.activeDirectories.delete(serviceDir);

@@ -48,6 +48,7 @@ export interface ServiceConfig {
   directory?: string;
   language?: string;
   repo?: string;
+  a2a_url?: string;
 }
 
 export interface DispatcherConfig {
@@ -191,4 +192,5 @@ export interface RegistryYaml {
   exposes?: string[];
   depends_on?: (string | { service: string; contract: string } | { team: string; contract: string })[];
   responsibility?: string;
+  a2a_url?: string;
 }
