@@ -1,22 +1,18 @@
 #!/usr/bin/env node
 
 import * as path from 'node:path';
-import { loadConfig, getDispatcherConfig } from './config.js';
+import { loadConfig, getDispatcherConfig, getAccordDir } from './config.js';
 import { startServer, stopServer } from './http.js';
-import { Scheduler } from './scheduler.js';
 import { Dispatcher } from './dispatcher.js';
 import { setHubState } from './hub-state.js';
 import { logger } from './logger.js';
 import { startContractPipeline } from './a2a/contract-pipeline.js';
-import { getAccordDir } from './config.js';
 
 // ── CLI argument parsing ───────────────────────────────────────────────────
 
 interface CLIArgs {
   hubDir: string;
   port?: number;
-  workers?: number;
-  interval?: number;
   timeout?: number;
   agentCmd?: string;
 }
@@ -34,12 +30,6 @@ function parseArgs(argv: string[]): CLIArgs {
         break;
       case '--port':
         args.port = parseInt(argv[++i] ?? '3000', 10);
-        break;
-      case '--workers':
-        args.workers = parseInt(argv[++i] ?? '4', 10);
-        break;
-      case '--interval':
-        args.interval = parseInt(argv[++i] ?? '30', 10);
         break;
       case '--timeout':
         args.timeout = parseInt(argv[++i] ?? '600', 10);
@@ -60,15 +50,13 @@ function parseArgs(argv: string[]): CLIArgs {
 
 function printUsage(): void {
   console.log(`
-Usage: accord-agent [options]
+Usage: accord-hub [options]
 
-Accord Hub Service — unified API server, web UI, scheduler, and worker pool.
+Accord Hub Service — A2A-based agent coordination with REST API, WebSocket, and web UI.
 
 Options:
   --hub-dir <path>          Hub/project directory (default: current directory)
   --port <number>           HTTP server port (default: 3000)
-  --workers <N>             Number of concurrent workers (default: 4)
-  --interval <seconds>      Scheduler polling interval (default: 30)
   --timeout <seconds>       Per-request timeout (default: 600)
   --agent-cmd <cmd>         Shell command to use as agent (instead of Claude SDK)
   --help                    Show this help message
@@ -77,13 +65,12 @@ The hub service provides:
   - REST API at /api/*
   - WebSocket streaming at /ws
   - Web UI at /
-  - Automatic request scheduling and dispatch
+  - A2A agent card at /.well-known/agent-card.json
+  - Contract validation pipeline for A2A artifacts
 `);
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────
-
-let scheduler: Scheduler | null = null;
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
@@ -97,8 +84,6 @@ async function main(): Promise<void> {
   const port = args.port || config.dispatcher?.port || 3000;
 
   // Apply CLI overrides
-  if (args.workers) dispatcherConfig.workers = args.workers;
-  if (args.interval) dispatcherConfig.poll_interval = args.interval;
   if (args.timeout) dispatcherConfig.request_timeout = args.timeout;
   if (args.agentCmd) {
     dispatcherConfig.agent = 'shell';
@@ -107,18 +92,14 @@ async function main(): Promise<void> {
 
   logger.init(args.hubDir, dispatcherConfig.debug);
 
-  // Create dispatcher and scheduler
+  // Create dispatcher (A2A-only mode)
   const dispatcher = new Dispatcher(dispatcherConfig, config, args.hubDir);
-  scheduler = new Scheduler(dispatcher, config, args.hubDir, dispatcherConfig.poll_interval);
 
   // Register shared state for route handlers
-  setHubState({ hubDir: args.hubDir, config, dispatcherConfig, dispatcher, scheduler });
+  setHubState({ hubDir: args.hubDir, config, dispatcherConfig, dispatcher });
 
   // Start the Fastify server (API + WebSocket + UI)
   await startServer(port, args.hubDir);
-
-  // Start scheduling
-  scheduler.start();
 
   // Start contract update pipeline (A2A artifact → validate → git commit)
   const accordDir = getAccordDir(args.hubDir, config);
@@ -127,8 +108,6 @@ async function main(): Promise<void> {
   // Graceful shutdown
   const shutdown = async () => {
     logger.info('Shutting down...');
-    if (scheduler) scheduler.stop();
-    // Close persistent agent sessions (V2 adapter)
     const adapter = dispatcher.getAdapter();
     if (adapter.closeAll) await adapter.closeAll();
     await stopServer();
@@ -139,7 +118,7 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 
-  logger.info(`Accord Hub Service started — port ${port}, ${dispatcherConfig.workers} workers, poll every ${dispatcherConfig.poll_interval}s`);
+  logger.info(`Accord Hub Service started — port ${port}, A2A mode`);
 }
 
 main().catch(err => {

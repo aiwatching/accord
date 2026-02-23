@@ -139,17 +139,13 @@ export function registerServiceRoutes(app: FastifyInstance): void {
     const { config, hubDir, dispatcher } = getHubState();
     const accordDir = getAccordDir(hubDir, config);
     const allRequests = scanInboxes(accordDir, config, hubDir);
-    const workerStatuses = dispatcher.status.workers;
-
     return config.services.map(svc => {
       const registry = loadRegistryYaml(accordDir, svc.name);
       const pendingCount = allRequests.filter(
         r => r.serviceName === svc.name && (r.frontmatter.status === 'pending' || r.frontmatter.status === 'approved')
       ).length;
-      const isWorking = workerStatuses.some(
-        w => w.state === 'busy' && allRequests.some(
-          r => r.serviceName === svc.name && r.frontmatter.id === w.currentRequest
-        )
+      const isWorking = allRequests.some(
+        r => r.serviceName === svc.name && r.frontmatter.status === 'in-progress'
       );
 
       return {

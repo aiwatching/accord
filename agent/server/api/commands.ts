@@ -29,7 +29,7 @@ const HELP_TEXT = `## Available Commands
 | **scan** | Validate all contracts |
 | **check-inbox** | List all pending inbox items |
 | **validate** | Validate all request files |
-| **sync** | Trigger an immediate scheduler sync cycle |
+| **sync** | Show sync status (A2A mode — no polling) |
 | **services** | List all configured services |
 | **requests** | List all requests (use \`requests --status pending\` to filter) |
 | **send <service> <message>** | Create a new request in a service's inbox |
@@ -328,7 +328,7 @@ export function registerCommandRoutes(app: FastifyInstance): void {
 }
 
 async function runCommand(cmd: string, args: string[]): Promise<string> {
-  const { config, hubDir, scheduler } = getHubState();
+  const { config, hubDir } = getHubState();
   const accordDir = getAccordDir(hubDir, config);
 
   switch (cmd) {
@@ -338,10 +338,8 @@ async function runCommand(cmd: string, args: string[]): Promise<string> {
     case 'validate':
       return executeCommand(cmd, hubDir, accordDir);
 
-    case 'sync': {
-      const processed = await scheduler.triggerNow();
-      return `## Sync Complete\n\nScheduler tick triggered. **${processed}** request(s) processed.`;
-    }
+    case 'sync':
+      return `## Sync\n\nA2A mode: requests are dispatched via A2A push. No polling scheduler.`;
 
     case 'services':
       return formatServices(accordDir);

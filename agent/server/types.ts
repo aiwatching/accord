@@ -116,17 +116,6 @@ export interface SessionInfo {
   lastUsedAt: number;
 }
 
-// ── Worker types ───────────────────────────────────────────────────────────
-
-export type WorkerState = 'idle' | 'busy';
-
-export interface WorkerStatus {
-  workerId: number;
-  state: WorkerState;
-  currentRequest: string | null;
-  sessions: Map<string, SessionInfo>;
-}
-
 // ── Result types ───────────────────────────────────────────────────────────
 
 export interface TokenUsage {
@@ -164,7 +153,7 @@ export interface RequestResult {
 
 export interface DispatcherStatus {
   running: boolean;
-  workers: WorkerStatus[];
+  workers: unknown[]; // kept for API compat, always empty in A2A mode
   pendingQueue: number;
   totalProcessed: number;
   totalFailed: number;

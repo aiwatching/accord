@@ -5,7 +5,10 @@ import * as os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { Dispatcher } from '../server/dispatcher.js';
 import { scanInboxes, getPendingRequests, sortByPriority } from '../server/scanner.js';
+import { validateContractUpdate } from '../server/a2a/contract-validator.js';
+import { processContractUpdate } from '../server/a2a/contract-pipeline.js';
 import type { AccordConfig, DispatcherConfig } from '../server/types.js';
+import type { ContractUpdatePayload } from '../server/a2a/types.js';
 
 let tmpDir: string;
 
@@ -20,42 +23,23 @@ function initGitRepo(dir: string): void {
 
 function writeAccordStructure(dir: string): void {
   const accord = path.join(dir, '.accord');
-  fs.mkdirSync(accord, { recursive: true });
-  fs.writeFileSync(path.join(accord, 'config.yaml'), `
-version: "0.1"
-project:
-  name: integration-test
-repo_model: monorepo
-services:
-  - name: backend
-  - name: frontend
-settings:
-  debug: false
-`.trimStart(), 'utf-8');
-
-  fs.mkdirSync(path.join(accord, 'contracts', 'internal'), { recursive: true });
+  fs.mkdirSync(path.join(accord, 'contracts'), { recursive: true });
   fs.mkdirSync(path.join(accord, 'comms', 'inbox', 'backend'), { recursive: true });
   fs.mkdirSync(path.join(accord, 'comms', 'inbox', 'frontend'), { recursive: true });
   fs.mkdirSync(path.join(accord, 'comms', 'archive'), { recursive: true });
   fs.mkdirSync(path.join(accord, 'comms', 'history'), { recursive: true });
   fs.mkdirSync(path.join(accord, 'log'), { recursive: true });
-  fs.mkdirSync(path.join(accord, 'registry'), { recursive: true });
 
-  fs.writeFileSync(path.join(accord, 'contracts', 'backend.yaml'), `
-openapi: "3.0.0"
+  fs.writeFileSync(path.join(accord, 'contracts', 'backend.yaml'), `openapi: "3.0.3"
 info:
   title: Backend API
   version: "1.0.0"
+  x-accord-status: stable
 paths:
   /api/users:
     get:
       summary: List users
-`.trimStart(), 'utf-8');
-
-  fs.writeFileSync(path.join(accord, 'registry', 'backend.md'), `
-# backend
-Handles user management and authentication.
-`.trimStart(), 'utf-8');
+`, 'utf-8');
 }
 
 beforeEach(() => {
@@ -82,12 +66,15 @@ function makeDispatcherConfig(): DispatcherConfig {
   };
 }
 
-function makeAccordConfig(): AccordConfig {
+function makeAccordConfig(a2aServices = false): AccordConfig {
   return {
     version: '0.1',
     project: { name: 'integration-test' },
     repo_model: 'monorepo',
-    services: [{ name: 'backend' }, { name: 'frontend' }],
+    services: [
+      { name: 'backend', ...(a2aServices ? { a2a_url: 'http://localhost:9001' } : {}) },
+      { name: 'frontend', ...(a2aServices ? { a2a_url: 'http://localhost:9002' } : {}) },
+    ],
   };
 }
 
@@ -96,9 +83,9 @@ function scanPending(config: AccordConfig) {
   return sortByPriority(getPendingRequests(scanInboxes(accordDir, config)));
 }
 
-describe('Integration: command request lifecycle', () => {
-  it('processes a status command end-to-end', async () => {
-    const config = makeAccordConfig();
+describe('Integration: A2A dispatcher', () => {
+  it('skips requests for services without a2a_url', async () => {
+    const config = makeAccordConfig(false);
     fs.writeFileSync(
       path.join(tmpDir, '.accord', 'comms', 'inbox', 'backend', 'req-cmd-status.md'),
       `---
@@ -111,12 +98,9 @@ priority: medium
 status: pending
 created: "2026-02-12T10:00:00Z"
 updated: "2026-02-12T10:00:00Z"
-command: status
 ---
 
-## What
-
-Run status check on backend service.
+Run status check.
 `,
       'utf-8',
     );
@@ -124,169 +108,31 @@ Run status check on backend service.
     const dispatcher = new Dispatcher(makeDispatcherConfig(), config, tmpDir);
     const count = await dispatcher.dispatch(scanPending(config));
 
-    expect(count).toBe(1);
+    // No a2a_url → 0 dispatched
+    expect(count).toBe(0);
 
-    const archiveFiles = fs.readdirSync(path.join(tmpDir, '.accord', 'comms', 'archive'));
-    expect(archiveFiles).toContain('req-cmd-status.md');
-
+    // Request stays in inbox (not processed)
     const inboxFiles = fs.readdirSync(path.join(tmpDir, '.accord', 'comms', 'inbox', 'backend'));
-    expect(inboxFiles.filter(f => f.startsWith('req-'))).toHaveLength(0);
-
-    const archived = fs.readFileSync(
-      path.join(tmpDir, '.accord', 'comms', 'archive', 'req-cmd-status.md'),
-      'utf-8',
-    );
-    expect(archived).toContain('## Result');
-    expect(archived).toContain('external');
-
-    const historyFiles = fs.readdirSync(path.join(tmpDir, '.accord', 'comms', 'history'));
-    expect(historyFiles.length).toBeGreaterThan(0);
-
-    const historyContent = fs.readFileSync(
-      path.join(tmpDir, '.accord', 'comms', 'history', historyFiles[0]),
-      'utf-8',
-    );
-    expect(historyContent).toContain('req-cmd-status');
-    expect(historyContent).toContain('completed');
+    expect(inboxFiles).toContain('req-cmd-status.md');
   });
 
-  it('processes check-inbox command and result includes inbox listing', async () => {
-    const config = makeAccordConfig();
+  it('dry-run with a2a_url counts as assignable', async () => {
+    const config = makeAccordConfig(true);
     fs.writeFileSync(
-      path.join(tmpDir, '.accord', 'comms', 'inbox', 'frontend', 'req-010-add-button.md'),
+      path.join(tmpDir, '.accord', 'comms', 'inbox', 'backend', 'req-001.md'),
       `---
-id: req-010-add-button
-from: backend
-to: frontend
+id: req-001
+from: orchestrator
+to: backend
 scope: external
 type: api-addition
 priority: high
-status: in-progress
-created: "2026-02-12T10:00:00Z"
-updated: "2026-02-12T10:00:00Z"
----
-
-## What
-
-Add a logout button.
-`,
-      'utf-8',
-    );
-
-    fs.writeFileSync(
-      path.join(tmpDir, '.accord', 'comms', 'inbox', 'backend', 'req-cmd-inbox.md'),
-      `---
-id: req-cmd-inbox
-from: orchestrator
-to: backend
-scope: external
-type: command
-priority: medium
 status: pending
 created: "2026-02-12T10:00:00Z"
 updated: "2026-02-12T10:00:00Z"
-command: check-inbox
 ---
 
-## What
-
-Check inbox.
-`,
-      'utf-8',
-    );
-
-    const dispatcher = new Dispatcher(makeDispatcherConfig(), config, tmpDir);
-    const count = await dispatcher.dispatch(scanPending(config));
-
-    expect(count).toBeGreaterThanOrEqual(1);
-
-    const archived = fs.readFileSync(
-      path.join(tmpDir, '.accord', 'comms', 'archive', 'req-cmd-inbox.md'),
-      'utf-8',
-    );
-    expect(archived).toContain('## Result');
-    expect(archived).toContain('## Inbox');
-  });
-
-  it('monorepo: processes different-service requests sequentially (shared directory)', async () => {
-    const config = makeAccordConfig();
-    fs.writeFileSync(
-      path.join(tmpDir, '.accord', 'comms', 'inbox', 'backend', 'req-cmd-s1.md'),
-      `---
-id: req-cmd-s1
-from: orchestrator
-to: backend
-scope: external
-type: command
-priority: medium
-status: pending
-created: "2026-02-12T10:00:00Z"
-updated: "2026-02-12T10:00:00Z"
-command: status
----
-
-## What
-
-Status check.
-`,
-      'utf-8',
-    );
-
-    fs.writeFileSync(
-      path.join(tmpDir, '.accord', 'comms', 'inbox', 'frontend', 'req-cmd-s2.md'),
-      `---
-id: req-cmd-s2
-from: orchestrator
-to: frontend
-scope: external
-type: command
-priority: medium
-status: pending
-created: "2026-02-12T10:00:00Z"
-updated: "2026-02-12T10:00:00Z"
-command: status
----
-
-## What
-
-Status check.
-`,
-      'utf-8',
-    );
-
-    const dispatcher = new Dispatcher(makeDispatcherConfig(), config, tmpDir);
-
-    const count1 = await dispatcher.dispatch(scanPending(config));
-    expect(count1).toBe(1);
-
-    const count2 = await dispatcher.dispatch(scanPending(config));
-    expect(count2).toBe(1);
-
-    const archiveFiles = fs.readdirSync(path.join(tmpDir, '.accord', 'comms', 'archive'));
-    expect(archiveFiles).toContain('req-cmd-s1.md');
-    expect(archiveFiles).toContain('req-cmd-s2.md');
-  });
-
-  it('dry-run does not modify any files', async () => {
-    const config = makeAccordConfig();
-    fs.writeFileSync(
-      path.join(tmpDir, '.accord', 'comms', 'inbox', 'backend', 'req-cmd-dry.md'),
-      `---
-id: req-cmd-dry
-from: orchestrator
-to: backend
-scope: external
-type: command
-priority: medium
-status: pending
-created: "2026-02-12T10:00:00Z"
-updated: "2026-02-12T10:00:00Z"
-command: status
----
-
-## What
-
-Status check.
+Add new endpoint.
 `,
       'utf-8',
     );
@@ -296,65 +142,146 @@ Status check.
 
     expect(count).toBe(1);
 
+    // Dry-run: file should still be in inbox
     const inboxFiles = fs.readdirSync(path.join(tmpDir, '.accord', 'comms', 'inbox', 'backend'));
-    expect(inboxFiles).toContain('req-cmd-dry.md');
-
-    const archiveFiles = fs.readdirSync(path.join(tmpDir, '.accord', 'comms', 'archive'));
-    expect(archiveFiles).toHaveLength(0);
+    expect(inboxFiles).toContain('req-001.md');
   });
 
-  it('priority sorting: critical processed before medium', async () => {
-    const config = makeAccordConfig();
-    fs.writeFileSync(
-      path.join(tmpDir, '.accord', 'comms', 'inbox', 'backend', 'req-cmd-low.md'),
-      `---
-id: req-cmd-low
+  it('monorepo constraint: only one service per tick', async () => {
+    const config = makeAccordConfig(true);
+
+    fs.writeFileSync(path.join(tmpDir, '.accord', 'comms', 'inbox', 'backend', 'req-s1.md'), `---
+id: req-s1
 from: orchestrator
 to: backend
 scope: external
-type: command
+type: api-addition
+priority: medium
+status: pending
+created: "2026-02-12T10:00:00Z"
+updated: "2026-02-12T10:00:00Z"
+---
+
+Test.
+`, 'utf-8');
+
+    fs.writeFileSync(path.join(tmpDir, '.accord', 'comms', 'inbox', 'frontend', 'req-s2.md'), `---
+id: req-s2
+from: orchestrator
+to: frontend
+scope: external
+type: api-addition
+priority: medium
+status: pending
+created: "2026-02-12T10:00:00Z"
+updated: "2026-02-12T10:00:00Z"
+---
+
+Test.
+`, 'utf-8');
+
+    const dispatcher = new Dispatcher(makeDispatcherConfig(), config, tmpDir);
+    const count = await dispatcher.dispatch(scanPending(config), true);
+
+    // Monorepo: shared directory → only 1
+    expect(count).toBe(1);
+  });
+
+  it('priority sorting: critical before low in dry-run', async () => {
+    const config = makeAccordConfig(true);
+
+    fs.writeFileSync(path.join(tmpDir, '.accord', 'comms', 'inbox', 'backend', 'req-low.md'), `---
+id: req-low
+from: orchestrator
+to: backend
+scope: external
+type: api-addition
 priority: low
 status: pending
 created: "2026-02-12T10:00:00Z"
 updated: "2026-02-12T10:00:00Z"
-command: status
 ---
 
 Low priority.
-`,
-      'utf-8',
-    );
+`, 'utf-8');
 
-    fs.writeFileSync(
-      path.join(tmpDir, '.accord', 'comms', 'inbox', 'backend', 'req-cmd-crit.md'),
-      `---
-id: req-cmd-crit
+    fs.writeFileSync(path.join(tmpDir, '.accord', 'comms', 'inbox', 'backend', 'req-crit.md'), `---
+id: req-crit
 from: orchestrator
 to: backend
 scope: external
-type: command
+type: api-addition
 priority: critical
 status: pending
 created: "2026-02-12T10:00:00Z"
 updated: "2026-02-12T10:00:00Z"
-command: status
 ---
 
 Critical priority.
-`,
-      'utf-8',
-    );
+`, 'utf-8');
 
-    const dispatcher = new Dispatcher(
-      { ...makeDispatcherConfig(), workers: 1 },
-      config,
-      tmpDir,
-    );
-    const count = await dispatcher.dispatch(scanPending(config));
+    const pending = scanPending(config);
 
-    expect(count).toBeGreaterThanOrEqual(1);
+    // Critical should come first
+    expect(pending[0].frontmatter.priority).toBe('critical');
+    expect(pending[1].frontmatter.priority).toBe('low');
+  });
+});
 
-    const archiveFiles = fs.readdirSync(path.join(tmpDir, '.accord', 'comms', 'archive'));
-    expect(archiveFiles).toContain('req-cmd-crit.md');
+describe('Integration: contract pipeline', () => {
+  it('validates and applies a valid contract update', () => {
+    const accordDir = path.join(tmpDir, '.accord');
+    const update: ContractUpdatePayload = {
+      type: 'openapi-patch',
+      contract_path: 'contracts/backend.yaml',
+      operations: [
+        {
+          op: 'add',
+          path: '/paths/~1api~1v1~1policies',
+          value: {
+            get: {
+              summary: 'List policies',
+              operationId: 'listPolicies',
+            },
+          },
+        },
+      ],
+      contract_status_transition: 'stable -> proposed',
+    };
+
+    const result = processContractUpdate(update, 'req-001', 'backend', accordDir);
+
+    expect(result.applied).toBe(true);
+    expect(result.validation.valid).toBe(true);
+
+    // Verify the YAML was updated
+    const contractContent = fs.readFileSync(path.join(accordDir, 'contracts', 'backend.yaml'), 'utf-8');
+    expect(contractContent).toContain('policies');
+    expect(contractContent).toContain('proposed');
+  });
+
+  it('rejects contract update with invalid status transition', () => {
+    const update: ContractUpdatePayload = {
+      type: 'openapi-patch',
+      contract_path: 'contracts/backend.yaml',
+      operations: [{ op: 'add', path: '/paths/~1test', value: {} }],
+      contract_status_transition: 'deprecated -> stable', // illegal
+    };
+
+    const validation = validateContractUpdate(update);
+    expect(validation.valid).toBe(false);
+    expect(validation.errors.some(e => e.code === 'ILLEGAL_TRANSITION')).toBe(true);
+  });
+
+  it('warns on breaking changes (path removal)', () => {
+    const update: ContractUpdatePayload = {
+      type: 'openapi-patch',
+      contract_path: 'contracts/backend.yaml',
+      operations: [{ op: 'remove', path: '/paths/~1api~1users' }],
+    };
+
+    const validation = validateContractUpdate(update);
+    expect(validation.valid).toBe(true);
+    expect(validation.warnings.some(w => w.code === 'BREAKING_PATH_REMOVAL')).toBe(true);
   });
 });

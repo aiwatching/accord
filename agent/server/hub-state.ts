@@ -3,14 +3,12 @@
 
 import type { AccordConfig, DispatcherConfig } from './types.js';
 import type { Dispatcher } from './dispatcher.js';
-import type { Scheduler } from './scheduler.js';
 
 interface HubState {
   hubDir: string;
   config: AccordConfig;
   dispatcherConfig: DispatcherConfig;
   dispatcher: Dispatcher;
-  scheduler: Scheduler;
 }
 
 let state: HubState | null = null;

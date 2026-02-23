@@ -6,9 +6,9 @@ import { aggregateMetrics, collectAnalytics } from '../metrics.js';
 import * as path from 'node:path';
 
 export function registerHubRoutes(app: FastifyInstance): void {
-  // GET /api/hub/status — hub sync status, metrics, scheduler info
+  // GET /api/hub/status — hub status and metrics
   app.get('/api/hub/status', async () => {
-    const { hubDir, config, scheduler } = getHubState();
+    const { hubDir, config } = getHubState();
     const accordDir = getAccordDir(hubDir, config);
     const historyDir = path.join(accordDir, 'comms', 'history');
 
@@ -36,7 +36,6 @@ export function registerHubRoutes(app: FastifyInstance): void {
       role: config.role ?? 'service',
       branch,
       lastCommit,
-      scheduler: scheduler.status,
       metrics: {
         totalRequests: metrics.totalRequests,
         completedRequests: metrics.completedRequests,
@@ -54,12 +53,5 @@ export function registerHubRoutes(app: FastifyInstance): void {
     const accordDir = getAccordDir(hubDir, config);
     const historyDir = path.join(accordDir, 'comms', 'history');
     return collectAnalytics(historyDir);
-  });
-
-  // POST /api/hub/sync — trigger manual sync (pull + push)
-  app.post('/api/hub/sync', async () => {
-    const { scheduler } = getHubState();
-    const processed = await scheduler.triggerNow();
-    return { triggered: true, processedCount: processed };
   });
 }

@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import type { AccordRequest, RequestResult, WorkerState } from './types.js';
+import type { RequestResult } from './types.js';
 import type { StreamEvent } from './adapters/adapter.js';
 
 // ── Event payload types ─────────────────────────────────────────────────────
@@ -25,39 +25,10 @@ export interface RequestFailedEvent {
   willRetry: boolean;
 }
 
-export interface WorkerStartedEvent {
-  workerId: number;
-  service: string;
-  requestId: string;
-}
-
-export interface WorkerOutputEvent {
-  workerId: number;
-  service: string;
-  requestId: string;
-  chunk: string;
-  streamIndex: number;
-  /** Structured stream event (when available from SDK adapter). */
-  event?: StreamEvent;
-}
-
-export interface WorkerFinishedEvent {
-  workerId: number;
-  service: string;
-  requestId: string;
-  success: boolean;
-}
-
 export interface SyncEvent {
   direction: 'pull' | 'push';
   success: boolean;
   error?: string;
-}
-
-export interface SchedulerTickEvent {
-  pendingCount: number;
-  processedCount: number;
-  timestamp: string;
 }
 
 export interface SessionStartEvent {
@@ -140,12 +111,8 @@ export interface EventMap {
   'request:claimed': RequestClaimedEvent;
   'request:completed': RequestCompletedEvent;
   'request:failed': RequestFailedEvent;
-  'worker:started': WorkerStartedEvent;
-  'worker:output': WorkerOutputEvent;
-  'worker:finished': WorkerFinishedEvent;
   'sync:pull': SyncEvent;
   'sync:push': SyncEvent;
-  'scheduler:tick': SchedulerTickEvent;
   'session:start': SessionStartEvent;
   'session:output': SessionOutputEvent;
   'session:complete': SessionCompleteEvent;
@@ -175,8 +142,6 @@ export interface WireMessage {
 class AccordEventBus extends EventEmitter {
   constructor() {
     super();
-    // Each WebSocket client adds 9 listeners (one per event type).
-    // Default limit of 10 triggers warnings with just 2 clients.
     this.setMaxListeners(100);
   }
 
@@ -195,8 +160,7 @@ class AccordEventBus extends EventEmitter {
   bridgeToWebSocket(send: (msg: string) => void): () => void {
     const eventNames: EventName[] = [
       'request:claimed', 'request:completed', 'request:failed',
-      'worker:started', 'worker:output', 'worker:finished',
-      'sync:pull', 'sync:push', 'scheduler:tick',
+      'sync:pull', 'sync:push',
       'session:start', 'session:output', 'session:complete', 'session:error',
       'session:plan-generating', 'session:plan-ready', 'session:plan-canceled', 'session:plan-timeout',
       'service:added', 'service:removed',
@@ -222,7 +186,6 @@ class AccordEventBus extends EventEmitter {
       this.on(name as EventName, handler as (data: EventMap[EventName]) => void);
     }
 
-    // Return cleanup function
     return () => {
       for (const [name, handler] of handlers) {
         this.removeListener(name, handler);

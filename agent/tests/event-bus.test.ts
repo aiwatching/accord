@@ -26,16 +26,19 @@ describe('EventBus', () => {
     const sent: string[] = [];
     const cleanup = eventBus.bridgeToWebSocket((msg) => sent.push(msg));
 
-    eventBus.emit('scheduler:tick', {
-      pendingCount: 3,
-      processedCount: 1,
-      timestamp: '2026-02-13T10:00:00Z',
+    eventBus.emit('a2a:status-update', {
+      requestId: 'req-001',
+      service: 'svc-a',
+      taskId: 'task-001',
+      contextId: 'ctx-001',
+      state: 'working',
+      message: 'Processing...',
     });
 
     expect(sent).toHaveLength(1);
     const parsed = JSON.parse(sent[0]);
-    expect(parsed.type).toBe('scheduler:tick');
-    expect(parsed.data.pendingCount).toBe(3);
+    expect(parsed.type).toBe('a2a:status-update');
+    expect(parsed.data.requestId).toBe('req-001');
     expect(parsed.timestamp).toBeDefined();
 
     cleanup();

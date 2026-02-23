@@ -1,28 +1,25 @@
 import * as path from 'node:path';
-import type { AccordConfig, AccordRequest, DispatcherConfig, DispatcherStatus, RequestResult } from './types.js';
-import { Worker } from './worker-pool.js';
+import type { AccordConfig, AccordRequest, DispatcherConfig, DispatcherStatus } from './types.js';
 import { SessionManager } from './session-manager.js';
 import { createAdapter, type AgentAdapter } from './adapters/adapter.js';
 import { logger } from './logger.js';
 import { getDependencyStatus } from './scanner.js';
-import { syncPush, gitCommit } from './git-sync.js';
 import { getAccordDir, getServiceDir, getServiceConfig, loadRegistryYaml } from './config.js';
-import { AccordA2AClient, type A2AStreamEvent } from './a2a/client.js';
+import { AccordA2AClient } from './a2a/client.js';
 import { eventBus } from './event-bus.js';
 
 export class Dispatcher {
-  private workers: Worker[] = [];
-  private sessionManager: SessionManager;
   private adapter: AgentAdapter;
+  private sessionManager: SessionManager;
   private config: DispatcherConfig;
   private accordConfig: AccordConfig;
   private targetDir: string;
   private totalProcessed = 0;
   private totalFailed = 0;
   private pendingQueue = 0;
-  // Track which services have a worker actively processing
+  // Track which services have an active A2A dispatch
   private activeServices = new Set<string>();
-  // Track which directories are in use — prevents concurrent access to same cwd
+  // Track which directories are in use
   private activeDirectories = new Set<string>();
   // A2A client for remote service dispatch
   private a2aClient = new AccordA2AClient();
@@ -37,31 +34,25 @@ export class Dispatcher {
     this.targetDir = targetDir;
     this.sessionManager = new SessionManager(config);
 
-    // Create agent adapter
+    // Create agent adapter (used by orchestrator console + service executor)
     this.adapter = createAdapter({
       agent: config.agent,
       agent_cmd: config.agent_cmd,
       model: config.model,
     });
 
-    // Load sessions from disk for resume (only meaningful for adapters that support it)
+    // Load sessions from disk for resume
     const accordDir = getAccordDir(targetDir, accordConfig);
     if (this.adapter.supportsResume) {
       this.sessionManager.loadFromDisk(accordDir);
     }
 
-    // Create worker pool
-    for (let i = 0; i < config.workers; i++) {
-      this.workers.push(new Worker(i, config, accordConfig, this.sessionManager, this.adapter, targetDir));
-    }
-
-    logger.info(`Dispatcher initialized: ${config.workers} workers, agent=${this.adapter.name}`);
+    logger.info(`Dispatcher initialized: A2A-only mode, agent=${this.adapter.name}`);
   }
 
   /**
-   * Dispatch a batch of pending requests to available workers.
-   * Called by the Scheduler each tick.
-   * Returns the number of requests processed.
+   * Dispatch a batch of pending requests via A2A.
+   * Returns the number of requests dispatched.
    */
   async dispatch(pending: AccordRequest[], dryRun = false): Promise<number> {
     this.pendingQueue = pending.length;
@@ -73,17 +64,20 @@ export class Dispatcher {
 
     logger.info(`Dispatching: ${pending.length} pending request(s)`);
 
+    // Filter requests through constraint checks
+    const assignments = this.filterAssignable(pending);
+
     if (dryRun) {
-      const assignments = this.assignRequests(pending);
       const skipped = pending.length - assignments.length;
-      for (const { worker, request } of assignments) {
-        logger.info(`  [dry-run] ${request.frontmatter.id} → ${request.serviceName} (${request.frontmatter.priority}) → worker ${worker.id}`);
+      for (const request of assignments) {
+        const a2aUrl = this.getA2AUrl(request);
+        logger.info(`  [dry-run] ${request.frontmatter.id} → ${request.serviceName} (${request.frontmatter.priority}) via ${a2aUrl ?? 'no a2a_url'}`);
       }
       if (skipped > 0) {
-        logger.info(`  [dry-run] ${skipped} request(s) deferred (directory/service constraint)`);
+        logger.info(`  [dry-run] ${skipped} request(s) deferred (constraint/no a2a_url)`);
       }
-      // Clean up: release active services/directories since we didn't actually process
-      for (const { request } of assignments) {
+      // Clean up active tracking
+      for (const request of assignments) {
         const serviceDir = path.resolve(getServiceDir(this.accordConfig, request.serviceName, this.targetDir));
         this.activeServices.delete(request.serviceName);
         this.activeDirectories.delete(serviceDir);
@@ -91,71 +85,28 @@ export class Dispatcher {
       return assignments.length;
     }
 
-    // Assign requests to workers
-    const assignments = this.assignRequests(pending);
-
     if (assignments.length === 0) {
-      logger.debug('No workers available for assignment');
+      logger.debug('No assignable requests');
       return 0;
     }
 
-    // Split A2A and Worker assignments
-    const a2aAssignments = assignments.filter(a => this.getA2AUrl(a.request) !== undefined);
-    const workerAssignments = assignments.filter(a => this.getA2AUrl(a.request) === undefined);
-
-    // A2A path: dispatch via A2A Client (fire-and-forget, events via SSE callback)
-    for (const { request } of a2aAssignments) {
+    // Dispatch all via A2A (fire-and-forget)
+    for (const request of assignments) {
       this.processViaA2A(request);
     }
 
-    // Worker path: existing logic unchanged
-    const promises = workerAssignments.map(({ worker, request }) =>
-      this.processWithWorker(worker, request)
-    );
-
-    const results = await Promise.allSettled(promises);
-    let processed = a2aAssignments.length; // A2A dispatches count as processed
-
-    for (const result of results) {
-      if (result.status === 'fulfilled') {
-        const r = result.value;
-        this.totalProcessed += 1;
-        if (!r.success) this.totalFailed += 1;
-        processed += 1;
-      } else {
-        this.totalFailed += 1;
-        logger.error(`Worker failed: ${result.reason}`);
-      }
-    }
-
-    // Commit and push any remaining changes (worker path only)
-    if (workerAssignments.length > 0 && processed > a2aAssignments.length) {
-      gitCommit(this.targetDir, `accord: dispatcher processed ${processed - a2aAssignments.length} request(s)`);
-      syncPush(this.targetDir, this.accordConfig);
-    }
-
-    logger.debug(`Dispatch complete: processed ${processed} (${a2aAssignments.length} via A2A, ${workerAssignments.length} via worker)`);
-    return processed;
+    logger.debug(`Dispatch complete: ${assignments.length} request(s) sent via A2A`);
+    return assignments.length;
   }
 
   get status(): DispatcherStatus {
     return {
       running: true,
-      workers: this.workers.map(w => ({
-        workerId: w.id,
-        state: w.status.state,
-        currentRequest: w.status.currentRequest,
-        sessions: this.sessionManager.getAllSessions(),
-      })),
+      workers: [], // No local workers in A2A-only mode
       pendingQueue: this.pendingQueue,
       totalProcessed: this.totalProcessed,
       totalFailed: this.totalFailed,
     };
-  }
-
-  /** Get the underlying worker pool for route handlers. */
-  getWorkers(): Worker[] {
-    return this.workers;
   }
 
   /** Expose adapter for direct session invocation (console → orchestrator). */
@@ -163,28 +114,28 @@ export class Dispatcher {
     return this.adapter;
   }
 
-  /** Expose session manager for direct session invocation. */
+  /** Expose session manager for orchestrator console. */
   getSessionManager(): SessionManager {
     return this.sessionManager;
   }
 
-  // ── Worker assignment ────────────────────────────────────────────────────
+  // ── Constraint filtering ────────────────────────────────────────────────
 
-  private assignRequests(pending: AccordRequest[]): Array<{ worker: Worker; request: AccordRequest }> {
-    const assignments: Array<{ worker: Worker; request: AccordRequest }> = [];
+  private filterAssignable(pending: AccordRequest[]): AccordRequest[] {
+    const assignable: AccordRequest[] = [];
     const accordDir = getAccordDir(this.targetDir, this.accordConfig);
 
     for (const request of pending) {
       const serviceName = request.serviceName;
 
-      // Constraint 0: check depends_on_requests — skip if dependencies are unmet
+      // Constraint 0: dependency check
       const depStatus = getDependencyStatus(request, accordDir);
       if (!depStatus.ready) {
         logger.info(`Deferred ${request.frontmatter.id}: waiting for ${depStatus.pending.join(', ')}`);
         continue;
       }
 
-      // Constraint 0b: check maintainer type from registry (v2)
+      // Constraint 0b: maintainer type check
       const registry = loadRegistryYaml(accordDir, serviceName);
       if (registry) {
         if (registry.maintainer === 'human') {
@@ -196,81 +147,49 @@ export class Dispatcher {
           continue;
         }
         if (registry.maintainer === 'external') {
-          logger.debug(`Skipping ${request.frontmatter.id}: service ${serviceName} is external (owned by another team)`);
+          logger.debug(`Skipping ${request.frontmatter.id}: service ${serviceName} is external`);
           continue;
         }
       }
 
-      // Constraint 1: never assign two requests for the same service simultaneously
+      // Constraint 1: no concurrent dispatch to same service
       if (this.activeServices.has(serviceName)) {
         logger.debug(`Skipping ${request.frontmatter.id}: service ${serviceName} already active`);
         continue;
       }
 
-      // Constraint 2: never assign two requests that resolve to the same directory
+      // Constraint 2: no concurrent dispatch to same directory
       const serviceDir = path.resolve(getServiceDir(this.accordConfig, serviceName, this.targetDir));
       if (this.activeDirectories.has(serviceDir)) {
-        logger.debug(`Skipping ${request.frontmatter.id}: directory ${serviceDir} already in use by another service`);
+        logger.debug(`Skipping ${request.frontmatter.id}: directory ${serviceDir} already in use`);
         continue;
       }
 
-      const worker = this.findBestWorker(serviceName);
-      if (!worker) {
-        logger.debug(`No idle worker for ${request.frontmatter.id}`);
+      // Constraint 3: must have a2a_url configured
+      if (!this.getA2AUrl(request)) {
+        logger.debug(`Skipping ${request.frontmatter.id}: no a2a_url configured for ${serviceName}`);
         continue;
       }
 
-      assignments.push({ worker, request });
+      assignable.push(request);
       this.activeServices.add(serviceName);
       this.activeDirectories.add(serviceDir);
     }
 
-    return assignments;
-  }
-
-  private findBestWorker(serviceName: string): Worker | null {
-    const idleWorkers = this.workers.filter(w => w.isIdle());
-    if (idleWorkers.length === 0) return null;
-
-    // Prefer worker that last processed this service (session affinity)
-    const withAffinity = idleWorkers.find(w => w.lastServiceName === serviceName);
-    if (withAffinity) return withAffinity;
-
-    return idleWorkers[0];
-  }
-
-  private async processWithWorker(worker: Worker, request: AccordRequest): Promise<RequestResult> {
-    const serviceName = request.serviceName;
-    const serviceDir = path.resolve(getServiceDir(this.accordConfig, serviceName, this.targetDir));
-    try {
-      return await worker.processRequest(request);
-    } finally {
-      this.activeServices.delete(serviceName);
-      this.activeDirectories.delete(serviceDir);
-    }
+    return assignable;
   }
 
   // ── A2A dispatch ──────────────────────────────────────────────────────────
 
-  /**
-   * Get the A2A URL for a request's target service, if configured.
-   * Checks ServiceConfig.a2a_url first, then RegistryYaml.a2a_url.
-   */
   private getA2AUrl(request: AccordRequest): string | undefined {
     const serviceName = request.serviceName;
 
-    // Check ServiceConfig first
     const svcConfig = getServiceConfig(this.accordConfig, serviceName);
-    if (svcConfig?.a2a_url) {
-      return svcConfig.a2a_url;
-    }
+    if (svcConfig?.a2a_url) return svcConfig.a2a_url;
 
-    // Check RegistryYaml
     const accordDir = getAccordDir(this.targetDir, this.accordConfig);
     const registry = loadRegistryYaml(accordDir, serviceName);
-    if (registry?.a2a_url) {
-      return registry.a2a_url;
-    }
+    if (registry?.a2a_url) return registry.a2a_url;
 
     return undefined;
   }
@@ -292,14 +211,12 @@ export class Dispatcher {
       let contextId = '';
 
       for await (const event of this.a2aClient.sendRequest(a2aUrl, request)) {
-        // Extract taskId and contextId from Task events
         if ('kind' in event && event.kind === 'task') {
           const task = event as import('@a2a-js/sdk').Task;
           taskId = task.id;
           contextId = task.contextId;
         }
 
-        // Handle TaskStatusUpdateEvent
         if ('kind' in event && event.kind === 'status-update') {
           const statusEvent = event as import('@a2a-js/sdk').TaskStatusUpdateEvent;
           taskId = statusEvent.taskId;
@@ -311,32 +228,21 @@ export class Dispatcher {
             .join('') ?? '';
 
           eventBus.emit('a2a:status-update', {
-            requestId,
-            service: serviceName,
-            taskId,
-            contextId,
-            state,
-            message,
+            requestId, service: serviceName, taskId, contextId, state, message,
           });
 
           if (state === 'working') {
             eventBus.emit('request:claimed', {
-              requestId,
-              service: serviceName,
-              workerId: -1, // A2A dispatch, no local worker
+              requestId, service: serviceName, workerId: -1,
             });
           } else if (state === 'completed') {
-            // Extract contract updates from the final task
             try {
               const finalTask = await this.a2aClient.getTask(a2aUrl, taskId);
               const contractUpdates = this.a2aClient.extractContractUpdates(finalTask);
               for (const update of contractUpdates) {
                 eventBus.emit('a2a:artifact-update', {
-                  requestId,
-                  service: serviceName,
-                  taskId,
-                  artifactName: 'contract-update',
-                  artifactData: update,
+                  requestId, service: serviceName, taskId,
+                  artifactName: 'contract-update', artifactData: update,
                 });
               }
             } catch (err) {
@@ -345,36 +251,23 @@ export class Dispatcher {
 
             this.totalProcessed += 1;
             eventBus.emit('request:completed', {
-              requestId,
-              service: serviceName,
-              workerId: -1,
-              result: {
-                requestId,
-                success: true,
-                durationMs: 0,
-                completedAt: new Date().toISOString(),
-              },
+              requestId, service: serviceName, workerId: -1,
+              result: { requestId, success: true, durationMs: 0, completedAt: new Date().toISOString() },
             });
           } else if (state === 'failed' || state === 'canceled') {
             this.totalProcessed += 1;
             this.totalFailed += 1;
             eventBus.emit('request:failed', {
-              requestId,
-              service: serviceName,
-              workerId: -1,
-              error: message || `A2A task ${state}`,
-              willRetry: false,
+              requestId, service: serviceName, workerId: -1,
+              error: message || `A2A task ${state}`, willRetry: false,
             });
           }
         }
 
-        // Handle TaskArtifactUpdateEvent
         if ('kind' in event && event.kind === 'artifact-update') {
           const artifactEvent = event as import('@a2a-js/sdk').TaskArtifactUpdateEvent;
           eventBus.emit('a2a:artifact-update', {
-            requestId,
-            service: serviceName,
-            taskId: artifactEvent.taskId,
+            requestId, service: serviceName, taskId: artifactEvent.taskId,
             artifactName: artifactEvent.artifact.name ?? 'unnamed',
             artifactData: artifactEvent.artifact,
           });
@@ -385,11 +278,8 @@ export class Dispatcher {
       this.totalProcessed += 1;
       this.totalFailed += 1;
       eventBus.emit('request:failed', {
-        requestId,
-        service: serviceName,
-        workerId: -1,
-        error: `A2A dispatch error: ${err}`,
-        willRetry: false,
+        requestId, service: serviceName, workerId: -1,
+        error: `A2A dispatch error: ${err}`, willRetry: false,
       });
     } finally {
       this.activeServices.delete(serviceName);
