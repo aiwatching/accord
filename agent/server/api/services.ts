@@ -157,6 +157,7 @@ export function registerServiceRoutes(app: FastifyInstance): void {
         description: registry?.description ?? null,
         status: isWorking ? 'working' : pendingCount > 0 ? 'pending' : 'idle',
         pendingRequests: pendingCount,
+        a2a_url: svc.a2a_url ?? null,
       };
     });
   });

@@ -33,6 +33,7 @@ interface ServiceItem {
   description?: string;
   status?: string;
   pendingRequests?: number;
+  a2a_url?: string | null;
 }
 
 interface HubInfo {
@@ -176,7 +177,7 @@ export function Console() {
       const reqId = d.requestId as string | undefined;
       const svc = d.service as string | undefined;
 
-      if (ev.type === 'worker:output' || ev.type === 'session:output') {
+      if (ev.type === 'session:output') {
         // Check for structured stream event
         const streamEvent = d.event as { type?: string; text?: string; tool?: string; input?: string; output?: string; isError?: boolean } | undefined;
         if (streamEvent?.type) {
@@ -326,6 +327,36 @@ export function Console() {
           requestId: reqId,
           service: svc,
           text: `[${label}] ${reqId} (${svc})`,
+          timestamp: Date.now(),
+        });
+      } else if (ev.type === 'a2a:status-update') {
+        const state = d.state as string;
+        const msg = d.message as string | undefined;
+        const taskId = d.taskId as string | undefined;
+        const label = state === 'working' ? 'A2A:WORKING'
+          : state === 'input-required' ? 'A2A:APPROVAL'
+          : state === 'completed' ? 'A2A:DONE'
+          : state === 'failed' ? 'A2A:FAILED'
+          : `A2A:${state.toUpperCase()}`;
+        newLines.push({
+          key: `ev-${Date.now()}-${Math.random()}`,
+          type: 'event',
+          requestId: reqId,
+          service: svc,
+          text: `[${label}] ${reqId} (${svc})${taskId ? ` task:${taskId}` : ''}${msg ? ` — ${msg}` : ''}`,
+          timestamp: Date.now(),
+        });
+        if (state === 'completed' || state === 'failed') {
+          refreshServices();
+        }
+      } else if (ev.type === 'a2a:artifact-update') {
+        const artifactName = d.artifactName as string;
+        newLines.push({
+          key: `ev-${Date.now()}-${Math.random()}`,
+          type: 'event',
+          requestId: reqId,
+          service: svc,
+          text: `[A2A:ARTIFACT] ${reqId} (${svc}) — ${artifactName}`,
           timestamp: Date.now(),
         });
       }
@@ -619,6 +650,9 @@ export function Console() {
                 {svc.language && <span>{svc.language}</span>}
                 {svc.type && svc.type !== 'service' && (
                   <span style={{ color: '#818cf8' }}>{svc.type}</span>
+                )}
+                {svc.a2a_url && (
+                  <span style={{ color: '#38bdf8', fontWeight: 500 }} title={svc.a2a_url}>A2A</span>
                 )}
               </div>
               {(badge?.pending || badge?.active) ? (
