@@ -7,6 +7,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { logger } from './logger.js';
+import { spawnClaude } from './adapters/adapter.js';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -100,34 +101,28 @@ function extractAssistantText(message: unknown): string {
 }
 
 export async function generatePlan(params: PlannerParams): Promise<PlanResult> {
-  const { query } = await import('@anthropic-ai/claude-agent-sdk');
-
   const prompt = buildPlannerPrompt(params.userMessage, params.serviceNames, params.accordDir);
   const model = params.model ?? 'claude-haiku-4-5-20251001';
 
   logger.info(`[planner] Generating plan with ${model}`);
 
-  const abortController = new AbortController();
-  const timer = setTimeout(() => abortController.abort(), 60_000); // 60s hard timeout for plan generation
+  const args = [
+    '-p',
+    '--output-format', 'stream-json',
+    '--dangerously-skip-permissions',
+    '--model', model,
+  ];
 
-  try {
-    const response = query({
-      prompt,
-      options: {
-        model,
-        maxTurns: 1,
-        permissionMode: 'bypassPermissions',
-        allowDangerouslySkipPermissions: true,
-        abortController,
-      },
-    });
+  let planText = '';
+  let costUsd: number | undefined;
+  let planError: string | undefined;
 
-    let planText = '';
-    let costUsd: number | undefined;
-
-    for await (const msg of response) {
-      const m = msg as Record<string, unknown>;
-
+  await spawnClaude({
+    args,
+    cwd: params.accordDir,
+    timeout: 60, // 60s hard timeout for plan generation
+    stdinData: prompt,
+    onLine: (m) => {
       if (m.type === 'assistant' && m.message) {
         const text = extractAssistantText(m.message);
         if (text) {
@@ -140,14 +135,14 @@ export async function generatePlan(params: PlannerParams): Promise<PlanResult> {
         costUsd = m.total_cost_usd as number | undefined;
         if (m.is_error) {
           const errors = m.errors as string[] | undefined;
-          throw new Error(`Planner error: ${errors?.join(', ') ?? 'unknown'}`);
+          planError = `Planner error: ${errors?.join(', ') ?? 'unknown'}`;
         }
         logger.info(`[planner] Plan generated, $${costUsd?.toFixed(4) ?? '?'}`);
       }
-    }
+    },
+  });
 
-    return { plan: planText, costUsd };
-  } finally {
-    clearTimeout(timer);
-  }
+  if (planError) throw new Error(planError);
+
+  return { plan: planText, costUsd };
 }

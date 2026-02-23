@@ -40,6 +40,39 @@ export interface AccordRequest {
   serviceName: string;
 }
 
+// ── Directive types ──────────────────────────────────────────────────────────
+
+export type DirectivePhase =
+  | 'planning'       // orchestrator analyzing
+  | 'negotiating'    // contract proposals sent, waiting for service confirmation
+  | 'implementing'   // contracts settled, implementation requests dispatched
+  | 'testing'        // implementation done, test-agent running
+  | 'completed'
+  | 'failed';
+
+export interface DirectiveFrontmatter {
+  id: string;
+  title: string;
+  priority: RequestPriority;
+  status: DirectivePhase;
+  created: string;
+  updated: string;
+  /** All request IDs produced by this directive */
+  requests: string[];
+  /** Contract-proposal request IDs */
+  contract_proposals?: string[];
+  /** Test request IDs */
+  test_requests?: string[];
+  retry_count?: number;
+  max_retries?: number; // default 3
+}
+
+export interface DirectiveState {
+  frontmatter: DirectiveFrontmatter;
+  body: string;
+  filePath: string;
+}
+
 // ── Config types ───────────────────────────────────────────────────────────
 
 export interface ServiceConfig {
@@ -73,6 +106,14 @@ export interface DispatcherConfig {
   planner_model?: string;
   /** Seconds to wait for user approval before auto-cancel (default: 300) */
   planner_timeout?: number;
+  /** Enable coordination loop for directive lifecycle tracking (default: false) */
+  coordination_loop_enabled?: boolean;
+  /** Service name for integration test agent (e.g. 'integration-test') */
+  test_agent_service?: string;
+  /** Max retries for a directive before marking as failed (default: 3) */
+  max_directive_retries?: number;
+  /** Seconds to wait for contract negotiation before timeout (default: 600) */
+  negotiation_timeout?: number;
 }
 
 export interface AccordSettings {

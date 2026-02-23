@@ -16,6 +16,10 @@ const DISPATCHER_DEFAULTS: DispatcherConfig = {
   planner_enabled: false,
   planner_model: 'claude-haiku-4-5-20251001',
   planner_timeout: 300,
+  coordination_loop_enabled: false,
+  test_agent_service: undefined,
+  max_directive_retries: 3,
+  negotiation_timeout: 600,
 };
 
 export function loadConfig(targetDir: string): AccordConfig {

@@ -1,8 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import matter from 'gray-matter';
-import type { AccordConfig, AccordRequest, RequestFrontmatter, RequestPriority, RequestStatus } from './types.js';
-import { getInboxPath, getAllAccordDirs } from './config.js';
+import type { AccordConfig, AccordRequest, RequestFrontmatter, RequestPriority, RequestStatus, DirectiveState, DirectiveFrontmatter } from './types.js';
+import { getInboxPath, getAllAccordDirs, getServiceDir } from './config.js';
 import { logger } from './logger.js';
 
 const PRIORITY_ORDER: Record<RequestPriority, number> = {
@@ -26,11 +26,15 @@ export function parseRequest(filePath: string): AccordRequest | null {
     }
 
     // Derive service name from inbox path: .../inbox/{service}/req-*.md
+    // For archived requests (comms/archive/), fall back to frontmatter.to
     const parts = filePath.split(path.sep);
     const inboxIdx = parts.indexOf('inbox');
-    const serviceName = inboxIdx >= 0 && inboxIdx + 1 < parts.length
-      ? parts[inboxIdx + 1]
-      : 'unknown';
+    let serviceName: string;
+    if (inboxIdx >= 0 && inboxIdx + 1 < parts.length) {
+      serviceName = parts[inboxIdx + 1];
+    } else {
+      serviceName = fm.to || 'unknown';
+    }
 
     return {
       frontmatter: fm,
@@ -199,16 +203,29 @@ function scanDirectory(dir: string, results: AccordRequest[], seen?: Set<string>
 
 /**
  * Scan archive directories for completed/failed requests.
- * For multi-team hubs, scans both root-level and team-level archives.
+ * For orchestrator hubs, also scans service-level archives (multi-repo agents
+ * may archive requests in their own comms/archive/ directory).
  */
 export function scanArchives(accordDir: string, config: AccordConfig, hubDir?: string): AccordRequest[] {
   const results: AccordRequest[] = [];
   const seen = new Set<string>();
 
+  // 1. Scan hub-level archive(s)
   const dirs = hubDir ? getAllAccordDirs(hubDir, config) : [accordDir];
   for (const dir of dirs) {
     const archiveDir = path.join(dir, 'comms', 'archive');
     scanDirectory(archiveDir, results, seen);
+  }
+
+  // 2. For multi-repo orchestrator, also scan each service's archive
+  //    (agents running locally may archive to {serviceDir}/comms/archive/)
+  if (hubDir && config.repo_model === 'multi-repo') {
+    for (const svc of config.services) {
+      const svcDir = path.resolve(getServiceDir(config, svc.name, hubDir));
+      if (svcDir === hubDir) continue; // monorepo — already scanned
+      const svcArchive = path.join(svcDir, 'comms', 'archive');
+      scanDirectory(svcArchive, results, seen);
+    }
   }
 
   return results;
@@ -254,6 +271,32 @@ export function getDependencyStatus(request: AccordRequest, accordDir: string): 
   return { ready: pending.length === 0, pending };
 }
 
+// ── Crash recovery ──────────────────────────────────────────────────────────
+
+/**
+ * On hub startup, reset any in-progress requests back to pending.
+ * These are requests that were being processed when the hub crashed/restarted.
+ * Returns the number of recovered requests.
+ */
+export function recoverStaleRequests(accordDir: string, config: AccordConfig, hubDir?: string): number {
+  const allRequests = scanInboxes(accordDir, config, hubDir);
+  let recovered = 0;
+
+  for (const req of allRequests) {
+    if (req.frontmatter.status === 'in-progress') {
+      try {
+        setRequestStatus(req.filePath, 'pending');
+        recovered++;
+        logger.info(`Recovered stale request: ${req.frontmatter.id} (was in-progress → pending)`);
+      } catch (err) {
+        logger.warn(`Failed to recover request ${req.frontmatter.id}: ${err}`);
+      }
+    }
+  }
+
+  return recovered;
+}
+
 // ── Filtering & Sorting ────────────────────────────────────────────────────
 
 export function getPendingRequests(requests: AccordRequest[]): AccordRequest[] {
@@ -273,4 +316,100 @@ export function sortByPriority(requests: AccordRequest[]): AccordRequest[] {
     // Same priority: oldest first
     return new Date(a.frontmatter.created).getTime() - new Date(b.frontmatter.created).getTime();
   });
+}
+
+// ── Directive scanning ──────────────────────────────────────────────────────
+
+/**
+ * Read all directive files from the directives/ directory.
+ */
+export function scanDirectives(accordDir: string): DirectiveState[] {
+  const directivesDir = path.join(accordDir, 'directives');
+  if (!fs.existsSync(directivesDir)) return [];
+
+  const files = fs.readdirSync(directivesDir).filter(f => f.endsWith('.md'));
+  const results: DirectiveState[] = [];
+
+  for (const file of files) {
+    const filePath = path.join(directivesDir, file);
+    const state = parseDirective(filePath);
+    if (state) results.push(state);
+  }
+
+  return results;
+}
+
+/**
+ * Parse a single directive file into DirectiveState.
+ */
+export function parseDirective(filePath: string): DirectiveState | null {
+  try {
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    const { data, content } = matter(raw);
+    const fm = data as DirectiveFrontmatter;
+
+    if (!fm.id || !fm.status) {
+      logger.warn(`Skipping directive ${filePath}: missing id or status`);
+      return null;
+    }
+
+    // Ensure arrays exist
+    if (!fm.requests) fm.requests = [];
+    if (!fm.contract_proposals) fm.contract_proposals = [];
+    if (!fm.test_requests) fm.test_requests = [];
+
+    return {
+      frontmatter: fm,
+      body: content.trim(),
+      filePath,
+    };
+  } catch (err) {
+    logger.error(`Failed to parse directive ${filePath}: ${err}`);
+    return null;
+  }
+}
+
+/**
+ * Collect the current status of all requests belonging to a directive.
+ * Scans both inboxes (pending/in-progress) and archives (completed/failed).
+ *
+ * Uses two sources of truth:
+ * 1. The directive's own requests/contract_proposals/test_requests arrays (knownRequestIds)
+ * 2. Any request whose frontmatter.directive matches the directiveId
+ */
+export function getDirectiveRequestStatuses(
+  accordDir: string,
+  config: AccordConfig,
+  directiveId: string,
+  hubDir?: string,
+  knownRequestIds?: string[],
+): Map<string, RequestStatus> {
+  const statuses = new Map<string, RequestStatus>();
+  const knownIds = knownRequestIds ? new Set(knownRequestIds) : undefined;
+
+  // Build a single index of all requests (inbox + archive)
+  const allRequests = [
+    ...scanInboxes(accordDir, config, hubDir),
+    ...scanArchives(accordDir, config, hubDir),
+  ];
+
+  for (const req of allRequests) {
+    const matchByDirectiveField = req.frontmatter.directive === directiveId;
+    const matchByKnownId = knownIds?.has(req.frontmatter.id);
+
+    if (matchByDirectiveField || matchByKnownId) {
+      statuses.set(req.frontmatter.id, req.frontmatter.status);
+    }
+  }
+
+  // Mark any known IDs not found in inbox/archive as 'pending' (not yet created or lost)
+  if (knownIds) {
+    for (const id of knownIds) {
+      if (!statuses.has(id)) {
+        statuses.set(id, 'pending');
+      }
+    }
+  }
+
+  return statuses;
 }

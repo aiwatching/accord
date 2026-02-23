@@ -5,7 +5,8 @@
 //   - shell: any CLI agent via child_process (e.g. "claude -p", "codex", custom scripts)
 
 import * as path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
+import * as readline from 'node:readline';
 import { logger } from '../logger.js';
 
 // Ensure the current node binary's directory is in PATH.
@@ -91,7 +92,7 @@ export interface AdapterConfig {
 export function createAdapter(config: AdapterConfig): AgentAdapter {
   switch (config.agent) {
     case 'claude-code':
-      return new ClaudeCodeV1Adapter(config.model);
+      return new ClaudeCodeCLIAdapter(config.model);
 
     case 'claude-code-v2':
       return new ClaudeCodeV2Adapter(config.model);
@@ -229,9 +230,104 @@ function extractAssistantText(message: unknown): string {
   return parts.join('');
 }
 
-// ── Claude Code Adapter ─────────────────────────────────────────────────────
+// ── Shared CLI spawn helper ─────────────────────────────────────────────────
 
-class ClaudeCodeV1Adapter implements AgentAdapter {
+export interface SpawnClaudeOptions {
+  args: string[];
+  cwd: string;
+  timeout: number; // seconds
+  /** Data to pipe to stdin. If provided, stdin is a pipe; otherwise stdin is ignored. */
+  stdinData?: string;
+  onLine?: (json: Record<string, unknown>) => void;
+}
+
+/**
+ * Spawn the `claude` CLI with JSONL streaming output, parsing each line as JSON.
+ * Cleans environment variables to prevent nesting detection.
+ * Handles timeout via SIGTERM → 5s → SIGKILL.
+ */
+export function spawnClaude(options: SpawnClaudeOptions): Promise<void> {
+  const { args, cwd, timeout, stdinData, onLine } = options;
+
+  // Clean env to prevent Claude nesting detection
+  const env = { ...process.env };
+  delete env.CLAUDECODE;
+  delete env.CLAUDE_CODE_SSE_PORT;
+  delete env.CLAUDE_CODE_ENTRYPOINT;
+
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn('claude', args, {
+      cwd,
+      env,
+      // If stdinData is provided, pipe it; otherwise ignore stdin so
+      // `claude -p` doesn't hang waiting for input.
+      stdio: [stdinData != null ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+    });
+
+    // Write prompt to stdin and close it immediately
+    if (stdinData != null && child.stdin) {
+      child.stdin.write(stdinData);
+      child.stdin.end();
+    }
+
+    let settled = false;
+    const settle = (fn: () => void) => {
+      if (!settled) {
+        settled = true;
+        fn();
+      }
+    };
+
+    // Timeout: SIGTERM → 5s grace → SIGKILL
+    let killed = false;
+    const timer = setTimeout(() => {
+      killed = true;
+      child.kill('SIGTERM');
+      setTimeout(() => {
+        if (!child.killed) child.kill('SIGKILL');
+      }, 5000);
+    }, timeout * 1000);
+
+    // Parse JSONL from stdout
+    const rl = readline.createInterface({ input: child.stdout! });
+    rl.on('line', (line) => {
+      if (!line.trim()) return;
+      try {
+        const json = JSON.parse(line) as Record<string, unknown>;
+        onLine?.(json);
+      } catch {
+        // Ignore non-JSON lines (e.g. debug output)
+      }
+    });
+
+    // Collect stderr
+    const stderrChunks: Buffer[] = [];
+    child.stderr?.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      rl.close();
+
+      if (killed) {
+        settle(() => reject(new Error(`Agent timed out after ${timeout}s`)));
+      } else if (code !== 0) {
+        const stderr = Buffer.concat(stderrChunks).toString().trim();
+        settle(() => reject(new Error(`claude CLI exited with code ${code}: ${stderr}`)));
+      } else {
+        settle(() => resolve());
+      }
+    });
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      settle(() => reject(new Error(`Failed to spawn claude CLI: ${err.message}`)));
+    });
+  });
+}
+
+// ── Claude Code CLI Adapter ─────────────────────────────────────────────────
+
+class ClaudeCodeCLIAdapter implements AgentAdapter {
   readonly name = 'claude-code';
   readonly supportsResume = true;
   private defaultModel?: string;
@@ -241,80 +337,54 @@ class ClaudeCodeV1Adapter implements AgentAdapter {
   }
 
   async invoke(params: AgentInvocationParams): Promise<AgentInvocationResult> {
-    const maxRetries = 1;
-    let lastError: unknown;
+    const model = params.model ?? this.defaultModel ?? 'claude-sonnet-4-5-20250929';
+    const args = [
+      '-p',
+      '--output-format', 'stream-json',
+      '--dangerously-skip-permissions',
+      '--verbose',
+      '--setting-sources', 'project',
+      '--model', model,
+      '--allowed-tools', 'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep',
+    ];
 
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        return await this.invokeOnce(params);
-      } catch (err) {
-        lastError = err;
-        const msg = String(err);
-        // Retry on transient SDK errors (e.g. internal streaming mode issues)
-        const isTransient = msg.includes('only prompt commands are supported in streaming mode');
-        if (isTransient && attempt < maxRetries) {
-          logger.warn(`[claude-code] Transient SDK error (attempt ${attempt + 1}/${maxRetries + 1}), retrying: ${msg}`);
-          continue;
-        }
-        throw err;
-      }
+    if (params.resumeSessionId) {
+      args.push('--resume', params.resumeSessionId);
+    }
+    if (params.maxBudgetUsd != null) {
+      args.push('--max-budget-usd', String(params.maxBudgetUsd));
     }
 
-    throw lastError; // unreachable, but satisfies TypeScript
-  }
+    // Prompt is piped via stdin (not positional arg) to handle large prompts
+    // and avoid ARG_MAX limits.
 
-  private async invokeOnce(params: AgentInvocationParams): Promise<AgentInvocationResult> {
-    // Dynamic import — keeps the SDK optional (tests can run without it)
-    const { query } = await import('@anthropic-ai/claude-agent-sdk');
-
-    const abortController = new AbortController();
-    const timer = setTimeout(() => abortController.abort(), params.timeout * 1000);
     const startTime = Date.now();
+    let sessionId: string | undefined;
+    let costUsd: number | undefined;
+    let numTurns: number | undefined;
+    let usage: TokenUsage | undefined;
+    let modelUsage: Record<string, ModelUsageEntry> | undefined;
+    let resultError: string | undefined;
 
-    // Build options — only include resume when a session ID is provided
-    const options: Record<string, unknown> = {
-      model: params.model ?? this.defaultModel ?? 'claude-sonnet-4-5-20250929',
+    const toolNames = new Map<string, string>();
+
+    await spawnClaude({
+      args,
       cwd: params.cwd,
-      allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
-      permissionMode: 'bypassPermissions',
-      allowDangerouslySkipPermissions: true,
-      maxTurns: params.maxTurns ?? 50,
-      abortController,
-      systemPrompt: { type: 'preset', preset: 'claude_code' },
-      settingSources: ['project'],
-    };
-    if (params.resumeSessionId) options.resume = params.resumeSessionId;
-    if (params.maxBudgetUsd != null) options.maxBudgetUsd = params.maxBudgetUsd;
-
-    try {
-      const response = query({ prompt: params.prompt, options });
-
-      let sessionId: string | undefined;
-      let costUsd: number | undefined;
-      let numTurns: number | undefined;
-      let usage: TokenUsage | undefined;
-      let modelUsage: Record<string, ModelUsageEntry> | undefined;
-
-      // Track tool_use_id → tool name for labeling tool results
-      const toolNames = new Map<string, string>();
-
-      for await (const msg of response) {
-        const m = msg as Record<string, unknown>;
-
+      timeout: params.timeout,
+      stdinData: params.prompt,
+      onLine: (m) => {
         if (m.type === 'system' && m.subtype === 'init') {
-          sessionId = (m as { session_id?: string }).session_id;
+          sessionId = m.session_id as string | undefined;
         } else if (m.type === 'assistant' && m.message) {
-          // Emit structured events for text, tool_use, and thinking blocks
           emitAssistantEvents(m.message, toolNames, params.onOutput);
         } else if (m.type === 'user' && m.message) {
-          // Emit tool result events
           emitToolResultEvents(m.message, toolNames, params.onOutput);
         } else if (m.type === 'result') {
           sessionId = m.session_id as string | undefined;
           costUsd = m.total_cost_usd as number | undefined;
           numTurns = m.num_turns as number | undefined;
 
-          // Capture token-level usage data
           if (m.usage) {
             const u = m.usage as Record<string, number>;
             usage = {
@@ -330,24 +400,24 @@ class ClaudeCodeV1Adapter implements AgentAdapter {
 
           if (m.is_error) {
             const errors = m.errors as string[] | undefined;
-            throw new Error(`Agent error (${m.subtype}): ${errors?.join(', ') ?? 'unknown'}`);
+            resultError = `Agent error (${m.subtype}): ${errors?.join(', ') ?? 'unknown'}`;
           }
 
           logger.info(`[claude-code] Completed: ${numTurns} turns, $${costUsd?.toFixed(4)}, input=${usage?.input_tokens ?? '?'}, output=${usage?.output_tokens ?? '?'}, cache_read=${usage?.cache_read_input_tokens ?? '?'}`);
         }
-      }
+      },
+    });
 
-      return {
-        sessionId,
-        costUsd,
-        numTurns,
-        durationMs: Date.now() - startTime,
-        usage,
-        modelUsage,
-      };
-    } finally {
-      clearTimeout(timer);
-    }
+    if (resultError) throw new Error(resultError);
+
+    return {
+      sessionId,
+      costUsd,
+      numTurns,
+      durationMs: Date.now() - startTime,
+      usage,
+      modelUsage,
+    };
   }
 }
 

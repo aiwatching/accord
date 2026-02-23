@@ -9,6 +9,7 @@ import { getAccordDir, getServiceDir, getServiceConfig, loadRegistryYaml } from 
 import { AccordA2AClient } from './a2a/client.js';
 import { buildAgentPrompt } from './prompt.js';
 import { eventBus } from './event-bus.js';
+import { writeHistory } from './history.js';
 
 export class Dispatcher {
   private adapter: AgentAdapter;
@@ -334,15 +335,20 @@ export class Dispatcher {
             eventBus.emit('request:completed', {
               requestId, service: serviceName, workerId: -1,
               result: { requestId, success: true, durationMs, completedAt: new Date().toISOString() },
+              requestType: request.frontmatter.type,
             });
+            this.recordHistory(request, accordDir, 'in-progress', 'completed', durationMs);
           } else if (state === 'failed' || state === 'canceled') {
             this.totalProcessed += 1;
             this.totalFailed += 1;
+            const durationMs = Date.now() - startTime;
             this.appendLog(logFile, `\n--- failed | ${message || `A2A task ${state}`} ---\n`);
             eventBus.emit('request:failed', {
               requestId, service: serviceName, workerId: -1,
               error: message || `A2A task ${state}`, willRetry: false,
+              requestType: request.frontmatter.type,
             });
+            this.recordHistory(request, accordDir, 'in-progress', 'failed', durationMs, message || `A2A task ${state}`);
 
             // Mark request as failed
             try {
@@ -370,11 +376,14 @@ export class Dispatcher {
       logger.error(`A2A dispatch failed for ${requestId}: ${err}`);
       this.totalProcessed += 1;
       this.totalFailed += 1;
+      const durationMs = Date.now() - startTime;
       this.appendLog(logFile, `\n--- failed | ${err} ---\n`);
       eventBus.emit('request:failed', {
         requestId, service: serviceName, workerId: -1,
         error: `A2A dispatch error: ${err}`, willRetry: false,
+        requestType: request.frontmatter.type,
       });
+      this.recordHistory(request, accordDir, 'in-progress', 'failed', durationMs, String(err));
 
       // Mark request as failed
       try {
@@ -398,6 +407,9 @@ export class Dispatcher {
   private async processLocal(request: AccordRequest): Promise<void> {
     const serviceName = request.serviceName;
     const serviceDir = path.resolve(getServiceDir(this.accordConfig, serviceName, this.targetDir));
+    // Hub's accordDir — for archive, history, session logs (always the hub root)
+    const hubAccordDir = getAccordDir(this.targetDir, this.accordConfig);
+    // Service's accordDir — for agent prompt context (registry, contracts, skills)
     const accordDir = getAccordDir(serviceDir, this.accordConfig);
     const requestId = request.frontmatter.id;
     const startTime = Date.now();
@@ -476,18 +488,26 @@ export class Dispatcher {
       });
       eventBus.emit('request:completed', {
         requestId, service: serviceName, workerId: -1,
-        result: { requestId, success: true, durationMs, completedAt: new Date().toISOString() },
+        result: {
+          requestId, success: true, durationMs, completedAt: new Date().toISOString(),
+          costUsd: result.costUsd, numTurns: result.numTurns,
+          usage: result.usage, modelUsage: result.modelUsage,
+        },
+        requestType: request.frontmatter.type,
       });
+      this.recordHistory(request, hubAccordDir, 'in-progress', 'completed', durationMs, undefined, result);
 
       // Move to archive if the agent didn't already
-      this.archiveIfNeeded(request, accordDir);
+      this.archiveIfNeeded(request, hubAccordDir);
     } catch (err) {
       const error = String(err);
       logger.error(`Local dispatch failed for ${requestId}: ${error}`);
 
       this.totalProcessed += 1;
       this.totalFailed += 1;
+      const failDurationMs = Date.now() - startTime;
       this.appendLog(logFile, `\n--- failed | ${error} ---\n`);
+      this.recordHistory(request, hubAccordDir, 'in-progress', 'failed', failDurationMs, error);
 
       eventBus.emit('a2a:status-update', {
         requestId, service: serviceName, taskId: '', contextId: '',
@@ -496,6 +516,7 @@ export class Dispatcher {
       eventBus.emit('request:failed', {
         requestId, service: serviceName, workerId: -1,
         error, willRetry: false,
+        requestType: request.frontmatter.type,
       });
 
       // Mark as failed
@@ -507,6 +528,36 @@ export class Dispatcher {
     } finally {
       this.activeServices.delete(serviceName);
       this.activeDirectories.delete(serviceDir);
+    }
+  }
+
+  /** Write a history record for request completion/failure. */
+  private recordHistory(
+    request: AccordRequest,
+    accordDir: string,
+    fromStatus: string,
+    toStatus: string,
+    durationMs?: number,
+    detail?: string,
+    result?: import('./adapters/adapter.js').AgentInvocationResult,
+  ): void {
+    try {
+      writeHistory({
+        historyDir: path.join(accordDir, 'comms', 'history'),
+        requestId: request.frontmatter.id,
+        fromStatus,
+        toStatus,
+        actor: request.serviceName,
+        directiveId: request.frontmatter.directive,
+        detail,
+        durationMs,
+        costUsd: result?.costUsd,
+        numTurns: result?.numTurns,
+        usage: result?.usage,
+        modelUsage: result?.modelUsage,
+      });
+    } catch (err) {
+      logger.warn(`Failed to write history for ${request.frontmatter.id}: ${err}`);
     }
   }
 

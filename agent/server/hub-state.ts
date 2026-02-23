@@ -3,6 +3,7 @@
 
 import type { AccordConfig, DispatcherConfig } from './types.js';
 import type { Dispatcher } from './dispatcher.js';
+import type { OrchestratorCoordinator } from './orchestrator.js';
 import { getAccordDir } from './config.js';
 import { scanInboxes, getDispatchableRequests, sortByPriority } from './scanner.js';
 import { logger } from './logger.js';
@@ -12,6 +13,7 @@ interface HubState {
   config: AccordConfig;
   dispatcherConfig: DispatcherConfig;
   dispatcher: Dispatcher;
+  coordinator?: OrchestratorCoordinator;
 }
 
 let state: HubState | null = null;

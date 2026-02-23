@@ -4,7 +4,9 @@ import * as path from 'node:path';
 import { loadConfig, getDispatcherConfig, getAccordDir } from './config.js';
 import { startServer, stopServer } from './http.js';
 import { Dispatcher } from './dispatcher.js';
+import { OrchestratorCoordinator } from './orchestrator.js';
 import { setHubState, triggerDispatch } from './hub-state.js';
+import { recoverStaleRequests } from './scanner.js';
 import { logger } from './logger.js';
 import { startContractPipeline } from './a2a/contract-pipeline.js';
 
@@ -95,8 +97,23 @@ async function main(): Promise<void> {
   // Create dispatcher (A2A-only mode)
   const dispatcher = new Dispatcher(dispatcherConfig, config, args.hubDir);
 
+  // Start coordinator if coordination loop is enabled
+  let coordinator: OrchestratorCoordinator | undefined;
+  if (dispatcherConfig.coordination_loop_enabled) {
+    coordinator = new OrchestratorCoordinator({
+      config,
+      hubDir: args.hubDir,
+      testAgentService: dispatcherConfig.test_agent_service,
+      maxRetries: dispatcherConfig.max_directive_retries,
+      negotiationTimeoutMs: (dispatcherConfig.negotiation_timeout ?? 600) * 1000,
+    });
+    coordinator.loadDirectives();
+    coordinator.start();
+    logger.info('Coordination loop enabled');
+  }
+
   // Register shared state for route handlers
-  setHubState({ hubDir: args.hubDir, config, dispatcherConfig, dispatcher });
+  setHubState({ hubDir: args.hubDir, config, dispatcherConfig, dispatcher, coordinator });
 
   // Start the Fastify server (API + WebSocket + UI)
   await startServer(port, args.hubDir);
@@ -104,6 +121,12 @@ async function main(): Promise<void> {
   // Start contract update pipeline (A2A artifact → validate → git commit)
   const accordDir = getAccordDir(args.hubDir, config);
   startContractPipeline(accordDir, args.hubDir);
+
+  // Recover stale in-progress requests from a previous crash
+  const recovered = recoverStaleRequests(accordDir, config, args.hubDir);
+  if (recovered > 0) {
+    logger.info(`Recovered ${recovered} stale in-progress request(s) → pending`);
+  }
 
   // Poll for pending requests every 5s and dispatch via A2A
   const dispatchInterval = setInterval(() => { triggerDispatch(); }, 5000);
@@ -114,6 +137,7 @@ async function main(): Promise<void> {
   const shutdown = async () => {
     clearInterval(dispatchInterval);
     logger.info('Shutting down...');
+    if (coordinator) coordinator.stop();
     const adapter = dispatcher.getAdapter();
     if (adapter.closeAll) await adapter.closeAll();
     await stopServer();

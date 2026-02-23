@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import type { RequestResult } from './types.js';
+import type { RequestResult, DirectivePhase } from './types.js';
 import type { StreamEvent } from './adapters/adapter.js';
 
 // ── Event payload types ─────────────────────────────────────────────────────
@@ -15,6 +15,8 @@ export interface RequestCompletedEvent {
   service: string;
   workerId: number;
   result: RequestResult;
+  /** Request type from frontmatter (e.g. 'contract-proposal', 'integration-test', 'fix') */
+  requestType?: string;
 }
 
 export interface RequestFailedEvent {
@@ -23,6 +25,8 @@ export interface RequestFailedEvent {
   workerId: number;
   error: string;
   willRetry: boolean;
+  /** Request type from frontmatter (e.g. 'contract-proposal', 'integration-test', 'fix') */
+  requestType?: string;
 }
 
 export interface SyncEvent {
@@ -105,6 +109,30 @@ export interface A2AArtifactUpdateEvent {
   artifactData: unknown;
 }
 
+// ── Directive coordination events ────────────────────────────────────────────
+
+export interface DirectivePhaseChangeEvent {
+  directiveId: string;
+  fromPhase: DirectivePhase;
+  toPhase: DirectivePhase;
+  message?: string;
+}
+
+export interface ContractNegotiationEvent {
+  directiveId: string;
+  contractPath: string;
+  service: string;
+  action: 'proposed' | 'accepted' | 'rejected' | 'overridden';
+  reason?: string;
+}
+
+export interface TestResultEvent {
+  directiveId: string;
+  testRequestId: string;
+  passed: boolean;
+  details?: string;
+}
+
 // ── Event map ────────────────────────────────────────────────────────────────
 
 export interface EventMap {
@@ -125,6 +153,9 @@ export interface EventMap {
   'service:removed': ServiceRemovedEvent;
   'a2a:status-update': A2AStatusUpdateEvent;
   'a2a:artifact-update': A2AArtifactUpdateEvent;
+  'directive:phase-change': DirectivePhaseChangeEvent;
+  'directive:contract-negotiation': ContractNegotiationEvent;
+  'directive:test-result': TestResultEvent;
 }
 
 export type EventName = keyof EventMap;
@@ -165,6 +196,7 @@ class AccordEventBus extends EventEmitter {
       'session:plan-generating', 'session:plan-ready', 'session:plan-canceled', 'session:plan-timeout',
       'service:added', 'service:removed',
       'a2a:status-update', 'a2a:artifact-update',
+      'directive:phase-change', 'directive:contract-negotiation', 'directive:test-result',
     ];
 
     const handlers = new Map<string, (...args: unknown[]) => void>();

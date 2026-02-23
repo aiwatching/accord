@@ -109,6 +109,79 @@ function loadSkillIndex(targetDir: string): string | null {
   return null;
 }
 
+// ── Coordination prompt builders ─────────────────────────────────────────────
+
+/**
+ * Build the body for a contract-proposal request file.
+ */
+export function buildContractProposalBody(params: {
+  directiveTitle: string;
+  targetService: string;
+  contractPath: string;
+  proposedInterface: string;
+  relatedServices: string[];
+}): string {
+  const { directiveTitle, targetService, contractPath, proposedInterface, relatedServices } = params;
+  const sections: string[] = [];
+
+  sections.push(`## Proposed Contract Change`);
+  sections.push('');
+  sections.push(`**Directive**: ${directiveTitle}`);
+  sections.push(`**Target Service**: ${targetService}`);
+  sections.push(`**Contract**: ${contractPath}`);
+  if (relatedServices.length > 0) {
+    sections.push(`**Related Services**: ${relatedServices.join(', ')}`);
+  }
+  sections.push('');
+  sections.push('### Proposed Interface');
+  sections.push('');
+  sections.push(proposedInterface);
+  sections.push('');
+  sections.push('## Instructions');
+  sections.push('');
+  sections.push('- Review the proposed contract change above.');
+  sections.push('- If you **accept**: update the contract file and mark this request as `completed`.');
+  sections.push('- If you **reject**: mark this request as `rejected` and explain the reason in the body.');
+  sections.push('');
+
+  return sections.join('\n');
+}
+
+/**
+ * Build the body for a test request file.
+ */
+export function buildTestRequestBody(params: {
+  directiveTitle: string;
+  services: string[];
+  contracts: string[];
+  implementationSummary: string;
+}): string {
+  const { directiveTitle, services, contracts, implementationSummary } = params;
+  const sections: string[] = [];
+
+  sections.push(`## Integration Test Request`);
+  sections.push('');
+  sections.push(`**Directive**: ${directiveTitle}`);
+  sections.push(`**Modified Services**: ${services.join(', ')}`);
+  if (contracts.length > 0) {
+    sections.push(`**Updated Contracts**: ${contracts.join(', ')}`);
+  }
+  sections.push('');
+  sections.push('### Implementation Summary');
+  sections.push('');
+  sections.push(implementationSummary);
+  sections.push('');
+  sections.push('## Test Instructions');
+  sections.push('');
+  sections.push('1. Verify cross-service interface alignment based on the updated contracts.');
+  sections.push('2. Run integration tests covering the modified services.');
+  sections.push('3. If all tests pass: mark this request as `completed`.');
+  sections.push('4. If any test fails: mark this request as `failed` and include detailed failure reasons in the body.');
+  sections.push('');
+
+  return sections.join('\n');
+}
+
 /**
  * Build a session summary from processed results (for CLAUDE.md context on rotation).
  */
