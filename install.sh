@@ -7,10 +7,13 @@
 # Install a specific version:
 #   ACCORD_VERSION=v0.1.0 curl -fsSL https://raw.githubusercontent.com/aiwatching/accord/main/install.sh | bash
 #
+# Install from local dev directory (skips git clone, uses source in-place):
+#   ./install.sh --local
+#
 # What it does:
-#   1. Downloads Accord to ~/.accord/ (shallow clone)
+#   1. Downloads Accord to ~/.accord/ (shallow clone) — or symlinks from local dir
 #   2. Checks out the specified version (or latest tag)
-#   3. Tells you how to initialize your project
+#   3. Builds the TypeScript agent
 #
 # After install, run in your project directory:
 #   ~/.accord/init.sh
@@ -20,6 +23,14 @@ set -euo pipefail
 ACCORD_REPO="${ACCORD_REPO:-https://github.com/aiwatching/accord.git}"
 ACCORD_HOME="${ACCORD_HOME:-$HOME/.accord}"
 ACCORD_VERSION="${ACCORD_VERSION:-latest}"
+ACCORD_LOCAL=false
+
+# Parse args
+for arg in "$@"; do
+    case "$arg" in
+        --local) ACCORD_LOCAL=true ;;
+    esac
+done
 
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
@@ -50,38 +61,69 @@ resolve_version() {
     fi
 }
 
-# ── Download / Update ─────────────────────────────────────────────────────────
+# ── Local dev mode ───────────────────────────────────────────────────────────
 
-resolve_version
+if [[ "$ACCORD_LOCAL" == "true" ]]; then
+    # Resolve the directory where install.sh lives (= repo root)
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-if [[ -d "$ACCORD_HOME/.git" ]]; then
-    log "Updating Accord at $ACCORD_HOME ..."
-    (
-        cd "$ACCORD_HOME"
-        git fetch --quiet --tags origin 2>/dev/null
-        if [[ "$ACCORD_VERSION" != "main" ]]; then
-            git checkout --quiet "$ACCORD_VERSION" 2>/dev/null
-        else
-            git pull --quiet origin main 2>/dev/null
-        fi
-    ) || log "Update failed (offline?), using cached version"
-    log "Updated to $ACCORD_VERSION"
-else
-    if [[ -d "$ACCORD_HOME" ]]; then
+    if [[ ! -d "$SCRIPT_DIR/.git" ]]; then
+        err "--local requires running from the Accord repo root (no .git found in $SCRIPT_DIR)"
+    fi
+
+    log "Local dev mode: using source at $SCRIPT_DIR"
+
+    # Point ~/.accord to local source via symlink
+    if [[ -L "$ACCORD_HOME" ]]; then
+        rm "$ACCORD_HOME"
+    elif [[ -d "$ACCORD_HOME" ]]; then
+        log "Removing existing $ACCORD_HOME (was a full clone, replacing with symlink)"
         rm -rf "$ACCORD_HOME"
     fi
-    log "Downloading Accord $ACCORD_VERSION to $ACCORD_HOME ..."
-    if [[ "$ACCORD_VERSION" == "main" ]]; then
-        git clone --depth 1 --branch main --quiet "$ACCORD_REPO" "$ACCORD_HOME" || \
-            err "Failed to clone. Check your network and that $ACCORD_REPO is accessible."
-    else
-        git clone --branch "$ACCORD_VERSION" --quiet "$ACCORD_REPO" "$ACCORD_HOME" || \
-            err "Failed to clone version $ACCORD_VERSION. Check that the tag exists."
-    fi
-    log "Downloaded successfully"
-fi
 
-chmod +x "$ACCORD_HOME/init.sh" "$ACCORD_HOME/setup.sh" "$ACCORD_HOME/uninstall.sh" "$ACCORD_HOME/upgrade.sh"
+    ln -sf "$SCRIPT_DIR" "$ACCORD_HOME"
+    log "Symlinked $ACCORD_HOME → $SCRIPT_DIR"
+
+else
+    # ── Remote mode: Download / Update ───────────────────────────────────────
+
+    resolve_version
+
+    if [[ -L "$ACCORD_HOME" ]]; then
+        log "Removing dev symlink at $ACCORD_HOME (switching to remote mode)"
+        rm "$ACCORD_HOME"
+    fi
+
+    if [[ -d "$ACCORD_HOME/.git" ]]; then
+        log "Updating Accord at $ACCORD_HOME ..."
+        (
+            cd "$ACCORD_HOME"
+            git fetch --quiet --tags origin 2>/dev/null
+            git fetch --quiet origin "$ACCORD_VERSION" 2>/dev/null
+            if git rev-parse --verify "origin/$ACCORD_VERSION" >/dev/null 2>&1; then
+                # It's a remote branch — checkout and pull latest
+                git checkout --quiet "$ACCORD_VERSION" 2>/dev/null || git checkout --quiet -b "$ACCORD_VERSION" "origin/$ACCORD_VERSION" 2>/dev/null
+                git pull --quiet origin "$ACCORD_VERSION" 2>/dev/null
+            elif git rev-parse --verify "$ACCORD_VERSION" >/dev/null 2>&1; then
+                # It's a tag or existing local ref
+                git checkout --quiet "$ACCORD_VERSION" 2>/dev/null
+            else
+                err "Version '$ACCORD_VERSION' not found as branch or tag"
+            fi
+        ) || log "Update failed (offline?), using cached version"
+        log "Updated to $ACCORD_VERSION"
+    else
+        if [[ -d "$ACCORD_HOME" ]]; then
+            rm -rf "$ACCORD_HOME"
+        fi
+        log "Downloading Accord $ACCORD_VERSION to $ACCORD_HOME ..."
+        git clone --branch "$ACCORD_VERSION" --quiet "$ACCORD_REPO" "$ACCORD_HOME" || \
+            err "Failed to clone '$ACCORD_VERSION'. Check that the branch/tag exists and $ACCORD_REPO is accessible."
+        log "Downloaded successfully"
+    fi
+
+    chmod +x "$ACCORD_HOME/init.sh" "$ACCORD_HOME/setup.sh" "$ACCORD_HOME/uninstall.sh" "$ACCORD_HOME/upgrade.sh"
+fi
 
 # ── Build TypeScript agent (if Node.js available) ─────────────────────────────
 
@@ -140,7 +182,12 @@ fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
-echo -e "${GREEN}${BOLD}Accord v${INSTALLED_VERSION} installed at ~/.accord/${NC}"
+if [[ "$ACCORD_LOCAL" == "true" ]]; then
+    echo -e "${GREEN}${BOLD}Accord v${INSTALLED_VERSION} installed (local dev mode)${NC}"
+    echo -e "${DIM}~/.accord → $(readlink "$ACCORD_HOME")${NC}"
+else
+    echo -e "${GREEN}${BOLD}Accord v${INSTALLED_VERSION} installed at ~/.accord/${NC}"
+fi
 echo ""
 echo "Commands:"
 echo ""

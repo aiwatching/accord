@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { loadConfig, getDispatcherConfig, getAccordDir } from './config.js';
 import { startServer, stopServer } from './http.js';
 import { Dispatcher } from './dispatcher.js';
-import { setHubState } from './hub-state.js';
+import { setHubState, triggerDispatch } from './hub-state.js';
 import { logger } from './logger.js';
 import { startContractPipeline } from './a2a/contract-pipeline.js';
 
@@ -105,8 +105,14 @@ async function main(): Promise<void> {
   const accordDir = getAccordDir(args.hubDir, config);
   startContractPipeline(accordDir, args.hubDir);
 
+  // Poll for pending requests every 5s and dispatch via A2A
+  const dispatchInterval = setInterval(() => { triggerDispatch(); }, 5000);
+  // Also run once on startup
+  setTimeout(() => { triggerDispatch(); }, 1000);
+
   // Graceful shutdown
   const shutdown = async () => {
+    clearInterval(dispatchInterval);
     logger.info('Shutting down...');
     const adapter = dispatcher.getAdapter();
     if (adapter.closeAll) await adapter.closeAll();

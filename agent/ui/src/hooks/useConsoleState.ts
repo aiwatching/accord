@@ -5,13 +5,15 @@ import type { OutputLine } from '../components/OutputRenderers';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-interface RequestItem {
+export interface RequestItem {
   id: string;
+  from: string;
   to: string;
   service: string;
   status: string;
   priority: string;
   type: string;
+  created: string;
 }
 
 interface LogEntry {
@@ -115,10 +117,11 @@ export function useConsoleState() {
     return () => clearInterval(interval);
   }, [refreshServices]);
 
-  // -- Load initial logs into orchestrator pane --
+  // -- Load initial logs into orchestrator + service panes --
   useEffect(() => {
     if (!logs || logs.length === 0) return;
-    const recent = logs.slice(0, 5);
+    // Load up to 20 recent logs, routing by service
+    const recent = logs.slice(0, 20);
     Promise.all(
       recent.map(async (l) => {
         const res = await fetch(`/api/logs/${l.requestId}`);
@@ -127,20 +130,42 @@ export function useConsoleState() {
         return data;
       })
     ).then(results => {
-      const lines: OutputLine[] = [];
+      const orchLines: OutputLine[] = [];
+      const svcLines: Record<string, OutputLine[]> = {};
+
       for (const r of results) {
         if (!r) continue;
         const entry = logs.find(l => l.requestId === r.requestId);
-        lines.push({
+        const service = entry?.service ?? 'unknown';
+        const line: OutputLine = {
           key: `log-${r.requestId}`,
           type: 'log',
           requestId: r.requestId,
-          service: entry?.service ?? 'unknown',
+          service,
           text: r.content,
           timestamp: entry ? new Date(entry.modified).getTime() : Date.now(),
+        };
+
+        if (service === 'orchestrator' || service === 'unknown') {
+          orchLines.push(line);
+        } else {
+          if (!svcLines[service]) svcLines[service] = [];
+          svcLines[service].push(line);
+        }
+      }
+
+      if (orchLines.length > 0) {
+        setOrchestratorLines(prev => [...orchLines, ...prev]);
+      }
+      if (Object.keys(svcLines).length > 0) {
+        setServiceBuffers(prev => {
+          const next = { ...prev };
+          for (const [svc, lines] of Object.entries(svcLines)) {
+            next[svc] = [...lines, ...(next[svc] ?? [])];
+          }
+          return next;
         });
       }
-      setOrchestratorLines(prev => [...lines, ...prev]);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [logs?.length]);
@@ -309,6 +334,49 @@ export function useConsoleState() {
       .map(([name, v]) => ({ name, ...v }));
   }, [requests]);
 
+  // -- Per-service active requests (pending/in-progress only) --
+  const ACTIVE_STATUSES = new Set(['pending', 'approved', 'in-progress']);
+  const serviceRequests = useMemo<Record<string, RequestItem[]>>(() => {
+    if (!requests) return {};
+    const groups: Record<string, RequestItem[]> = {};
+    for (const r of requests) {
+      if (!ACTIVE_STATUSES.has(r.status)) continue;
+      const svc = r.service;
+      if (!groups[svc]) groups[svc] = [];
+      groups[svc].push(r);
+    }
+    for (const svc of Object.keys(groups)) {
+      groups[svc].sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime());
+    }
+    return groups;
+  }, [requests]);
+
+  // -- All requests sorted by created desc (for history page) --
+  const allRequests = useMemo<RequestItem[]>(() => {
+    if (!requests) return [];
+    return [...requests].sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime());
+  }, [requests]);
+
+  // -- Cancel request handler --
+  const handleCancelRequest = useCallback(async (id: string) => {
+    try {
+      await fetch(`/api/requests/${id}/cancel`, { method: 'POST' });
+      refreshRequests();
+    } catch {
+      // Ignore network errors
+    }
+  }, [refreshRequests]);
+
+  // -- Retry request handler --
+  const handleRetryRequest = useCallback(async (id: string) => {
+    try {
+      await fetch(`/api/requests/${id}/retry`, { method: 'POST' });
+      refreshRequests();
+    } catch {
+      // Ignore network errors
+    }
+  }, [refreshRequests]);
+
   // -- Orchestrator command handler --
   const handleOrchestratorCommand = useCallback(async (raw: string) => {
     setOrchestratorExecuting(true);
@@ -381,31 +449,57 @@ export function useConsoleState() {
   }, [appendOrchestrator]);
 
   // -- Service message handler --
+  // Creates a request via API (which triggers A2A dispatch server-side).
+  // A2A events will stream back via WebSocket into this service's buffer.
   const handleServiceMessage = useCallback(async (serviceName: string, raw: string) => {
     setServiceExecuting(true);
-    const command = `send ${serviceName} ${raw}`;
+
+    // Echo user input
+    appendService(serviceName, [{
+      key: `msg-${Date.now()}`,
+      type: 'event',
+      service: serviceName,
+      text: `[YOU → ${serviceName}] ${raw}`,
+      timestamp: Date.now(),
+    }]);
+
     try {
-      const res = await fetch('/api/commands/execute', {
+      const res = await fetch('/api/requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command }),
+        body: JSON.stringify({
+          to: serviceName,
+          from: 'console',
+          type: 'other',
+          body: raw,
+        }),
       });
       const data = await res.json();
-      appendService(serviceName, [{
-        key: `cmd-${Date.now()}`,
-        type: 'command-result',
-        text: `$ ${command}\n${data.output ?? data.error ?? 'No output'}`,
-        timestamp: Date.now(),
-        success: data.success ?? false,
-      }]);
+      if (res.ok) {
+        appendService(serviceName, [{
+          key: `ev-${Date.now()}`,
+          type: 'event',
+          service: serviceName,
+          text: `[DISPATCHED] ${data.id} → ${serviceName}`,
+          timestamp: Date.now(),
+        }]);
+      } else {
+        appendService(serviceName, [{
+          key: `err-${Date.now()}`,
+          type: 'event',
+          service: serviceName,
+          text: `[ERROR] ${data.error ?? res.statusText}`,
+          timestamp: Date.now(),
+        }]);
+      }
       refreshRequests();
     } catch (err) {
       appendService(serviceName, [{
-        key: `cmd-err-${Date.now()}`,
-        type: 'command-result',
-        text: `$ ${command}\nNetwork error: ${err}`,
+        key: `err-${Date.now()}`,
+        type: 'event',
+        service: serviceName,
+        text: `[ERROR] Network error: ${err}`,
         timestamp: Date.now(),
-        success: false,
       }]);
     }
     setServiceExecuting(false);
@@ -484,6 +578,12 @@ export function useConsoleState() {
     // Executing
     orchestratorExecuting,
     serviceExecuting,
+
+    // Requests
+    allRequests,
+    serviceRequests,
+    handleCancelRequest,
+    handleRetryRequest,
 
     // Handlers
     handleOrchestratorCommand,

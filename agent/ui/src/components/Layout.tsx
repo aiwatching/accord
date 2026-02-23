@@ -2,7 +2,7 @@ import React from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useApi } from '../hooks/useApi';
 
-export type TabId = 'console' | 'analytics';
+export type TabId = 'console' | 'requests' | 'analytics';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -34,7 +34,7 @@ export function Layout({ children, activeTab, onTabChange }: LayoutProps) {
             Accord Hub — {projectName}
           </div>
           <div style={{ display: 'flex', gap: 2 }}>
-            {(['console', 'analytics'] as const).map(tab => (
+            {(['console', 'requests', 'analytics'] as const).map(tab => (
               <button
                 key={tab}
                 onClick={() => onTabChange(tab)}

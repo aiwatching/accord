@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { getHubState } from '../hub-state.js';
+import { getHubState, triggerDispatch } from '../hub-state.js';
 import { getAccordDir, getInboxPath } from '../config.js';
-import { scanInboxes, scanArchives, parseRequest, setRequestStatus } from '../scanner.js';
+import { scanInboxes, scanArchives, parseRequest, setRequestStatus, archiveRequest } from '../scanner.js';
 
 export function registerRequestRoutes(app: FastifyInstance): void {
   // GET /api/requests — list all requests, filterable by service/status
@@ -95,17 +95,44 @@ export function registerRequestRoutes(app: FastifyInstance): void {
       const filePath = path.join(inboxPath, `${id}.md`);
       fs.writeFileSync(filePath, content, 'utf-8');
 
+      // Immediately trigger A2A dispatch
+      triggerDispatch();
+
       reply.status(201);
       return { id, filePath };
     },
   );
 
-  // POST /api/requests/:id/retry — reset a failed request to pending
+  // POST /api/requests/:id/cancel — cancel a pending request
+  app.post<{ Params: { id: string } }>('/api/requests/:id/cancel', async (req, reply) => {
+    const { config, hubDir } = getHubState();
+    const accordDir = getAccordDir(hubDir, config);
+
+    // Search inbox for the pending request
+    const allRequests = scanInboxes(accordDir, config, hubDir);
+    const found = allRequests.find(r => r.frontmatter.id === req.params.id);
+
+    if (!found) {
+      return reply.status(404).send({ error: 'Request not found in inbox' });
+    }
+
+    if (found.frontmatter.status !== 'pending') {
+      return reply.status(400).send({ error: `Cannot cancel request with status '${found.frontmatter.status}', only 'pending' requests can be canceled` });
+    }
+
+    // Set status to rejected and archive
+    setRequestStatus(found.filePath, 'rejected');
+    archiveRequest(found.filePath, accordDir);
+
+    return { id: req.params.id, status: 'rejected' };
+  });
+
+  // POST /api/requests/:id/retry — reset a failed/rejected request to pending
   app.post<{ Params: { id: string } }>('/api/requests/:id/retry', async (req, reply) => {
     const { config, hubDir } = getHubState();
     const accordDir = getAccordDir(hubDir, config);
 
-    // Search archive for the failed request
+    // Search archive for the failed/rejected request
     const archiveDir = path.join(accordDir, 'comms', 'archive');
     if (!fs.existsSync(archiveDir)) {
       return reply.status(404).send({ error: 'Archive directory not found' });
@@ -115,8 +142,8 @@ export function registerRequestRoutes(app: FastifyInstance): void {
       const filePath = path.join(archiveDir, file);
       const parsed = parseRequest(filePath);
       if (parsed && parsed.frontmatter.id === req.params.id) {
-        if (parsed.frontmatter.status !== 'failed') {
-          return reply.status(400).send({ error: `Request status is '${parsed.frontmatter.status}', not 'failed'` });
+        if (parsed.frontmatter.status !== 'failed' && parsed.frontmatter.status !== 'rejected') {
+          return reply.status(400).send({ error: `Request status is '${parsed.frontmatter.status}', only 'failed' or 'rejected' can be retried` });
         }
         // Move back to inbox and set pending
         const inboxPath = getInboxPath(accordDir, parsed.serviceName);
@@ -124,6 +151,10 @@ export function registerRequestRoutes(app: FastifyInstance): void {
         const newPath = path.join(inboxPath, file);
         fs.renameSync(filePath, newPath);
         setRequestStatus(newPath, 'pending');
+
+        // Trigger dispatch for retried request
+        triggerDispatch();
+
         return { id: req.params.id, status: 'pending', filePath: newPath };
       }
     }

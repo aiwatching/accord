@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ConsolePane } from './ConsolePane';
+import { RequestList } from './RequestList';
 import type { OutputLine } from './OutputRenderers';
+import type { RequestItem } from '../hooks/useConsoleState';
 
 interface ServicePaneProps {
   services: string[];
@@ -10,6 +12,11 @@ interface ServicePaneProps {
   logsExpanded: boolean;
   logsGeneration: number;
   onToggleLogs: () => void;
+  serviceRequests: Record<string, RequestItem[]>;
+  onCancelRequest: (id: string) => void;
+  onRetryRequest: (id: string) => void;
+  historyCount: number;
+  onViewHistory: () => void;
 }
 
 export function ServicePane({
@@ -20,6 +27,11 @@ export function ServicePane({
   logsExpanded,
   logsGeneration,
   onToggleLogs,
+  serviceRequests,
+  onCancelRequest,
+  onRetryRequest,
+  historyCount,
+  onViewHistory,
 }: ServicePaneProps) {
   const [selectedService, setSelectedService] = useState<string>(services[0] ?? '');
 
@@ -57,38 +69,54 @@ export function ServicePane({
     );
   }
 
+  const currentRequests = activeService ? (serviceRequests[activeService] ?? []) : [];
+
   return (
-    <ConsolePane
-      lines={lines}
-      executing={executing}
-      onSubmit={handleSubmit}
-      placeholder={activeService ? `Send a message to ${activeService}...` : 'Select a service...'}
-      logsExpanded={logsExpanded}
-      logsGeneration={logsGeneration}
-      onToggleLogs={onToggleLogs}
-      headerContent={
-        <>
-          <select
-            value={activeService}
-            onChange={e => setSelectedService(e.target.value)}
-            style={{
-              background: '#0f172a',
-              color: '#e2e8f0',
-              border: '1px solid #334155',
-              borderRadius: 4,
-              padding: '2px 8px',
-              fontSize: 12,
-              fontFamily: 'monospace',
-              outline: 'none',
-            }}
-          >
-            {services.map(s => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-          <span style={{ color: '#64748b', fontSize: 11 }}>console</span>
-        </>
-      }
-    />
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Request list panel (collapsible, between header and output) */}
+      <RequestList
+        requests={currentRequests}
+        onCancel={onCancelRequest}
+        onRetry={onRetryRequest}
+        onViewHistory={onViewHistory}
+        historyCount={historyCount}
+      />
+
+      {/* Console */}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <ConsolePane
+          lines={lines}
+          executing={executing}
+          onSubmit={handleSubmit}
+          placeholder={activeService ? `Send a message to ${activeService}...` : 'Select a service...'}
+          logsExpanded={logsExpanded}
+          logsGeneration={logsGeneration}
+          onToggleLogs={onToggleLogs}
+          headerContent={
+            <>
+              <select
+                value={activeService}
+                onChange={e => setSelectedService(e.target.value)}
+                style={{
+                  background: '#0f172a',
+                  color: '#e2e8f0',
+                  border: '1px solid #334155',
+                  borderRadius: 4,
+                  padding: '2px 8px',
+                  fontSize: 12,
+                  fontFamily: 'monospace',
+                  outline: 'none',
+                }}
+              >
+                {services.map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+              <span style={{ color: '#64748b', fontSize: 11 }}>console</span>
+            </>
+          }
+        />
+      </div>
+    </div>
   );
 }

@@ -241,6 +241,29 @@ class ClaudeCodeV1Adapter implements AgentAdapter {
   }
 
   async invoke(params: AgentInvocationParams): Promise<AgentInvocationResult> {
+    const maxRetries = 1;
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await this.invokeOnce(params);
+      } catch (err) {
+        lastError = err;
+        const msg = String(err);
+        // Retry on transient SDK errors (e.g. internal streaming mode issues)
+        const isTransient = msg.includes('only prompt commands are supported in streaming mode');
+        if (isTransient && attempt < maxRetries) {
+          logger.warn(`[claude-code] Transient SDK error (attempt ${attempt + 1}/${maxRetries + 1}), retrying: ${msg}`);
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    throw lastError; // unreachable, but satisfies TypeScript
+  }
+
+  private async invokeOnce(params: AgentInvocationParams): Promise<AgentInvocationResult> {
     // Dynamic import — keeps the SDK optional (tests can run without it)
     const { query } = await import('@anthropic-ai/claude-agent-sdk');
 
@@ -248,23 +271,23 @@ class ClaudeCodeV1Adapter implements AgentAdapter {
     const timer = setTimeout(() => abortController.abort(), params.timeout * 1000);
     const startTime = Date.now();
 
+    // Build options — only include resume when a session ID is provided
+    const options: Record<string, unknown> = {
+      model: params.model ?? this.defaultModel ?? 'claude-sonnet-4-5-20250929',
+      cwd: params.cwd,
+      allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
+      permissionMode: 'bypassPermissions',
+      allowDangerouslySkipPermissions: true,
+      maxTurns: params.maxTurns ?? 50,
+      abortController,
+      systemPrompt: { type: 'preset', preset: 'claude_code' },
+      settingSources: ['project'],
+    };
+    if (params.resumeSessionId) options.resume = params.resumeSessionId;
+    if (params.maxBudgetUsd != null) options.maxBudgetUsd = params.maxBudgetUsd;
+
     try {
-      const response = query({
-        prompt: params.prompt,
-        options: {
-          model: params.model ?? this.defaultModel ?? 'claude-sonnet-4-5-20250929',
-          resume: params.resumeSessionId,
-          cwd: params.cwd,
-          allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
-          permissionMode: 'bypassPermissions',
-          allowDangerouslySkipPermissions: true,
-          maxTurns: params.maxTurns ?? 50,
-          maxBudgetUsd: params.maxBudgetUsd,
-          abortController,
-          systemPrompt: { type: 'preset', preset: 'claude_code' },
-          settingSources: ['project'],
-        },
-      });
+      const response = query({ prompt: params.prompt, options });
 
       let sessionId: string | undefined;
       let costUsd: number | undefined;

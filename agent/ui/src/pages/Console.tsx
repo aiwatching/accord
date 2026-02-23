@@ -1,11 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useConsoleState } from '../hooks/useConsoleState';
 import { ServiceCards } from '../components/ServiceCards';
 import { OrchestratorPane } from '../components/OrchestratorPane';
 import { ServicePane } from '../components/ServicePane';
 import { AddServiceModal } from '../components/AddServiceModal';
+import { RequestsPage } from './Requests';
 
-export function Console() {
+interface ConsoleProps {
+  renderRequestsPage?: boolean;
+  onViewHistory?: () => void;
+}
+
+export function Console({ renderRequestsPage, onViewHistory }: ConsoleProps) {
   const {
     serviceList,
     services,
@@ -17,6 +23,10 @@ export function Console() {
     handlePlanCancel,
     orchestratorExecuting,
     serviceExecuting,
+    allRequests,
+    serviceRequests,
+    handleCancelRequest,
+    handleRetryRequest,
     handleOrchestratorCommand,
     handleServiceMessage,
     refreshServices,
@@ -26,6 +36,24 @@ export function Console() {
   } = useConsoleState();
 
   const [showAddService, setShowAddService] = useState(false);
+
+  const historyCount = useMemo(() => {
+    return allRequests.filter(r =>
+      r.status === 'completed' || r.status === 'failed' || r.status === 'rejected'
+    ).length;
+  }, [allRequests]);
+
+  // Requests page mode
+  if (renderRequestsPage) {
+    return (
+      <RequestsPage
+        requests={allRequests}
+        services={services}
+        onRetry={handleRetryRequest}
+        onCancel={handleCancelRequest}
+      />
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', position: 'relative' }}>
@@ -73,6 +101,11 @@ export function Console() {
             logsExpanded={logsExpanded}
             logsGeneration={logsGeneration}
             onToggleLogs={toggleLogs}
+            serviceRequests={serviceRequests}
+            onCancelRequest={handleCancelRequest}
+            onRetryRequest={handleRetryRequest}
+            historyCount={historyCount}
+            onViewHistory={onViewHistory ?? (() => {})}
           />
         </div>
       </div>

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { getHubState } from '../hub-state.js';
+import { getHubState, triggerDispatch } from '../hub-state.js';
 import { getAccordDir, getServiceNames, getInboxPath } from '../config.js';
 import { scanInboxes, scanArchives } from '../scanner.js';
 import { executeCommand } from '../commands.js';
@@ -462,6 +462,9 @@ ${message}
   const filePath = path.join(inboxPath, `${id}.md`);
   fs.writeFileSync(filePath, content, 'utf-8');
   logger.info(`Console: created request ${id} for ${service}`);
+
+  // Immediately trigger A2A dispatch so the request is picked up
+  triggerDispatch();
 
   return `Request created: **${id}**\n\n- **To**: ${service}\n- **Message**: ${message}\n- **File**: ${path.basename(filePath)}`;
 }

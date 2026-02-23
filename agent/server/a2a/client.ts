@@ -105,6 +105,11 @@ export class AccordA2AClient {
     return unwrapResult(response) as Task;
   }
 
+  /** Invalidate a cached client (e.g. after connection failure) */
+  invalidate(serviceUrl: string): void {
+    this.clients.delete(serviceUrl);
+  }
+
   /** Extract contract updates from a completed task's artifacts */
   extractContractUpdates(task: Task): ContractUpdatePayload[] {
     const updates: ContractUpdatePayload[] = [];
