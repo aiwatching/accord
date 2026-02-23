@@ -213,3 +213,6 @@ examples
 # Accord Agent (TypeScript)
 agent/node_modules/
 agent/dist/
+
+# A2A proof-of-concept (not shipped)
+a2a-poc/
