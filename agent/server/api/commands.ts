@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { getHubState, triggerDispatch } from '../hub-state.js';
-import { getAccordDir, getServiceNames, getInboxPath } from '../config.js';
+import { getAccordDir, getServiceNames, getInboxPath, loadRegistryYaml } from '../config.js';
 import { scanInboxes, scanArchives } from '../scanner.js';
 import { executeCommand } from '../commands.js';
 import { eventBus } from '../event-bus.js';
@@ -82,18 +82,60 @@ export function registerCommandRoutes(app: FastifyInstance): void {
     return result;
   });
 
-  // GET /api/logs/:requestId — read a log file
+  // GET /api/logs/:requestId — read a log file (with fallback to request content + history)
   app.get<{ Params: { requestId: string } }>('/api/logs/:requestId', async (req, reply) => {
     const { config, hubDir } = getHubState();
     const accordDir = getAccordDir(hubDir, config);
-    const logFile = path.join(accordDir, 'comms', 'sessions', `${req.params.requestId}.log`);
+    const requestId = req.params.requestId;
+    const logFile = path.join(accordDir, 'comms', 'sessions', `${requestId}.log`);
 
-    if (!fs.existsSync(logFile)) {
+    // Primary: session log file
+    if (fs.existsSync(logFile)) {
+      const content = fs.readFileSync(logFile, 'utf-8');
+      return { requestId, content };
+    }
+
+    // Fallback: synthesize from request file + history
+    const allRequests = scanInboxes(accordDir, config, hubDir);
+    allRequests.push(...scanArchives(accordDir, config, hubDir));
+    const found = allRequests.find(r => r.frontmatter.id === requestId);
+
+    // Collect history entries for this request
+    const historyLines = readHistoryForRequest(accordDir, requestId);
+
+    if (!found && historyLines.length === 0) {
       return reply.status(404).send({ error: 'Log not found' });
     }
 
-    const content = fs.readFileSync(logFile, 'utf-8');
-    return { requestId: req.params.requestId, content };
+    // Build a synthetic log from available data
+    const parts: string[] = [];
+    if (found) {
+      const fm = found.frontmatter;
+      parts.push(`--- request details ---`);
+      parts.push(`ID:       ${fm.id}`);
+      parts.push(`From:     ${fm.from}`);
+      parts.push(`To:       ${fm.to}`);
+      parts.push(`Type:     ${fm.type}`);
+      parts.push(`Status:   ${fm.status}`);
+      parts.push(`Priority: ${fm.priority}`);
+      parts.push(`Created:  ${fm.created}`);
+      parts.push(`Updated:  ${fm.updated}`);
+      if (fm.directive) parts.push(`Directive: ${fm.directive}`);
+      if (fm.attempts) parts.push(`Attempts: ${fm.attempts}`);
+      parts.push('');
+      parts.push('--- request body ---');
+      parts.push(found.body || '(empty)');
+      parts.push('');
+    }
+    if (historyLines.length > 0) {
+      parts.push('--- history ---');
+      parts.push(...historyLines);
+    }
+    if (parts.length === 0) {
+      parts.push('(No session log or history available for this request)');
+    }
+
+    return { requestId, content: parts.join('\n') };
   });
 
   // POST /api/session/send — direct orchestrator session interaction
@@ -469,43 +511,131 @@ ${message}
   return `Request created: **${id}**\n\n- **To**: ${service}\n- **Message**: ${message}\n- **File**: ${path.basename(filePath)}`;
 }
 
+// ── History reader ──────────────────────────────────────────────────────────
+
+/** Read history JSONL entries for a specific request ID. */
+function readHistoryForRequest(accordDir: string, requestId: string): string[] {
+  const historyDir = path.join(accordDir, 'comms', 'history');
+  if (!fs.existsSync(historyDir)) return [];
+
+  const lines: string[] = [];
+  try {
+    const files = fs.readdirSync(historyDir).filter(f => f.endsWith('.jsonl')).sort();
+    for (const file of files) {
+      const content = fs.readFileSync(path.join(historyDir, file), 'utf-8');
+      for (const line of content.split('\n')) {
+        if (!line.trim()) continue;
+        try {
+          const entry = JSON.parse(line);
+          if (entry.request_id === requestId) {
+            const parts = [`[${entry.ts}] ${entry.from_status} → ${entry.to_status}`];
+            if (entry.actor) parts.push(`(${entry.actor})`);
+            if (entry.duration_ms) parts.push(`${entry.duration_ms}ms`);
+            if (entry.cost_usd !== undefined) parts.push(`$${entry.cost_usd.toFixed(4)}`);
+            if (entry.num_turns) parts.push(`${entry.num_turns} turns`);
+            if (entry.detail) parts.push(`— ${entry.detail}`);
+            lines.push(parts.join(' '));
+          }
+        } catch {
+          // Skip malformed lines
+        }
+      }
+    }
+  } catch (err) {
+    logger.debug(`Failed to read history for ${requestId}: ${err}`);
+  }
+  return lines;
+}
+
 // ── Orchestrator prompt builder ─────────────────────────────────────────────
 
+function buildServiceContext(serviceNames: string[], accordDir: string): string {
+  const lines: string[] = [];
+  for (const name of serviceNames) {
+    const registry = loadRegistryYaml(accordDir, name);
+    if (registry) {
+      const parts = [`- **${name}**`];
+      if (registry.description) parts.push(`— ${registry.description}`);
+      if (registry.language) parts.push(`(${registry.language})`);
+      if (registry.responsibility) parts.push(`| responsibility: ${registry.responsibility}`);
+      lines.push(parts.join(' '));
+    } else {
+      lines.push(`- **${name}**`);
+    }
+  }
+  return lines.join('\n');
+}
+
 function buildOrchestratorPrompt(userMessage: string, serviceNames: string[], accordDir: string, approvedPlan?: string): string {
-  // Read the request template if available
   const templatePath = path.join(accordDir, 'comms', 'TEMPLATE.md');
   const hasTemplate = fs.existsSync(templatePath);
+  const templateNote = hasTemplate
+    ? 'Use the request template at `comms/TEMPLATE.md` for the correct format.'
+    : 'Use standard frontmatter with id, from, to, scope, type, priority, status, created, updated fields.';
 
-  const planSection = approvedPlan
-    ? `\n## Approved Execution Plan
+  const serviceContext = buildServiceContext(serviceNames, accordDir);
 
-Follow this plan closely:
+  // ── Execution mode: plan already approved, create request files ──
+  if (approvedPlan) {
+    return `## Role
+
+You are the **orchestrator**. You coordinate work across services by creating request files.
+
+**Rules:**
+1. NEVER write application code — only protocol files in this hub directory.
+2. Create request files in each service's inbox: \`comms/inbox/{service}/req-{id}.md\`
+3. ${templateNote}
+4. DO NOT use interactive tools (AskUserQuestion, EnterPlanMode, etc.) — communicate through text output only.
+
+## Approved Plan
+
+Execute this plan now:
 
 ${approvedPlan}
-`
-    : '';
-
-  return `## CRITICAL ROLE CONSTRAINT
-
-You are the **orchestrator**. You MUST follow these rules absolutely:
-
-1. **NEVER write application code** — no models, controllers, services, components, APIs, or any implementation code.
-2. **NEVER create or modify files outside the hub repo** — you only manage protocol files in this hub directory.
-3. Your ONLY job is to **decompose tasks into requests** and **dispatch them to services** via the Accord protocol.
-4. For each sub-task, create a request file in the target service's inbox: \`comms/inbox/{service}/req-{id}.md\`
-5. Use the request template at \`comms/TEMPLATE.md\` for the correct format.${hasTemplate ? '' : ' If template is missing, use standard frontmatter with id, from, to, scope, type, priority, status, created, updated fields.'}
 
 ## Available Services
 
-${serviceNames.map(s => `- ${s}`).join('\n')}
-${planSection}
-## What You Must Do
+${serviceContext}
 
-When the user describes a feature or task:
-1. **Analyze** which services need to be involved
-2. **Decompose** into concrete, actionable requests (one per service)
-3. **Create request files** in each service's inbox with clear instructions
-4. **Commit and push** so the daemon can dispatch workers to process them
+## User Message
+
+${userMessage}`;
+  }
+
+  // ── Planning mode: discuss, clarify, propose plan ──
+  return `## Role
+
+You are the **orchestrator** — a planning and coordination agent. You help the user decompose tasks and dispatch them to the right services.
+
+**Rules:**
+1. NEVER write application code — only protocol files in this hub directory.
+2. DO NOT create request files until the user explicitly approves your plan.
+3. DO NOT use interactive tools (AskUserQuestion, EnterPlanMode, etc.) — just write your questions and plans as plain text output. The user will see your output and reply.
+
+## Workflow
+
+### Step 1: Understand
+- Analyze the user's request
+- If anything is unclear or could be approached in multiple ways, **write your clarifying questions as text output**
+- Consider: scope, affected services, technical approach, priorities, dependencies, edge cases
+- The user will reply with answers in the next message
+
+### Step 2: Propose Plan
+- Present a structured plan as text:
+  - Which services are involved and what each should do
+  - Order of execution and dependencies between tasks
+  - Expected outcome
+- Ask the user to confirm (e.g. "Does this plan look good? Reply to confirm or suggest changes.")
+
+### Step 3: Execute (only after user confirms)
+- Create request files in each service's inbox: \`comms/inbox/{service}/req-{id}.md\`
+- ${templateNote}
+
+**IMPORTANT:** Always go through Steps 1-2 first. Only create request files after the user explicitly says to proceed. Never use interactive tools — communicate through text output only.
+
+## Available Services
+
+${serviceContext}
 
 ## User Message
 
