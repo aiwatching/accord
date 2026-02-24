@@ -258,6 +258,8 @@ export function useConsoleState() {
         const cost = d.costUsd as number | undefined;
         const turns = d.numTurns as number | undefined;
         line = { key: `ev-${Date.now()}-${Math.random()}`, type: 'event', service: svc, text: `[DONE] ${svc} — ${turns ?? '?'} turns, $${cost?.toFixed(4) ?? '?'}`, timestamp: Date.now() };
+        // Refresh requests after session completes (orchestrator may have created new requests)
+        refreshRequests();
       } else if (ev.type === 'session:error') {
         line = { key: `ev-${Date.now()}-${Math.random()}`, type: 'event', service: svc, text: `[ERROR] ${svc}: ${d.error as string}`, timestamp: Date.now() };
       } else if (ev.type === 'session:plan-generating') {
@@ -283,6 +285,7 @@ export function useConsoleState() {
         const label = ev.type === 'request:claimed' ? 'CLAIMED'
           : ev.type === 'request:completed' ? 'COMPLETED' : 'FAILED';
         line = { key: `ev-${Date.now()}-${Math.random()}`, type: 'event', requestId: reqId, service: svc, text: `[${label}] ${reqId} (${svc})`, timestamp: Date.now() };
+        refreshRequests();
       } else if (ev.type === 'a2a:status-update') {
         const state = d.state as string;
         const msg = d.message as string | undefined;

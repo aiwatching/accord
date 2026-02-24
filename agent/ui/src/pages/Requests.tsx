@@ -35,6 +35,7 @@ const selectStyle: React.CSSProperties = {
 
 export function RequestsPage({ requests, services, onRetry, onCancel }: RequestsPageProps) {
   const [filterService, setFilterService] = useState<string>('all');
+  const [filterFrom, setFilterFrom] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [logContent, setLogContent] = useState<string | null>(null);
@@ -67,16 +68,31 @@ export function RequestsPage({ requests, services, onRetry, onCancel }: Requests
     }
   }, [expandedId]);
 
+  // Derive unique "from" values from actual data
+  const fromValues = useMemo(() => {
+    const s = new Set(requests.map(r => r.from));
+    return [...s].sort();
+  }, [requests]);
+
+  // Derive unique "service" (to) values from actual data
+  const serviceValues = useMemo(() => {
+    const s = new Set(requests.map(r => r.service));
+    return [...s].sort();
+  }, [requests]);
+
   const filtered = useMemo(() => {
     let result = requests;
     if (filterService !== 'all') {
       result = result.filter(r => r.service === filterService);
     }
+    if (filterFrom !== 'all') {
+      result = result.filter(r => r.from === filterFrom);
+    }
     if (filterStatus !== 'all') {
       result = result.filter(r => r.status === filterStatus);
     }
     return result;
-  }, [requests, filterService, filterStatus]);
+  }, [requests, filterService, filterFrom, filterStatus]);
 
   // Count by status for summary
   const statusCounts = useMemo(() => {
@@ -134,10 +150,17 @@ export function RequestsPage({ requests, services, onRetry, onCancel }: Requests
         flexShrink: 0,
       }}>
         <label style={{ color: '#94a3b8', fontSize: 11 }}>
-          Service:
+          From:
+          <select value={filterFrom} onChange={e => setFilterFrom(e.target.value)} style={{ ...selectStyle, marginLeft: 4 }}>
+            <option value="all">All</option>
+            {fromValues.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </label>
+        <label style={{ color: '#94a3b8', fontSize: 11 }}>
+          To:
           <select value={filterService} onChange={e => setFilterService(e.target.value)} style={{ ...selectStyle, marginLeft: 4 }}>
             <option value="all">All</option>
-            {services.map(s => <option key={s} value={s}>{s}</option>)}
+            {serviceValues.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </label>
         <label style={{ color: '#94a3b8', fontSize: 11 }}>
