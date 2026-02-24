@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import matter from 'gray-matter';
 import { getHubState, triggerDispatch } from '../hub-state.js';
 import { getAccordDir, getServiceNames, getInboxPath, loadRegistryYaml } from '../config.js';
 import { scanInboxes, scanArchives } from '../scanner.js';
@@ -9,6 +10,7 @@ import { eventBus } from '../event-bus.js';
 import { logger } from '../logger.js';
 import { generatePlan } from '../planner.js';
 import type { StreamEvent } from '../adapters/adapter.js';
+import type { DirectiveFrontmatter, DirectiveState } from '../types.js';
 
 interface ExecBody {
   command: string;
@@ -179,6 +181,11 @@ export function registerCommandRoutes(app: FastifyInstance): void {
     const serviceNames = getServiceNames(config);
     const orchestratorPrompt = buildOrchestratorPrompt(message, serviceNames, accordDir, approvedPlan);
 
+    // Snapshot existing request IDs to detect new requests after session completes
+    const existingRequestIds = new Set(
+      scanInboxes(accordDir, config, hubDir).map(r => r.frontmatter.id)
+    );
+
     try {
       const result = await adapter.invoke({
         prompt: orchestratorPrompt,
@@ -214,8 +221,69 @@ export function registerCommandRoutes(app: FastifyInstance): void {
         sessionManager.saveToDisk(accordDir);
       }
 
+      // Handle AskUserQuestion: agent wants to ask the user something
+      if (result.pendingQuestion) {
+        const durationMs = Date.now() - startTime;
+        fs.appendFileSync(logFile, `\n--- waiting for user input | ${durationMs}ms ---\n`);
+
+        eventBus.emit('session:ask-user', {
+          service: 'orchestrator',
+          questions: result.pendingQuestion,
+        });
+
+        return {
+          success: true,
+          pendingQuestion: true,
+          questions: result.pendingQuestion,
+          durationMs,
+          costUsd: result.costUsd,
+          sessionId: result.sessionId,
+        };
+      }
+
       const durationMs = Date.now() - startTime;
       fs.appendFileSync(logFile, `\n--- completed | ${durationMs}ms ---\n`);
+
+      // Detect new requests created during the session
+      const currentRequests = scanInboxes(accordDir, config, hubDir);
+      const newRequests = currentRequests.filter(r => !existingRequestIds.has(r.frontmatter.id));
+
+      let directiveId: string | undefined;
+      if (newRequests.length > 0) {
+        // Auto-create a directive to track these requests
+        directiveId = `dir-${Date.now()}`;
+        const directive = createAutoDirective({
+          id: directiveId,
+          title: message.slice(0, 100),
+          requestIds: newRequests.map(r => r.frontmatter.id),
+          accordDir,
+          userMessage: message,
+        });
+
+        // Register with coordinator if available
+        const { coordinator } = getHubState();
+        if (coordinator) {
+          coordinator.registerDirective(directive);
+        }
+
+        // Trigger dispatch immediately for new requests
+        triggerDispatch();
+
+        // Log summary
+        const summary = newRequests
+          .map(r => `  - ${r.frontmatter.id} → ${r.serviceName}`)
+          .join('\n');
+        const summaryText = `\nCreated directive ${directiveId} tracking ${newRequests.length} request(s):\n${summary}\n`;
+        fs.appendFileSync(logFile, summaryText);
+        eventBus.emit('session:output', {
+          service: 'orchestrator',
+          chunk: summaryText,
+          event: { type: 'text' as const, text: summaryText },
+          streamIndex: streamIndex++,
+        });
+
+        logger.info(`[session] Auto-created directive ${directiveId} with ${newRequests.length} request(s)`);
+      }
 
       eventBus.emit('session:complete', {
         service: 'orchestrator',
@@ -230,6 +298,8 @@ export function registerCommandRoutes(app: FastifyInstance): void {
         costUsd: result.costUsd,
         numTurns: result.numTurns,
         sessionId: result.sessionId,
+        directiveId,
+        requestsCreated: newRequests.length,
       };
     } catch (err) {
       const error = String(err);
@@ -585,7 +655,7 @@ You are the **orchestrator**. You coordinate work across services by creating re
 1. NEVER write application code — only protocol files in this hub directory.
 2. Create request files in each service's inbox: \`comms/inbox/{service}/req-{id}.md\`
 3. ${templateNote}
-4. DO NOT use interactive tools (AskUserQuestion, EnterPlanMode, etc.) — communicate through text output only.
+4. DO NOT use interactive tools (EnterPlanMode, Task, Skill, etc.)
 
 ## Approved Plan
 
@@ -610,28 +680,28 @@ You are the **orchestrator** — a planning and coordination agent. You help the
 **Rules:**
 1. NEVER write application code — only protocol files in this hub directory.
 2. DO NOT create request files until the user explicitly approves your plan.
-3. DO NOT use interactive tools (AskUserQuestion, EnterPlanMode, etc.) — just write your questions and plans as plain text output. The user will see your output and reply.
+3. Use AskUserQuestion tool to ask the user clarifying questions with structured options.
+4. DO NOT use other interactive tools (EnterPlanMode, Task, Skill, etc.)
 
 ## Workflow
 
 ### Step 1: Understand
 - Analyze the user's request
-- If anything is unclear or could be approached in multiple ways, **write your clarifying questions as text output**
+- If anything is unclear or could be approached in multiple ways, use AskUserQuestion to ask clarifying questions with specific options
 - Consider: scope, affected services, technical approach, priorities, dependencies, edge cases
-- The user will reply with answers in the next message
 
 ### Step 2: Propose Plan
-- Present a structured plan as text:
+- Present a structured plan:
   - Which services are involved and what each should do
   - Order of execution and dependencies between tasks
   - Expected outcome
-- Ask the user to confirm (e.g. "Does this plan look good? Reply to confirm or suggest changes.")
+- Ask the user to confirm before proceeding
 
 ### Step 3: Execute (only after user confirms)
 - Create request files in each service's inbox: \`comms/inbox/{service}/req-{id}.md\`
 - ${templateNote}
 
-**IMPORTANT:** Always go through Steps 1-2 first. Only create request files after the user explicitly says to proceed. Never use interactive tools — communicate through text output only.
+**IMPORTANT:** Always go through Steps 1-2 first. Only create request files after the user explicitly says to proceed.
 
 ## Available Services
 
@@ -640,4 +710,36 @@ ${serviceContext}
 ## User Message
 
 ${userMessage}`;
+}
+
+/** Auto-create a directive file to track requests produced by an orchestrator session. */
+function createAutoDirective(params: {
+  id: string;
+  title: string;
+  requestIds: string[];
+  accordDir: string;
+  userMessage: string;
+}): DirectiveState {
+  const directivesDir = path.join(params.accordDir, 'directives');
+  fs.mkdirSync(directivesDir, { recursive: true });
+
+  const now = new Date().toISOString();
+  const frontmatter: DirectiveFrontmatter = {
+    id: params.id,
+    title: params.title,
+    priority: 'medium',
+    status: 'implementing', // requests already created, skip planning/negotiating
+    created: now,
+    updated: now,
+    requests: params.requestIds,
+  };
+
+  const body = `## User Request\n\n${params.userMessage}\n`;
+  const filePath = path.join(directivesDir, `${params.id}.md`);
+  const content = matter.stringify(body, frontmatter as unknown as Record<string, unknown>);
+  fs.writeFileSync(filePath, content, 'utf-8');
+
+  logger.info(`Auto-created directive ${params.id} at ${filePath}`);
+
+  return { frontmatter, body, filePath };
 }

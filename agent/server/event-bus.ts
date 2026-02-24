@@ -79,6 +79,11 @@ export interface SessionPlanTimeoutEvent {
   service: string;
 }
 
+export interface SessionAskUserEvent {
+  service: string;
+  questions: unknown;
+}
+
 export interface ServiceAddedEvent {
   name: string;
   type: string;
@@ -149,6 +154,7 @@ export interface EventMap {
   'session:plan-ready': SessionPlanReadyEvent;
   'session:plan-canceled': SessionPlanCanceledEvent;
   'session:plan-timeout': SessionPlanTimeoutEvent;
+  'session:ask-user': SessionAskUserEvent;
   'service:added': ServiceAddedEvent;
   'service:removed': ServiceRemovedEvent;
   'a2a:status-update': A2AStatusUpdateEvent;
@@ -193,7 +199,7 @@ class AccordEventBus extends EventEmitter {
       'request:claimed', 'request:completed', 'request:failed',
       'sync:pull', 'sync:push',
       'session:start', 'session:output', 'session:complete', 'session:error',
-      'session:plan-generating', 'session:plan-ready', 'session:plan-canceled', 'session:plan-timeout',
+      'session:plan-generating', 'session:plan-ready', 'session:plan-canceled', 'session:plan-timeout', 'session:ask-user',
       'service:added', 'service:removed',
       'a2a:status-update', 'a2a:artifact-update',
       'directive:phase-change', 'directive:contract-negotiation', 'directive:test-result',

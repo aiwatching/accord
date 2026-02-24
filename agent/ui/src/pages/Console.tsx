@@ -21,6 +21,8 @@ export function Console({ renderRequestsPage, onViewHistory }: ConsoleProps) {
     pendingPlan,
     handlePlanApprove,
     handlePlanCancel,
+    pendingQuestions,
+    handleAnswerQuestion,
     orchestratorExecuting,
     serviceExecuting,
     allRequests,
@@ -81,6 +83,8 @@ export function Console({ renderRequestsPage, onViewHistory }: ConsoleProps) {
             pendingPlan={pendingPlan}
             onPlanApprove={handlePlanApprove}
             onPlanCancel={handlePlanCancel}
+            pendingQuestions={pendingQuestions}
+            onAnswerQuestion={handleAnswerQuestion}
             logsExpanded={logsExpanded}
             logsGeneration={logsGeneration}
             onToggleLogs={toggleLogs}

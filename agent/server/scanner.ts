@@ -184,17 +184,21 @@ function isRequestFile(filename: string): boolean {
     && !filename.endsWith('.session.md');
 }
 
-function scanDirectory(dir: string, results: AccordRequest[], seen?: Set<string>): void {
+function scanDirectory(dir: string, results: AccordRequest[], seen?: Set<string>, recursive = false): void {
   if (!fs.existsSync(dir)) return;
 
-  const files = fs.readdirSync(dir).filter(isRequestFile);
-  for (const file of files) {
-    const req = parseRequest(path.join(dir, file));
-    if (req) {
-      // Deduplicate by request ID (same request may exist in root + team inboxes)
-      if (seen && seen.has(req.frontmatter.id)) continue;
-      if (seen) seen.add(req.frontmatter.id);
-      results.push(req);
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isFile() && isRequestFile(entry.name)) {
+      const req = parseRequest(path.join(dir, entry.name));
+      if (req) {
+        // Deduplicate by request ID (same request may exist in root + team inboxes)
+        if (seen && seen.has(req.frontmatter.id)) continue;
+        if (seen) seen.add(req.frontmatter.id);
+        results.push(req);
+      }
+    } else if (recursive && entry.isDirectory() && !entry.name.startsWith('.')) {
+      scanDirectory(path.join(dir, entry.name), results, seen, true);
     }
   }
 }
@@ -210,11 +214,12 @@ export function scanArchives(accordDir: string, config: AccordConfig, hubDir?: s
   const results: AccordRequest[] = [];
   const seen = new Set<string>();
 
-  // 1. Scan hub-level archive(s)
+  // 1. Scan hub-level archive(s), including subdirectories
+  //    (service agents may archive into service-named subdirs like archive/web-server/)
   const dirs = hubDir ? getAllAccordDirs(hubDir, config) : [accordDir];
   for (const dir of dirs) {
     const archiveDir = path.join(dir, 'comms', 'archive');
-    scanDirectory(archiveDir, results, seen);
+    scanDirectory(archiveDir, results, seen, true);
   }
 
   // 2. For multi-repo orchestrator, also scan each service's archive

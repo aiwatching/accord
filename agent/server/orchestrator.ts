@@ -101,6 +101,15 @@ export class OrchestratorCoordinator {
     return this.activeDirectives;
   }
 
+  /** Register a new directive for tracking (e.g. auto-created after orchestrator session). */
+  registerDirective(state: DirectiveState): void {
+    if (state.frontmatter.status === 'completed' || state.frontmatter.status === 'failed') {
+      return; // Don't track terminal directives
+    }
+    this.activeDirectives.set(state.frontmatter.id, state);
+    logger.info(`OrchestratorCoordinator: registered directive ${state.frontmatter.id} (phase: ${state.frontmatter.status}, requests: ${state.frontmatter.requests.length})`);
+  }
+
   // ── Event handlers ──────────────────────────────────────────────────────
 
   private onRequestCompleted(event: RequestCompletedEvent): void {

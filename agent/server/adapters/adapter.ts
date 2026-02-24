@@ -65,6 +65,8 @@ export interface AgentInvocationResult {
   durationMs: number;
   usage?: TokenUsage;
   modelUsage?: Record<string, ModelUsageEntry>;
+  /** If the agent tried to ask the user a question (AskUserQuestion), captured here. */
+  pendingQuestion?: unknown;
 }
 
 export interface AgentAdapter {
@@ -345,7 +347,8 @@ class ClaudeCodeCLIAdapter implements AgentAdapter {
       '--verbose',
       '--setting-sources', 'project',
       '--model', model,
-      '--allowed-tools', 'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep',
+      '--allowed-tools', 'Read,Write,Edit,Bash,Glob,Grep,AskUserQuestion',
+      '--disallowed-tools', 'EnterPlanMode,ExitPlanMode,Task,TaskCreate,TaskUpdate,TaskGet,TaskList,TaskOutput,TaskStop,Skill,NotebookEdit',
     ];
 
     if (params.resumeSessionId) {
@@ -365,48 +368,90 @@ class ClaudeCodeCLIAdapter implements AgentAdapter {
     let usage: TokenUsage | undefined;
     let modelUsage: Record<string, ModelUsageEntry> | undefined;
     let resultError: string | undefined;
+    let pendingQuestion: unknown = undefined;
 
     const toolNames = new Map<string, string>();
 
-    await spawnClaude({
-      args,
-      cwd: params.cwd,
-      timeout: params.timeout,
-      stdinData: params.prompt,
-      onLine: (m) => {
-        if (m.type === 'system' && m.subtype === 'init') {
-          sessionId = m.session_id as string | undefined;
-        } else if (m.type === 'assistant' && m.message) {
-          emitAssistantEvents(m.message, toolNames, params.onOutput);
-        } else if (m.type === 'user' && m.message) {
-          emitToolResultEvents(m.message, toolNames, params.onOutput);
-        } else if (m.type === 'result') {
-          sessionId = m.session_id as string | undefined;
-          costUsd = m.total_cost_usd as number | undefined;
-          numTurns = m.num_turns as number | undefined;
+    try {
+      await spawnClaude({
+        args,
+        cwd: params.cwd,
+        timeout: params.timeout,
+        stdinData: params.prompt,
+        onLine: (m) => {
+          if (m.type === 'system' && m.subtype === 'init') {
+            sessionId = m.session_id as string | undefined;
+          } else if (m.type === 'assistant' && m.message) {
+            // Capture AskUserQuestion tool calls before they fail
+            const msg = m.message as { content?: Array<Record<string, unknown>> };
+            if (Array.isArray(msg.content)) {
+              for (const block of msg.content) {
+                if (block.type === 'tool_use' && block.name === 'AskUserQuestion') {
+                  pendingQuestion = block.input;
+                  logger.info('[claude-code] Captured AskUserQuestion tool call');
+                }
+              }
+            }
+            emitAssistantEvents(m.message, toolNames, params.onOutput);
+          } else if (m.type === 'user' && m.message) {
+            emitToolResultEvents(m.message, toolNames, params.onOutput);
+          } else if (m.type === 'result') {
+            sessionId = m.session_id as string | undefined;
+            costUsd = m.total_cost_usd as number | undefined;
+            numTurns = m.num_turns as number | undefined;
 
-          if (m.usage) {
-            const u = m.usage as Record<string, number>;
-            usage = {
-              input_tokens: u.input_tokens ?? 0,
-              output_tokens: u.output_tokens ?? 0,
-              cache_creation_input_tokens: u.cache_creation_input_tokens ?? 0,
-              cache_read_input_tokens: u.cache_read_input_tokens ?? 0,
-            };
-          }
-          if (m.modelUsage) {
-            modelUsage = m.modelUsage as Record<string, ModelUsageEntry>;
-          }
+            if (m.usage) {
+              const u = m.usage as Record<string, number>;
+              usage = {
+                input_tokens: u.input_tokens ?? 0,
+                output_tokens: u.output_tokens ?? 0,
+                cache_creation_input_tokens: u.cache_creation_input_tokens ?? 0,
+                cache_read_input_tokens: u.cache_read_input_tokens ?? 0,
+              };
+            }
+            if (m.modelUsage) {
+              modelUsage = m.modelUsage as Record<string, ModelUsageEntry>;
+            }
 
-          if (m.is_error) {
-            const errors = m.errors as string[] | undefined;
-            resultError = `Agent error (${m.subtype}): ${errors?.join(', ') ?? 'unknown'}`;
-          }
+            if (m.is_error) {
+              const errors = m.errors as string[] | undefined;
+              resultError = `Agent error (${m.subtype}): ${errors?.join(', ') ?? 'unknown'}`;
+            }
 
-          logger.info(`[claude-code] Completed: ${numTurns} turns, $${costUsd?.toFixed(4)}, input=${usage?.input_tokens ?? '?'}, output=${usage?.output_tokens ?? '?'}, cache_read=${usage?.cache_read_input_tokens ?? '?'}`);
-        }
-      },
-    });
+            logger.info(`[claude-code] Completed: ${numTurns} turns, $${costUsd?.toFixed(4)}, input=${usage?.input_tokens ?? '?'}, output=${usage?.output_tokens ?? '?'}, cache_read=${usage?.cache_read_input_tokens ?? '?'}`);
+          }
+        },
+      });
+    } catch (err) {
+      // If the CLI failed but we captured a question, return it gracefully
+      if (pendingQuestion) {
+        logger.info('[claude-code] CLI errored on AskUserQuestion — returning question to caller');
+        return {
+          sessionId,
+          costUsd,
+          numTurns,
+          durationMs: Date.now() - startTime,
+          usage,
+          modelUsage,
+          pendingQuestion,
+        };
+      }
+      throw err;
+    }
+
+    // If result-level error but we have a pending question, return gracefully
+    if (resultError && pendingQuestion) {
+      logger.info('[claude-code] Agent error on AskUserQuestion — returning question to caller');
+      return {
+        sessionId,
+        costUsd,
+        numTurns,
+        durationMs: Date.now() - startTime,
+        usage,
+        modelUsage,
+        pendingQuestion,
+      };
+    }
 
     if (resultError) throw new Error(resultError);
 

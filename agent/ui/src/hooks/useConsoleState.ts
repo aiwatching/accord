@@ -90,6 +90,9 @@ export function useConsoleState() {
   // -- Planner state --
   const [pendingPlan, setPendingPlan] = useState<string | null>(null);
 
+  // -- AskUserQuestion state --
+  const [pendingQuestions, setPendingQuestions] = useState<unknown | null>(null);
+
   // -- Executing flags --
   const [orchestratorExecuting, setOrchestratorExecuting] = useState(false);
   const [serviceExecuting, setServiceExecuting] = useState(false);
@@ -261,6 +264,9 @@ export function useConsoleState() {
         line = { key: `ev-${Date.now()}-${Math.random()}`, type: 'event', service: svc, text: `[PLANNING] Generating execution plan...`, timestamp: Date.now() };
       } else if (ev.type === 'session:plan-ready') {
         setPendingPlan(d.plan as string);
+      } else if (ev.type === 'session:ask-user') {
+        setPendingQuestions(d.questions);
+        line = { key: `ev-${Date.now()}-${Math.random()}`, type: 'event', service: svc, text: `[QUESTION] Orchestrator needs your input`, timestamp: Date.now() };
       } else if (ev.type === 'session:plan-canceled') {
         setPendingPlan(null);
         line = { key: `ev-${Date.now()}-${Math.random()}`, type: 'event', service: svc, text: `[CANCELED] Plan canceled`, timestamp: Date.now() };
@@ -543,6 +549,39 @@ export function useConsoleState() {
     }
   }, [appendOrchestrator]);
 
+  // -- Answer question handler --
+  const handleAnswerQuestion = useCallback(async (answers: Record<string, string>) => {
+    setPendingQuestions(null);
+
+    // Format answers as text and send as orchestrator message
+    const lines = Object.entries(answers).map(([q, a]) => `Q: ${q}\nA: ${a}`);
+    const message = lines.join('\n\n');
+
+    appendOrchestrator([{
+      key: `msg-${Date.now()}`,
+      type: 'event',
+      service: 'orchestrator',
+      text: `[YOU] ${message}`,
+      timestamp: Date.now(),
+    }]);
+
+    try {
+      await fetch('/api/session/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+      });
+    } catch (err) {
+      appendOrchestrator([{
+        key: `err-${Date.now()}`,
+        type: 'event',
+        service: 'orchestrator',
+        text: `[ERROR] Network error: ${err}`,
+        timestamp: Date.now(),
+      }]);
+    }
+  }, [appendOrchestrator]);
+
   const handlePlanCancel = useCallback(async () => {
     setPendingPlan(null);
     try {
@@ -574,6 +613,10 @@ export function useConsoleState() {
     pendingPlan,
     handlePlanApprove,
     handlePlanCancel,
+
+    // AskUserQuestion
+    pendingQuestions,
+    handleAnswerQuestion,
 
     // Executing
     orchestratorExecuting,
