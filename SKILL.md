@@ -41,9 +41,9 @@ Accord: No modules found. Say "initialize accord" to set up module tracking.
 
 Trigger: user says "initialize accord", "init accord", "setup accord", or this is the first time and no modules exist.
 
-### Default: Single-Module Project
+### Step 1: Create Root `.accord/`
 
-If the user does not specify sub-modules, create `.accord/` at the project root only:
+Always create `.accord/` at the project root first:
 
 ```
 project-root/
@@ -54,17 +54,19 @@ project-root/
 └── src/
 ```
 
-All changes across the entire project are tracked by this single root module.
+### Step 2: Ask the User About Sub-Modules
 
-### With Sub-Modules: User Must Specify
+**You must ask.** Do not scan for build files. Do not guess. Say:
 
-Sub-modules are **only** created when the user explicitly declares them. Examples:
+```
+Accord: root module created.
+Does this project have sub-modules (e.g. microservices, packages)?
+If yes, please list their paths (e.g. services/api, services/web, libs/shared).
+If no, we're done — the root module will track everything.
+```
 
-- "initialize accord with modules: services/api, services/web, libs/shared"
-- "init accord, sub-modules are frontend and backend"
-- "add accord module services/payment"
-
-For each declared sub-module, create `.accord/` inside that directory:
+- User says **no** (or just "initialize accord" with no further input) → done, root only.
+- User lists paths → create `.accord/` in each specified directory:
 
 ```
 project-root/
@@ -73,7 +75,7 @@ project-root/
 │   ├── memory.md
 │   └── history/
 ├── services/api/
-│   └── .accord/                # Sub-module (user declared)
+│   └── .accord/                # Sub-module (user specified)
 │       ├── module.md
 │       ├── memory.md
 │       └── history/
@@ -84,7 +86,7 @@ project-root/
         └── history/
 ```
 
-**Never auto-discover sub-modules.** Don't scan for build files to guess module boundaries. The user knows their project structure.
+**Never auto-discover sub-modules.** The user decides what counts as a sub-module.
 
 ### Adding / Removing Sub-Modules Later
 
@@ -153,14 +155,35 @@ After you finish making changes to the codebase (bug fix, feature, refactor, etc
 
 ---
 
-## ON_LEARN — When You Understand a Module Better
+## ON_SCAN — Actively Scan Modules
 
-As you read code, fix bugs, or implement features, you'll learn things about modules. When you gain meaningful understanding:
+Trigger: user says "scan modules", "scan accord", "update module descriptions", or "accord scan".
 
-1. **Update `module.md`** with what you learned:
-   - **Purpose**: what the module does in the system
+For each module (root + all sub-modules):
+
+1. **Read key files** to understand the module:
+   - Build file (package.json, pom.xml, go.mod, etc.) for dependencies and project type
+   - Entry points (main.*, index.*, app.*, etc.)
+   - README if it exists
+   - Top-level source files for public APIs
+   - Don't read everything — just enough to write a good summary
+2. **Update `module.md`**:
+   - **Purpose**: what this module does, in 1-2 sentences
    - **Key APIs**: main public interfaces, endpoints, exported functions
-   - **Dependencies**: other modules it calls, external services, databases
+   - **Dependencies**: other modules/services it depends on
+3. **Keep it under 150 words**
+4. **Preserve human-written content** — if the user has edited module.md, refine around their text
+
+User can also scan a single module:
+- "scan accord module services/api" → only scan and update `services/api/.accord/module.md`
+
+---
+
+## ON_LEARN — Passive Learning
+
+As you work (read code, fix bugs, implement features), you'll naturally learn things about modules. When you gain meaningful understanding:
+
+1. **Update `module.md`** — refine Purpose, Key APIs, Dependencies
 2. **Update `memory.md`** with deeper insights:
    - Design patterns used
    - Common pitfalls or gotchas
@@ -169,6 +192,8 @@ As you read code, fix bugs, or implement features, you'll learn things about mod
 3. **Keep it concise** — module.md < 150 words, memory.md < 300 words
 4. **Be factual** — only write what you've confirmed by reading code
 5. **Don't force it** — only update when you genuinely learned something new
+
+This is passive — it happens as a side effect of normal work, unlike ON_SCAN which is explicitly triggered.
 
 ---
 
