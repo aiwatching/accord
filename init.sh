@@ -31,7 +31,6 @@ ROLE=""
 INIT_SERVICES=false
 SERVICE_REPOS=""
 REPO_URL=""
-V2=false
 TEAM=""
 ORG=""
 SERVICE_V2_NAME=""
@@ -58,10 +57,9 @@ Options:
   --init-services             Also init all service repos (orchestrator only, dirs must be siblings)
   --service-repos <mapping>   Repo URLs for services (format: name=url,name=url) — orchestrator only
   --repo <git-url>            Git repo URL for this service (stored in config)
-  --v2                        Use v2 multi-team hub structure
-  --service-name <name>       This service's name (v2 only; defaults to first in --services)
-  --team <name>               Team name (v2 only)
-  --org <name>                Organization name (v2 only)
+  --service-name <name>       This service's name (defaults to first in --services)
+  --team <name>               Team name
+  --org <name>                Organization name
   --force                     Re-initialize even if .accord/config.yaml exists
   --no-interactive            Use auto-detected defaults without prompts
   --help                      Show this help message
@@ -205,7 +203,7 @@ parse_args() {
             --init-services)  INIT_SERVICES=true; shift ;;
             --service-repos)  SERVICE_REPOS="$2"; shift 2 ;;
             --repo)           REPO_URL="$2"; shift 2 ;;
-            --v2)             V2=true; shift ;;
+            --v2)             shift ;;  # deprecated, v2 is now the default
             --service-name)   SERVICE_V2_NAME="$2"; shift 2 ;;
             --team)           TEAM="$2"; shift 2 ;;
             --org)            ORG="$2"; shift 2 ;;
@@ -1212,7 +1210,7 @@ scaffold_orchestrator_v2() {
             local cleaned=0
             # Inbox requests
             local inbox_files
-            inbox_files="$(find "$team_dir/comms/inbox" -name "req-*.md" 2>/dev/null || true)"
+            inbox_files="$(find "$team_dir/.accord/comms/inbox" -name "req-*.md" 2>/dev/null || true)"
             if [[ -n "$inbox_files" ]]; then
                 local count
                 count="$(echo "$inbox_files" | wc -l | xargs)"
@@ -1222,7 +1220,7 @@ scaffold_orchestrator_v2() {
             fi
             # Archived requests
             local archive_files
-            archive_files="$(find "$team_dir/comms/archive" -name "req-*.md" 2>/dev/null || true)"
+            archive_files="$(find "$team_dir/.accord/comms/archive" -name "req-*.md" 2>/dev/null || true)"
             if [[ -n "$archive_files" ]]; then
                 local count
                 count="$(echo "$archive_files" | wc -l | xargs)"
@@ -1242,7 +1240,7 @@ scaffold_orchestrator_v2() {
             fi
             # History logs
             local history_files
-            history_files="$(find "$team_dir/comms/history" -name "*.jsonl" 2>/dev/null || true)"
+            history_files="$(find "$team_dir/.accord/comms/history" -name "*.jsonl" 2>/dev/null || true)"
             if [[ -n "$history_files" ]]; then
                 local count
                 count="$(echo "$history_files" | wc -l | xargs)"
@@ -1251,12 +1249,12 @@ scaffold_orchestrator_v2() {
                 cleaned=$((cleaned + count))
             fi
             # Session logs + checkpoints
-            if [[ -d "$team_dir/comms/sessions" ]]; then
+            if [[ -d "$team_dir/.accord/comms/sessions" ]]; then
                 local session_count
-                session_count="$(find "$team_dir/comms/sessions" -type f 2>/dev/null | wc -l | xargs)"
+                session_count="$(find "$team_dir/.accord/comms/sessions" -type f 2>/dev/null | wc -l | xargs)"
                 if [[ "$session_count" -gt 0 ]]; then
                     log "Removing $session_count stale session file(s)..."
-                    find "$team_dir/comms/sessions" -type f -delete
+                    find "$team_dir/.accord/comms/sessions" -type f -delete
                     cleaned=$((cleaned + session_count))
                 fi
             fi
@@ -1319,23 +1317,23 @@ scaffold_orchestrator_v2() {
     mkdir -p "$team_dir/skills"
     touch "$team_dir/skills/.gitkeep"
 
-    # Comms structure
-    mkdir -p "$team_dir/comms/archive"
-    mkdir -p "$team_dir/comms/history"
-    mkdir -p "$team_dir/comms/sessions"
-    mkdir -p "$team_dir/comms/inbox/_team"
-    touch "$team_dir/comms/inbox/_team/.gitkeep"
+    # Comms structure (hidden inside .accord/)
+    mkdir -p "$team_dir/.accord/comms/archive"
+    mkdir -p "$team_dir/.accord/comms/history"
+    mkdir -p "$team_dir/.accord/comms/sessions"
+    mkdir -p "$team_dir/.accord/comms/inbox/_team"
+    touch "$team_dir/.accord/comms/inbox/_team/.gitkeep"
     for svc in "${svc_arr[@]}"; do
         svc="$(echo "$svc" | xargs)"
-        mkdir -p "$team_dir/comms/inbox/${svc}"
-        touch "$team_dir/comms/inbox/${svc}/.gitkeep"
+        mkdir -p "$team_dir/.accord/comms/inbox/${svc}"
+        touch "$team_dir/.accord/comms/inbox/${svc}/.gitkeep"
     done
 
     # PROTOCOL.md + TEMPLATE.md
-    generate_comms_protocol "$team_dir/comms/PROTOCOL.md"
-    if [[ ! -f "$team_dir/comms/TEMPLATE.md" ]]; then
-        cp "$ACCORD_DIR/protocol/templates/request.md.template" "$team_dir/comms/TEMPLATE.md"
-        log "Created teams/$TEAM/comms/TEMPLATE.md"
+    generate_comms_protocol "$team_dir/.accord/comms/PROTOCOL.md"
+    if [[ ! -f "$team_dir/.accord/comms/TEMPLATE.md" ]]; then
+        cp "$ACCORD_DIR/protocol/templates/request.md.template" "$team_dir/.accord/comms/TEMPLATE.md"
+        log "Created teams/$TEAM/.accord/comms/TEMPLATE.md"
     fi
 
     # Copy protocol helpers
@@ -1455,8 +1453,8 @@ hub_sync_on_init_v2() {
         fi
 
         # Create inbox if missing
-        mkdir -p "$team_dir/comms/inbox/${SERVICE_V2_NAME}"
-        touch "$team_dir/comms/inbox/${SERVICE_V2_NAME}/.gitkeep"
+        mkdir -p "$team_dir/.accord/comms/inbox/${SERVICE_V2_NAME}"
+        touch "$team_dir/.accord/comms/inbox/${SERVICE_V2_NAME}/.gitkeep"
 
         # Commit + push
         (cd "$hub_repo_dir" && git add -A)
@@ -1618,19 +1616,12 @@ main() {
     TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
 
     # Idempotency: skip if already initialized (unless --force)
-    # Orchestrator uses flat config.yaml; service uses .accord/config.yaml
     if [[ "$FORCE" != "true" ]]; then
-        if [[ "$V2" == true && "$ROLE" == "orchestrator" && -f "$TARGET_DIR/accord.yaml" ]]; then
+        if [[ "$ROLE" == "orchestrator" && -f "$TARGET_DIR/accord.yaml" ]]; then
             log "Already initialized ($TARGET_DIR/accord.yaml exists). Use --force to re-initialize."
             exit 0
-        elif [[ "$V2" == true && "$ROLE" != "orchestrator" && -f "$TARGET_DIR/.accord/service.yaml" ]]; then
+        elif [[ "$ROLE" != "orchestrator" && -f "$TARGET_DIR/.accord/service.yaml" ]]; then
             log "Already initialized ($TARGET_DIR/.accord/service.yaml exists). Use --force to re-initialize."
-            exit 0
-        elif [[ "$V2" != true && "$ROLE" == "orchestrator" && -f "$TARGET_DIR/config.yaml" ]]; then
-            log "Already initialized ($TARGET_DIR/config.yaml exists). Use --force to re-initialize."
-            exit 0
-        elif [[ "$V2" != true && "$ROLE" != "orchestrator" && -f "$TARGET_DIR/.accord/config.yaml" ]]; then
-            log "Already initialized ($TARGET_DIR/.accord/config.yaml exists). Use --force to re-initialize."
             exit 0
         fi
     fi
@@ -1649,54 +1640,26 @@ main() {
 
     validate_inputs
 
-    if [[ "$V2" == true ]]; then
-        # v2 multi-team path
-        if [[ "$ROLE" == "orchestrator" ]]; then
-            [[ -z "$TEAM" ]] && TEAM="$(echo "$PROJECT_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')"
-            [[ -z "$ORG" ]] && ORG="$TEAM"
-            scaffold_orchestrator_v2
-            install_orchestrator_adapter
-            print_orchestrator_summary
-            if [[ "$INIT_SERVICES" == true ]]; then
-                init_service_repos
-            fi
-        else
-            # v2 service init
-            if [[ -z "$SERVICE_V2_NAME" ]]; then
-                IFS=',' read -ra svc_arr <<< "$SERVICES"
-                SERVICE_V2_NAME="${svc_arr[0]}"
-                SERVICE_V2_NAME="$(echo "$SERVICE_V2_NAME" | xargs)"
-            fi
-            [[ -z "$TEAM" ]] && err "--team is required for v2 service init"
-            scaffold_service_v2
-            hub_sync_on_init_v2
-            install_adapter
-            print_summary
-        fi
-    elif [[ "$ROLE" == "orchestrator" ]]; then
-        scaffold_orchestrator
+    if [[ "$ROLE" == "orchestrator" ]]; then
+        [[ -z "$TEAM" ]] && TEAM="$(echo "$PROJECT_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')"
+        [[ -z "$ORG" ]] && ORG="$TEAM"
+        scaffold_orchestrator_v2
         install_orchestrator_adapter
         print_orchestrator_summary
         if [[ "$INIT_SERVICES" == true ]]; then
             init_service_repos
         fi
     else
-        scaffold_project
-        generate_registry
-        hub_sync_on_init
-        generate_watch_script
-
-        # Copy accord-sync.sh to .accord/ for local use
-        if [[ -f "$ACCORD_DIR/accord-sync.sh" ]]; then
-            cp "$ACCORD_DIR/accord-sync.sh" "$TARGET_DIR/.accord/accord-sync.sh"
-            chmod +x "$TARGET_DIR/.accord/accord-sync.sh"
-            log "Copied accord-sync.sh to .accord/"
+        # Service init
+        if [[ -z "$SERVICE_V2_NAME" ]]; then
+            IFS=',' read -ra svc_arr <<< "$SERVICES"
+            SERVICE_V2_NAME="${svc_arr[0]}"
+            SERVICE_V2_NAME="$(echo "$SERVICE_V2_NAME" | xargs)"
         fi
-
-        # Note: Hub Service (server/ + ui/) is copied into orchestrator projects by scaffold_orchestrator_v2
-
+        [[ -z "$TEAM" ]] && err "--team is required for service init"
+        scaffold_service_v2
+        hub_sync_on_init_v2
         install_adapter
-        run_scan
         print_summary
     fi
 }

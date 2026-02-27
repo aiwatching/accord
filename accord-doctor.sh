@@ -407,7 +407,7 @@ if [[ -f "$PROJECT_DIR/.accord/service.yaml" ]]; then
             fail "No hub clone found in .accord/.hub/"
         fi
     else
-        fail ".accord/.hub/ directory not found — run init with --v2"
+        fail ".accord/.hub/ directory not found — run init first"
     fi
 fi
 

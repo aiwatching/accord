@@ -115,7 +115,7 @@ find_v2_hub_clone() {
             return
         fi
     done
-    err "No hub clone found in .accord/.hub/ — run init with --v2 first"
+    err "No hub clone found in .accord/.hub/ — run init first"
 }
 
 # ── Read Config ──────────────────────────────────────────────────────────────
@@ -528,7 +528,7 @@ main() {
 
     if [[ "$V2_MODE" == true ]]; then
         case "$SUBCOMMAND" in
-            init) log "v2 mode: hub clone is managed by init.sh --v2. Nothing to do." ;;
+            init) log "Hub clone is managed by init.sh. Nothing to do." ;;
             pull) do_pull_v2 ;;
             push) do_push_v2 ;;
         esac

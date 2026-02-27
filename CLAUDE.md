@@ -1,5 +1,10 @@
 # Accord - Agent-Agnostic Collaboration Framework
 
+## Obsidian Vault
+Location: /Users/zliu/MyDocuments/obsidian-project
+When I ask about my notes, use bash to search and read files from this directory.
+Example: find /Users/zliu/MyDocuments/obsidian-project -name "*.md" | head -20
+
 ## Project Overview
 Accord is a Git-based, agent-agnostic framework for coordinating multiple AI coding agents across services, modules, and sessions in large-scale software projects.
 

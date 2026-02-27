@@ -30,14 +30,15 @@ You are an AI coding agent for the **{{SERVICE_NAME}}** service in team **{{TEAM
 │           │   └── internal/*.md              — Internal contracts
 │           ├── directives/                    — High-level requirements
 │           ├── skills/                        — Team engineering standards
-│           └── comms/
-│               ├── inbox/{{SERVICE_NAME}}/    — YOUR inbox
-│               ├── inbox/_team/               — Cross-team inbox
-│               ├── archive/                   — Completed/rejected requests
-│               ├── history/                   — Audit log (JSONL)
-│               ├── sessions/                  — Session checkpoints
-│               ├── PROTOCOL.md
-│               └── TEMPLATE.md
+│           └── .accord/
+│               └── comms/
+│                   ├── inbox/{{SERVICE_NAME}}/— YOUR inbox
+│                   ├── inbox/_team/           — Cross-team inbox
+│                   ├── archive/               — Completed/rejected requests
+│                   ├── history/               — Audit log (JSONL)
+│                   ├── sessions/              — Session checkpoints
+│                   ├── PROTOCOL.md
+│                   └── TEMPLATE.md
 ├── src/
 ├── tests/
 └── ...
@@ -69,7 +70,7 @@ You are an AI coding agent for the **{{SERVICE_NAME}}** service in team **{{TEAM
 3. Read `$HUB/contracts/` relevant to your work
 4. Read `$HUB/skills/SKILL-INDEX.md` and load applicable skills for the current task
 5. Read `CLAUDE.md` for project history and recent changes
-6. Check for session checkpoint: `$HUB/comms/sessions/req-*.session.md` — if present, resume from where previous session left off
+6. Check for session checkpoint: `$HUB/.accord/comms/sessions/req-*.session.md` — if present, resume from where previous session left off
 
 ## ON_IMPLEMENT (Processing a Request)
 
@@ -91,9 +92,9 @@ If your implementation requires changes in another service:
 1. Check `$HUB/registry/` to identify the target service
 2. Check `$HUB/contracts/` to confirm the needed API doesn't exist
 3. Create a cascade request file:
-   - Path: `$HUB/comms/inbox/{target-service}/req-cascade-{parent-id}-{seq}.md`
+   - Path: `$HUB/.accord/comms/inbox/{target-service}/req-cascade-{parent-id}-{seq}.md`
    - Set `from: {{SERVICE_NAME}}`, `scope: internal`, `parent: {parent-request-id}`
-4. Use `$HUB/comms/TEMPLATE.md` for the request format
+4. Use `$HUB/.accord/comms/TEMPLATE.md` for the request format
 5. Commit the cascade request in the hub clone:
    ```
    cd .accord/.hub/* && git add . && git commit -m "accord({{SERVICE_NAME}}): cascade to {target}"
@@ -105,7 +106,7 @@ If your implementation requires changes in another service:
 If the target service is in another team:
 1. Check `$HUB/dependencies.yaml` for declared cross-team dependencies
 2. Place the request in the target team's inbox:
-   `teams/{target-team}/comms/inbox/_team/req-cross-{id}.md`
+   `teams/{target-team}/.accord/comms/inbox/_team/req-cross-{id}.md`
 3. Set `scope: cross-team` in the request frontmatter
 
 ## ON_COMMAND (Auto-Execute Remote Commands)
@@ -144,7 +145,7 @@ After each task, append to "## Recent Changes". Keep the last 20 entries.
 
 ## Session Checkpoint
 
-If a session checkpoint exists at `$HUB/comms/sessions/req-{id}.session.md`:
+If a session checkpoint exists at `$HUB/.accord/comms/sessions/req-{id}.session.md`:
 - **Resume from where previous session left off**
 - The checkpoint lists completed steps, in-progress work, remaining tasks, and key decisions
 - Complete the remaining work, then the daemon will clean up the checkpoint

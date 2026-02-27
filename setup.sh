@@ -241,7 +241,6 @@ execute_setup() {
 
     log "Initializing hub (orchestrator)"
     local init_args=(
-        --v2
         --role orchestrator
         --project-name "$PROJECT_NAME"
         --team "$TEAM_NAME"
@@ -286,7 +285,6 @@ execute_setup() {
         log "Initializing service: $svc → $svc_dir"
 
         local svc_args=(
-            --v2
             --target-dir "$svc_dir"
             --project-name "$PROJECT_NAME"
             --team "$TEAM_NAME"

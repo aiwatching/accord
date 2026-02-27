@@ -13,8 +13,8 @@ Monitor directive progress and update statuses.
    - For each directive with `status: in-progress`:
      - Read the `requests:` list from frontmatter
      - For each linked request ID:
-       - Check `comms/inbox/*/` for the request file and read its current `status:`
-       - Check `comms/archive/` if not found in inboxes (likely completed/rejected)
+       - Check `.accord/comms/inbox/*/` for the request file and read its current `status:`
+       - Check `.accord/comms/archive/` if not found in inboxes (likely completed/rejected)
      - Calculate progress: completed / total requests
 
 3. **Update directive files** if status changed:
@@ -26,7 +26,7 @@ Monitor directive progress and update statuses.
 4. **Write history entries** for any directive status changes:
    ```
    bash protocol/history/write-history.sh \
-     --history-dir comms/history \
+     --history-dir .accord/comms/history \
      --request-id {dir-id} \
      --from-status in-progress \
      --to-status {new-status} \

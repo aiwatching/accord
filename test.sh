@@ -1335,7 +1335,7 @@ assert_contains "$ACCORD_DIR/protocol/templates/request.md.template" "originated
 
 # Existing request validator still works with v1 requests (backward-compat)
 assert_validator "$ACCORD_DIR/protocol/scan/validators/validate-request.sh" \
-    "$ACCORD_DIR/examples/multi-repo-project/accord_hub/teams/zliu/comms/archive/req-000-service-joined-device-manager.md" \
+    "$ACCORD_DIR/examples/multi-repo-project/accord_hub/teams/zliu/.accord/comms/archive/req-000-service-joined-device-manager.md" \
     "v1 request still validates after template update"
 
 # ══════════════════════════════════════════════════════════════════════════════

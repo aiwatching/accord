@@ -23,9 +23,9 @@ Supported commands: `status`, `scan`, `check-inbox`, `validate`
 
 3. **For each target service**, create a command request:
 
-   a. **Determine next request ID**: scan `comms/inbox/` and `comms/archive/` for existing `req-*` files. Find the highest request number across ALL services, increment by 1. Each service gets its own sequential ID.
+   a. **Determine next request ID**: scan `.accord/comms/inbox/` and `.accord/comms/archive/` for existing `req-*` files. Find the highest request number across ALL services, increment by 1. Each service gets its own sequential ID.
 
-   b. **Create** `comms/inbox/{service}/req-{NNN}-cmd-{command}.md`:
+   b. **Create** `.accord/comms/inbox/{service}/req-{NNN}-cmd-{command}.md`:
 
       ```yaml
       ---
@@ -62,7 +62,7 @@ Supported commands: `status`, `scan`, `check-inbox`, `validate`
    c. **Write history entry**:
       ```
       bash protocol/history/write-history.sh \
-        --history-dir comms/history \
+        --history-dir .accord/comms/history \
         --request-id req-{NNN}-cmd-{command} \
         --from-status "new" \
         --to-status pending \
@@ -72,7 +72,7 @@ Supported commands: `status`, `scan`, `check-inbox`, `validate`
 
 4. **Single commit + push** (batch all files in one commit):
    ```
-   git add comms/
+   git add .accord/comms/
    git commit -m "orchestrator: command - send {command} to {N} service(s)"
    git push
    ```

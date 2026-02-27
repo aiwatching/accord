@@ -104,7 +104,7 @@ do_create() {
         if [[ -z "$target" ]]; then continue; fi
 
         local child_id="req-cascade-${PARENT_ID#req-}-${seq}"
-        local inbox_dir="$TEAM_DIR/comms/inbox/$target"
+        local inbox_dir="$TEAM_DIR/.accord/comms/inbox/$target"
         mkdir -p "$inbox_dir"
 
         local child_file="$inbox_dir/${child_id}.md"
@@ -150,7 +150,7 @@ EOF
     # Update parent request with child_requests list
     # Find the parent request file
     local parent_file=""
-    for inbox_dir in "$TEAM_DIR"/comms/inbox/*/; do
+    for inbox_dir in "$TEAM_DIR"/.accord/comms/inbox/*/; do
         if [[ -d "$inbox_dir" ]]; then
             for f in "$inbox_dir"*.md; do
                 if [[ -f "$f" ]] && grep -q "^id: $PARENT_ID" "$f" 2>/dev/null; then
@@ -162,7 +162,7 @@ EOF
     done
     # Also check archive
     if [[ -z "$parent_file" ]]; then
-        for f in "$TEAM_DIR"/comms/archive/*.md; do
+        for f in "$TEAM_DIR"/.accord/comms/archive/*.md; do
             if [[ -f "$f" ]] && grep -q "^id: $PARENT_ID" "$f" 2>/dev/null; then
                 parent_file="$f"
                 break

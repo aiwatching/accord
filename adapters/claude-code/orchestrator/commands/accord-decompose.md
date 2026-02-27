@@ -29,11 +29,11 @@ Decompose a pending directive into per-service requests.
      ```
 
 4. **Determine request IDs**:
-   - Check existing request files in all `comms/inbox/*/` and `comms/archive/`
+   - Check existing request files in all `.accord/comms/inbox/*/` and `.accord/comms/archive/`
    - Assign sequential numbers: `req-{NNN}-{short-description}`
 
 5. **Create request files**:
-   - Use `comms/TEMPLATE.md` as the template
+   - Use `.accord/comms/TEMPLATE.md` as the template
    - For each request:
      - Set `from: orchestrator`
      - Set `scope: external`
@@ -43,7 +43,7 @@ Decompose a pending directive into per-service requests.
      - Add v2 fields in the frontmatter (uncomment from template):
        - `directive: {dir-id}`
        - `on_behalf_of: {stakeholder}` (if known)
-   - Place in `comms/inbox/{target-service}/`
+   - Place in `.accord/comms/inbox/{target-service}/`
 
 6. **Update the directive**:
    - Set `status: in-progress`
@@ -58,7 +58,7 @@ Decompose a pending directive into per-service requests.
 7. **Write history entries**:
    ```
    bash protocol/history/write-history.sh \
-     --history-dir comms/history \
+     --history-dir .accord/comms/history \
      --request-id {dir-id} \
      --from-status pending \
      --to-status in-progress \

@@ -10,11 +10,11 @@ Check the orchestrator inbox for escalated requests and show directive status ov
    ```
 
 2. **Check escalated requests**:
-   - Look in `comms/inbox/orchestrator/` for request files (req-*.md)
+   - Look in `.accord/comms/inbox/orchestrator/` for request files (req-*.md)
    - For each request found, read the YAML frontmatter
    - Report:
      ```
-     Escalated requests (comms/inbox/orchestrator/):
+     Escalated requests (.accord/comms/inbox/orchestrator/):
        - {req-id}: from {sender}, type: {type}, priority: {priority} — "{brief what}"
      ```
    - If none: "No escalated requests."

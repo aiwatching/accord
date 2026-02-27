@@ -174,7 +174,7 @@ check_contract_change() {
     local epoch
     epoch="$(date +%s)"
     local notify_id="req-contract-change-${dep_team}-${epoch}"
-    local inbox_dir="$hub_root/teams/$our_team/comms/inbox/_team"
+    local inbox_dir="$hub_root/teams/$our_team/.accord/comms/inbox/_team"
     mkdir -p "$inbox_dir"
 
     local notify_file="$inbox_dir/${notify_id}.md"

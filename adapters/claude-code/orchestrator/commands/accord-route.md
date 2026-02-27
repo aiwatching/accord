@@ -5,7 +5,7 @@ Route escalated requests from the orchestrator inbox to the correct service.
 ## Instructions
 
 1. **Check for escalated requests**:
-   - Look in `comms/inbox/orchestrator/` for request files (req-*.md)
+   - Look in `.accord/comms/inbox/orchestrator/` for request files (req-*.md)
    - If none found, report: "No escalated requests to route."
    - If multiple found, list them with summaries
 
@@ -23,7 +23,7 @@ Route escalated requests from the orchestrator inbox to the correct service.
 
 3. **Create routed request**:
    - Determine next request ID (check all inboxes + archive)
-   - Create a new request in `comms/inbox/{target-service}/` with:
+   - Create a new request in `.accord/comms/inbox/{target-service}/` with:
      - `from:` = original sender (preserve the requester)
      - `to:` = target service
      - Add v2 fields (uncomment from template):
@@ -35,12 +35,12 @@ Route escalated requests from the orchestrator inbox to the correct service.
    - Set `status: completed`
    - Update `updated:` timestamp
    - Add a `## Resolution` section: "Routed to {target} as {new-req-id}"
-   - Move from `comms/inbox/orchestrator/` to `comms/archive/`
+   - Move from `.accord/comms/inbox/orchestrator/` to `.accord/comms/archive/`
 
 5. **Write history entries**:
    ```
    bash protocol/history/write-history.sh \
-     --history-dir comms/history \
+     --history-dir .accord/comms/history \
      --request-id {original-req-id} \
      --from-status pending \
      --to-status completed \

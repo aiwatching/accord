@@ -20,8 +20,8 @@ Check the status and results of remote command requests.
    - `--services` (optional): comma-separated list of services to filter by. If omitted, show all.
 
 3. **Scan for command requests**:
-   - Check `comms/archive/` for completed `req-*-cmd-*.md` files
-   - Check `comms/inbox/*/` for pending or in-progress `req-*-cmd-*.md` files
+   - Check `.accord/comms/archive/` for completed `req-*-cmd-*.md` files
+   - Check `.accord/comms/inbox/*/` for pending or in-progress `req-*-cmd-*.md` files
    - If `--services` was provided, only include requests where `to:` matches one of the specified services
 
 4. **Build a results table**:
