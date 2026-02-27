@@ -211,7 +211,7 @@ If your implementation requires changes in another service:
 If the target service is in another team:
 1. Check `$HUB/dependencies.yaml` for declared cross-team dependencies
 2. Place the request in the target team's inbox:
-   `teams/{target-team}/comms/inbox/_team/req-cross-{id}.md`
+   `teams/{target-team}/.accord/comms/inbox/_team/req-cross-{id}.md`
 3. Set `scope: cross-team` in the request frontmatter
 
 ## ON_COMMAND (Auto-Execute Remote Commands)
