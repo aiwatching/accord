@@ -26,18 +26,19 @@ For multi-module projects, declare sub-modules explicitly:
 > initialize accord with modules: services/api, services/web, libs/shared
 ```
 
-### 2. Scan Modules
+### 2. Scan a Module
 
-After initialization, module.md are empty skeletons. Tell Claude to read the code and fill them in:
-
-```
-> scan modules
-```
-
-Or scan a single module:
+After initialization, module.md are empty skeletons. Tell Claude to read the code and fill them in — one module at a time:
 
 ```
-> scan accord module services/api
+> scan root module
+> scan module services/api
+```
+
+Or scan everything at once (only when you want to):
+
+```
+> scan all modules
 ```
 
 ### 3. Work Normally
