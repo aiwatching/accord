@@ -155,27 +155,33 @@ After you finish making changes to the codebase (bug fix, feature, refactor, etc
 
 ---
 
-## ON_SCAN — Actively Scan Modules
+## ON_SCAN — Actively Scan a Module
 
-Trigger: user says "scan modules", "scan accord", "update module descriptions", or "accord scan".
+Trigger: user says "scan module", "scan accord", "accord scan", etc.
 
-For each module (root + all sub-modules):
+**Always scan one module at a time.** User must specify which one:
 
-1. **Read key files** to understand the module:
+- "scan root module" or "scan accord root" → scan root
+- "scan module services/api" → scan services/api
+- "scan all modules" → scan all (only when user explicitly says "all")
+
+If the user just says "scan" without specifying, ask which module.
+
+### How to Scan
+
+1. **Read key files** in the target module directory:
    - Build file (package.json, pom.xml, go.mod, etc.) for dependencies and project type
    - Entry points (main.*, index.*, app.*, etc.)
    - README if it exists
    - Top-level source files for public APIs
    - Don't read everything — just enough to write a good summary
+   - **Skip sub-module directories** — if a subdirectory has its own `.accord/`, don't read its code
 2. **Update `module.md`**:
    - **Purpose**: what this module does, in 1-2 sentences
    - **Key APIs**: main public interfaces, endpoints, exported functions
    - **Dependencies**: other modules/services it depends on
 3. **Keep it under 150 words**
 4. **Preserve human-written content** — if the user has edited module.md, refine around their text
-
-User can also scan a single module:
-- "scan accord module services/api" → only scan and update `services/api/.accord/module.md`
 
 ---
 
