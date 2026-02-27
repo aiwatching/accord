@@ -1,40 +1,40 @@
-# {{MODULE_NAME}}
+# {{SERVICE_NAME}}
 
 ---
-name: {{MODULE_NAME}}
-type: {{MODULE_TYPE}}
+name: {{SERVICE_NAME}}
+type: {{SERVICE_TYPE}}
 language: {{LANGUAGE}}
-directory: {{MODULE_DIR}}
+directory: {{SERVICE_DIR}}
 contract: {{CONTRACT_PATH}}
 ---
 
 ## Responsibility
 
-<!-- Describe this module's core responsibility in 1-2 sentences -->
+<!-- Describe this service's core responsibility in 1-2 sentences -->
 
 ## Owns (Data / Domain)
 
-<!-- List the data entities and domains this module is the source of truth for -->
+<!-- List the data entities and domains this service is the source of truth for -->
 <!-- Example: -->
 <!-- - Device entity (all device data) -->
 <!-- - Discovery scan results -->
 
 ## Capabilities
 
-<!-- List what this module can do -->
+<!-- List what this service can do -->
 <!-- Example: -->
 <!-- - Device CRUD operations -->
 <!-- - Device search and filtering -->
 
 ## Does NOT Own
 
-<!-- List what this module is NOT responsible for, with pointers to the owning module -->
+<!-- List what this service is NOT responsible for, with pointers to the owning service -->
 <!-- Example: -->
 <!-- - Policy evaluation → demo-engine -->
 <!-- - User management → demo-admin -->
 
 ## Dependencies
 
-<!-- List modules this module depends on and why -->
+<!-- List services this service depends on and why -->
 <!-- Example: -->
 <!-- - demo-engine: query device policies -->

@@ -65,9 +65,8 @@ export function ConsolePane({
   }, [input, executing, onSubmit]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleSubmit();
+    if (e.key === 'Enter' && !e.shiftKey) {
+      // Don't send on Enter — use the Send button instead
       return;
     }
     if (e.key === 'ArrowUp') {

@@ -89,35 +89,29 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TEST 2: Init with service + modules
+# TEST 2: Init with multiple services
 # ══════════════════════════════════════════════════════════════════════════════
-echo -e "\n${BOLD}[Test 2] Init with service + modules${NC}"
+echo -e "\n${BOLD}[Test 2] Init with multiple services (no modules)${NC}"
 
 TEST2_DIR="$TMPDIR/test2"
 mkdir -p "$TEST2_DIR"
 
 bash "$ACCORD_DIR/init.sh" \
-    --project-name "test-modules" \
+    --project-name "test-multi" \
     --repo-model monorepo \
     --services "svc-a,svc-b" \
-    --service svc-a \
-    --modules "mod-x,mod-y" \
     --language java \
     --adapter none \
     --target-dir "$TEST2_DIR" \
     --no-interactive > /dev/null 2>&1
 
 assert_file "$TEST2_DIR/.accord/config.yaml"                          "Config created"
-assert_file "$TEST2_DIR/.accord/contracts/internal/mod-x.md"          "mod-x internal contract"
-assert_file "$TEST2_DIR/.accord/contracts/internal/mod-y.md"          "mod-y internal contract"
-assert_dir  "$TEST2_DIR/.accord/comms/inbox/mod-x"                    "mod-x inbox"
-assert_dir  "$TEST2_DIR/.accord/comms/inbox/mod-y"                    "mod-y inbox"
-assert_contains "$TEST2_DIR/.accord/config.yaml" "mod-x"              "Config lists mod-x"
-assert_contains "$TEST2_DIR/.accord/config.yaml" "type: module"         "Config has type: module entries"
-
-# Internal contract validation
-assert_validator "$ACCORD_DIR/protocol/scan/validators/validate-internal.sh" \
-    "$TEST2_DIR/.accord/contracts/internal/mod-x.md" "mod-x internal validates"
+assert_file "$TEST2_DIR/.accord/contracts/svc-a.yaml"                 "svc-a contract created"
+assert_file "$TEST2_DIR/.accord/contracts/svc-b.yaml"                 "svc-b contract created"
+assert_dir  "$TEST2_DIR/.accord/comms/inbox/svc-a"                    "svc-a inbox"
+assert_dir  "$TEST2_DIR/.accord/comms/inbox/svc-b"                    "svc-b inbox"
+assert_contains "$TEST2_DIR/.accord/config.yaml" "svc-a"              "Config lists svc-a"
+assert_contains "$TEST2_DIR/.accord/config.yaml" "svc-b"              "Config lists svc-b"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TEST 3: Idempotency — running init twice doesn't break things
@@ -126,11 +120,9 @@ echo -e "\n${BOLD}[Test 3] Idempotency (early exit)${NC}"
 
 # Run init.sh again on test2 — should exit early with "Already initialized"
 reinit_output=$(bash "$ACCORD_DIR/init.sh" \
-    --project-name "test-modules" \
+    --project-name "test-multi" \
     --repo-model monorepo \
     --services "svc-a,svc-b" \
-    --service svc-a \
-    --modules "mod-x,mod-y" \
     --language java \
     --adapter none \
     --target-dir "$TEST2_DIR" \
@@ -143,10 +135,10 @@ else
 fi
 
 # Verify nothing changed
-config_count=$(grep -c "^  name: test-modules" "$TEST2_DIR/.accord/config.yaml" 2>/dev/null || echo 0)
-if [[ "$config_count" -le 1 ]]; then pass "Config not duplicated"; else fail "Config duplicated"; fi
+config_count=$(grep -c "svc-a" "$TEST2_DIR/.accord/config.yaml" 2>/dev/null || echo 0)
+if [[ "$config_count" -le 2 ]]; then pass "Config not duplicated"; else fail "Config duplicated"; fi
 
-assert_file "$TEST2_DIR/.accord/contracts/internal/mod-x.md" "Contracts still exist after re-run"
+assert_file "$TEST2_DIR/.accord/contracts/svc-a.yaml" "Contracts still exist after re-run"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TEST 4: Claude Code adapter installation
@@ -871,8 +863,6 @@ bash "$ACCORD_DIR/init.sh" \
     --project-name "test-registry" \
     --repo-model monorepo \
     --services "svc-a,svc-b" \
-    --service svc-a \
-    --modules "mod-x,mod-y" \
     --language java \
     --adapter none \
     --target-dir "$TEST13_DIR" \
@@ -882,16 +872,10 @@ bash "$ACCORD_DIR/init.sh" \
 assert_file "$TEST13_DIR/.accord/registry/svc-a.md" "svc-a registry created"
 assert_file "$TEST13_DIR/.accord/registry/svc-b.md" "svc-b registry created"
 
-# Registry files created for modules
-assert_file "$TEST13_DIR/.accord/registry/mod-x.md" "mod-x registry created"
-assert_file "$TEST13_DIR/.accord/registry/mod-y.md" "mod-y registry created"
-
 # Registry has correct content
 assert_contains "$TEST13_DIR/.accord/registry/svc-a.md" "name: svc-a" "svc-a registry has name"
 assert_contains "$TEST13_DIR/.accord/registry/svc-a.md" "type: service" "svc-a registry has type service"
-assert_contains "$TEST13_DIR/.accord/registry/mod-x.md" "type: module" "mod-x registry has type module"
-assert_contains "$TEST13_DIR/.accord/registry/mod-x.md" "directory: svc-a/mod-x/" "mod-x registry has correct directory"
-assert_contains "$TEST13_DIR/.accord/registry/mod-x.md" "language: java" "mod-x registry has language"
+assert_contains "$TEST13_DIR/.accord/registry/svc-b.md" "language: java" "svc-b registry has language"
 
 # No unresolved template variables
 unresolved_reg=0

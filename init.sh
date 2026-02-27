@@ -19,8 +19,6 @@ PROJECT_NAME=""
 REPO_MODEL="monorepo"
 SERVICES=""
 ADAPTER=""
-SERVICE=""
-MODULES=""
 HUB=""
 LANGUAGE="java"
 TARGET_DIR="."
@@ -44,15 +42,13 @@ usage() {
     cat <<'HELP'
 Usage: init.sh [options]
 
-Run in your project directory. Auto-detects project name, client, services, and modules.
+Run in your project directory. Auto-detects project name, client, and services.
 
 Options:
   --project-name <name>       Override auto-detected project name
   --services <csv>             Override auto-detected service names
   --adapter <name>            Override auto-detected client (claude-code|cursor|codex|generic|none)
   --sync-mode <mode>          on-action | auto-poll | manual (default: on-action)
-  --service <name>            Service directory that contains modules (auto-detects modules)
-  --modules <csv>             Explicit module names (overrides auto-detection)
   --repo-model <model>        monorepo | multi-repo (default: monorepo)
   --hub <git-url>             Hub repo URL (multi-repo only)
   --language <lang>           java | python | typescript | go (default: java)
@@ -202,8 +198,6 @@ parse_args() {
             --services)       SERVICES="$2"; shift 2 ;;
             --adapter)        ADAPTER="$2"; shift 2 ;;
             --sync-mode)      SYNC_MODE="$2"; shift 2 ;;
-            --service)        SERVICE="$2"; shift 2 ;;
-            --modules)        MODULES="$2"; shift 2 ;;
             --hub)            HUB="$2"; shift 2 ;;
             --language)       LANGUAGE="$2"; shift 2 ;;
             --target-dir)     TARGET_DIR="$2"; shift 2 ;;
@@ -294,41 +288,6 @@ interactive_prompt() {
     fi
     [[ -z "$SERVICES" ]] && err "At least one service is required"
 
-    # Detect modules in service directories
-    if [[ -z "$SERVICE" ]]; then
-        IFS=',' read -ra _svcs <<< "$SERVICES"
-        for _svc in "${_svcs[@]}"; do
-            _svc="$(echo "$_svc" | xargs)"
-            local svc_dir="$abs_target/$_svc"
-            if [[ -d "$svc_dir" ]]; then
-                local detected_mods
-                detected_mods="$(list_subdirs "$svc_dir")"
-                if [[ -n "$detected_mods" ]]; then
-                    echo ""
-                    echo -e "  ${CYAN}$_svc/${NC} has modules: ${GREEN}$detected_mods${NC}"
-                    read -r -p "  Use these as modules? (y/n/edit) [y]: " confirm
-                    confirm="${confirm:-y}"
-                    if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
-                        SERVICE="$_svc"
-                        MODULES="$detected_mods"
-                    elif [[ "$confirm" != "n" && "$confirm" != "N" ]]; then
-                        SERVICE="$_svc"
-                        MODULES="$confirm"
-                    fi
-                    [[ -n "$SERVICE" ]] && break
-                fi
-            fi
-        done
-    fi
-
-    if [[ -n "$SERVICE" && -z "$MODULES" ]]; then
-        local svc_dir="$abs_target/$SERVICE"
-        if [[ -d "$svc_dir" ]]; then
-            MODULES="$(list_subdirs "$svc_dir")"
-            [[ -n "$MODULES" ]] && echo -e "  Auto-detected modules in $SERVICE/: ${GREEN}$MODULES${NC}"
-        fi
-    fi
-
     if [[ -z "$ADAPTER" ]]; then
         if [[ "$detected_adapter" != "none" ]]; then
             read -r -p "  Adapter [$detected_adapter]: " input
@@ -388,18 +347,6 @@ validate_inputs() {
 
     if [[ "$REPO_MODEL" == "multi-repo" && -z "$HUB" ]]; then
         err "Hub repo URL is required for multi-repo model (--hub)"
-    fi
-
-    if [[ -n "$MODULES" && -z "$SERVICE" ]]; then
-        err "Service name is required when modules are specified (--service)"
-    fi
-
-    if [[ -n "$SERVICE" && -z "$MODULES" ]]; then
-        local svc_dir="$TARGET_DIR/$SERVICE"
-        if [[ -d "$svc_dir" ]]; then
-            MODULES="$(list_subdirs "$svc_dir")"
-            [[ -n "$MODULES" ]] && log "Auto-detected modules in $SERVICE/: $MODULES"
-        fi
     fi
 
     if [[ -n "$ROLE" ]]; then
@@ -467,18 +414,6 @@ generate_config() {
     repo: ${REPO_URL}"
         fi
 
-        # After the parent service, add its modules as peer-level entries
-        if [[ "$svc" == "$SERVICE" && -n "$MODULES" ]]; then
-            IFS=',' read -ra mod_arr <<< "$MODULES"
-            for mod in "${mod_arr[@]}"; do
-                mod="$(echo "$mod" | xargs)"
-                services_yaml="${services_yaml}
-  - name: ${mod}
-    type: module
-    directory: ${svc}/${mod}/
-    language: ${LANGUAGE}"
-            done
-        fi
     done
 
     cat > "$config_file" <<EOF
@@ -597,23 +532,6 @@ scaffold_project() {
         fi
     done
 
-    # .accord/contracts/internal/ (if modules exist)
-    if [[ -n "$SERVICE" && -n "$MODULES" ]]; then
-        mkdir -p "$accord_dir/contracts/internal"
-        IFS=',' read -ra mod_arr <<< "$MODULES"
-        for mod in "${mod_arr[@]}"; do
-            mod="$(echo "$mod" | xargs)"
-            local contract_file="$accord_dir/contracts/internal/${mod}.md"
-            if [[ ! -f "$contract_file" ]]; then
-                cp "$ACCORD_DIR/protocol/templates/internal-contract.md.template" "$contract_file"
-                replace_vars "$contract_file" \
-                    "MODULE_NAME" "$mod" \
-                    "LANGUAGE" "$LANGUAGE"
-                log "Created .accord/contracts/internal/${mod}.md"
-            fi
-        done
-    fi
-
     # .accord/comms/
     mkdir -p "$accord_dir/comms/archive"
     for svc in "${svc_arr[@]}"; do
@@ -621,16 +539,6 @@ scaffold_project() {
         mkdir -p "$accord_dir/comms/inbox/${svc}"
         touch "$accord_dir/comms/inbox/${svc}/.gitkeep"
     done
-
-    # Module inboxes (same level as service inboxes)
-    if [[ -n "$MODULES" ]]; then
-        IFS=',' read -ra mod_arr <<< "$MODULES"
-        for mod in "${mod_arr[@]}"; do
-            mod="$(echo "$mod" | xargs)"
-            mkdir -p "$accord_dir/comms/inbox/${mod}"
-            touch "$accord_dir/comms/inbox/${mod}/.gitkeep"
-        done
-    fi
 
     # .accord/comms/PROTOCOL.md
     generate_comms_protocol "$accord_dir/comms/PROTOCOL.md"
@@ -684,13 +592,11 @@ Everything lives under `.accord/`:
 
 ```
 .accord/
-├── config.yaml                        — Project configuration (services, modules, settings)
+├── config.yaml                        — Project configuration (services, settings)
 ├── contracts/
-│   ├── {service}.yaml                 — External contracts (OpenAPI). Only the owning module edits.
-│   └── internal/
-│       └── {module}.md                — Internal contracts (code-level interfaces)
+│   └── {service}.yaml                 — Service contracts (OpenAPI)
 └── comms/
-    ├── inbox/{service-or-module}/     — Incoming requests
+    ├── inbox/{service}/               — Incoming requests
     ├── archive/                       — Completed/rejected requests
     ├── PROTOCOL.md                    — This file
     └── TEMPLATE.md                    — Request template
@@ -709,7 +615,7 @@ pending → rejected
 
 ## Rules
 
-1. Never modify another module's contract directly — use a request.
+1. Never modify another service's contract directly — use a request.
 2. Never auto-approve requests — human review is required.
 3. A request cannot be `completed` unless the contract is updated.
 4. Check your inbox on every session start (`git pull` first).
@@ -718,8 +624,8 @@ pending → rejected
 ## Commit Convention
 
 ```
-comms({module}): {action} - {summary}
-contract({module}): {action} - {summary}
+comms({service}): {action} - {summary}
+contract({service}): {action} - {summary}
 ```
 
 Actions: `request`, `approved`, `rejected`, `in-progress`, `completed`, `update`
@@ -822,15 +728,12 @@ install_adapter() {
     if [[ -f "$install_script" ]]; then
         log "Installing adapter: $ADAPTER"
 
-        local internal_dir=""
-        [[ -n "$MODULES" ]] && internal_dir=".accord/contracts/internal/"
-
         local adapter_args=(
             --project-dir "$TARGET_DIR"
             --project-name "$PROJECT_NAME"
             --service-list "$SERVICES"
             --contracts-dir ".accord/contracts/"
-            --internal-contracts-dir "${internal_dir:-N/A}"
+            --internal-contracts-dir "N/A"
             --comms-dir ".accord/comms/"
             --sync-mode "$SYNC_MODE"
         )
@@ -1247,7 +1150,7 @@ print_orchestrator_summary() {
     echo "  Created hub structure (flat):"
     echo "    config.yaml                     — Hub configuration (role: orchestrator)"
     echo "    directives/                     — High-level requirements"
-    echo "    registry/                       — Service/module registries"
+    echo "    registry/                       — Service registries"
     echo "    contracts/                      — Service contracts"
     echo "    comms/"
     echo "        ├── inbox/orchestrator/     — Escalated requests"
@@ -1582,39 +1485,18 @@ generate_registry() {
         if [[ ! -f "$registry_file" ]]; then
             cp "$ACCORD_DIR/protocol/templates/registry.md.template" "$registry_file"
             local contract_path=".accord/contracts/${svc}.yaml"
-            local module_type="service"
-            local module_dir="${svc}/"
+            local svc_type="service"
+            local svc_dir="${svc}/"
             replace_vars "$registry_file" \
-                "MODULE_NAME" "$svc" \
-                "MODULE_TYPE" "$module_type" \
+                "SERVICE_NAME" "$svc" \
+                "SERVICE_TYPE" "$svc_type" \
                 "LANGUAGE" "$LANGUAGE" \
-                "MODULE_DIR" "$module_dir" \
+                "SERVICE_DIR" "$svc_dir" \
                 "CONTRACT_PATH" "$contract_path"
             log "Created .accord/registry/${svc}.md"
         fi
     done
 
-    # Generate registry files for sub-modules
-    if [[ -n "$SERVICE" && -n "$MODULES" ]]; then
-        IFS=',' read -ra mod_arr <<< "$MODULES"
-        for mod in "${mod_arr[@]}"; do
-            mod="$(echo "$mod" | xargs)"
-            local registry_file="$registry_dir/${mod}.md"
-            if [[ ! -f "$registry_file" ]]; then
-                cp "$ACCORD_DIR/protocol/templates/registry.md.template" "$registry_file"
-                local contract_path=".accord/contracts/internal/${mod}.md"
-                local module_type="module"
-                local module_dir="${SERVICE}/${mod}/"
-                replace_vars "$registry_file" \
-                    "MODULE_NAME" "$mod" \
-                    "MODULE_TYPE" "$module_type" \
-                    "LANGUAGE" "$LANGUAGE" \
-                    "MODULE_DIR" "$module_dir" \
-                    "CONTRACT_PATH" "$contract_path"
-                log "Created .accord/registry/${mod}.md"
-            fi
-        done
-    fi
 }
 
 # ── Summary ──────────────────────────────────────────────────────────────────
@@ -1626,7 +1508,6 @@ print_summary() {
     echo -e "  Project:    ${GREEN}$PROJECT_NAME${NC}"
     echo -e "  Repo model: ${GREEN}$REPO_MODEL${NC}"
     echo -e "  Services:   ${GREEN}$SERVICES${NC}"
-    [[ -n "$SERVICE" ]] && echo -e "  Modules:    ${GREEN}$MODULES${NC} ${DIM}(under $SERVICE/)${NC}"
     [[ "$ADAPTER" != "none" ]] && echo -e "  Adapter:    ${GREEN}$ADAPTER${NC}"
     echo -e "  Sync mode:  ${GREEN}$SYNC_MODE${NC}"
     [[ "$REPO_MODEL" == "multi-repo" ]] && echo -e "  Hub:        ${GREEN}$HUB${NC}"
@@ -1634,14 +1515,10 @@ print_summary() {
     echo "  Created structure:"
     echo "    .accord/"
     echo "    ├── config.yaml                 — Project configuration"
-    echo "    ├── contracts/{service}.yaml     — External contracts"
-    [[ -n "$MODULES" ]] && \
-    echo "    ├── contracts/internal/{mod}.md — Internal contracts"
-    echo "    ├── registry/{name}.md          — Module registry"
+    echo "    ├── contracts/{service}.yaml     — Service contracts"
+    echo "    ├── registry/{name}.md          — Service registry"
     echo "    └── comms/"
     echo "        ├── inbox/{service}/        — Service inboxes"
-    [[ -n "$MODULES" ]] && \
-    echo "        ├── inbox/{module}/        — Module inboxes"
     echo "        ├── archive/               — Completed requests"
     echo "        └── PROTOCOL.md / TEMPLATE.md"
     if [[ "$SYNC_MODE" == "auto-poll" && "$ADAPTER" != "claude-code" ]]; then
@@ -1765,24 +1642,7 @@ main() {
         [[ -z "$SERVICES" ]] && SERVICES="$PROJECT_NAME"
         LANGUAGE="$(detect_language "$TARGET_DIR")"
 
-        if [[ -z "$SERVICE" && -n "$SERVICES" ]]; then
-            IFS=',' read -ra _svcs <<< "$SERVICES"
-            for _svc in "${_svcs[@]}"; do
-                _svc="$(echo "$_svc" | xargs)"
-                if [[ -d "$TARGET_DIR/$_svc" ]]; then
-                    local mods
-                    mods="$(list_subdirs "$TARGET_DIR/$_svc")"
-                    if [[ -n "$mods" ]]; then
-                        SERVICE="$_svc"
-                        MODULES="$mods"
-                        break
-                    fi
-                fi
-            done
-        fi
-
         log "Auto-detected: project=$PROJECT_NAME services=$SERVICES adapter=${ADAPTER:-none} lang=$LANGUAGE"
-        [[ -n "$SERVICE" ]] && log "Auto-detected: service=$SERVICE modules=$MODULES"
     fi
 
     [[ "$INTERACTIVE" == true ]] && interactive_prompt
