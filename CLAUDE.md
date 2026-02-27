@@ -1,67 +1,40 @@
-# Accord Lite — Tool Repository
+# Accord — Developer Guide
 
 ## What This Repo Is
 
-This is the **Accord Lite tool repository** — it provides `init.sh`, `install.sh`, skills, slash commands, and templates that users install into their own projects. This repo itself is NOT a project that uses Accord Lite.
+This repo contains **one file that matters**: `SKILL.md` — a Claude Code skill that gives AI coding agents per-module memory.
+
+Users copy `SKILL.md` into their project at `.claude/skills/accord/SKILL.md`.
 
 ## Repository Structure
 
 ```
 accord/
-├── README.md                    # Public-facing description
-├── CLAUDE.md                    # This file — dev instructions for this repo
-├── LICENSE                      # Apache 2.0
-├── .gitignore
-├── install.sh                   # Remote installer (curl | bash)
-├── init.sh                      # Scaffold .accord/ in target project
-├── test.sh                      # Integration tests
-│
-├── skills/                      # Skills copied to user projects
-│   ├── accord-scan/SKILL.md
-│   └── accord-architect/SKILL.md
-│
-├── commands/                    # Slash commands copied to user projects
-│   ├── accord-scan.md
-│   ├── accord-plan.md
-│   ├── accord-execute.md
-│   ├── accord-status.md
-│   └── accord-replan.md
-│
-├── templates/                   # Templates used by init.sh + skills
-│   ├── module-map.yaml.template
-│   ├── contract.md.template
-│   ├── plan.yaml.template
-│   ├── architecture.md.template
-│   └── claude-section.md.template
-│
-└── docs/
-    ├── DESIGN.md                # Architecture & design decisions
-    └── SESSION_CONTEXT.md       # Historical context
+├── SKILL.md        # The skill — only core file
+├── README.md       # Install + usage instructions
+├── CLAUDE.md       # This file
+├── LICENSE         # Apache 2.0
+└── .gitignore
 ```
 
-## Code Conventions
+## How the Skill Works
 
-- Shell scripts target bash 4+ and should work on macOS and Linux
-- `sed -i` differs macOS/Linux — use `sed expr file > tmp && mv tmp file`
-- `set -e` + `[[ ]] && cmd` is lethal — always use `if [[ ... ]]; then ...; fi`
-- Keep dependencies minimal — only Git and a text editor required
-- Templates use `{{PLACEHOLDER}}` style variables
-- YAML files follow the schemas defined in templates/
+SKILL.md defines five behaviors:
 
-## Key Design Decisions
+- **ON_START** — loads module.md + memory.md + recent history at session boot
+- **ON_INIT** — discovers modules via build files, scaffolds `.accord/` dirs
+- **ON_CHANGE** — appends to daily `history/YYYY-MM-DD.md` + updates memory.md
+- **ON_LEARN** — refines module.md and memory.md with new insights
+- **ON_RECOVER** — rebuilds memory.md from history/ + module.md
 
-- **Single agent, not multi-agent**: one Claude Code session with architecture knowledge beats orchestrating many agents
-- **Skills over code**: the intelligence lives in SKILL.md instructions, not in TypeScript/Python
-- **File-based protocol**: module-map.yaml + contracts/*.md + plans/*.yaml — all readable, all in Git
-- **Tool repo pattern**: this repo provides tools that get copied into user projects via init.sh
+Three knowledge layers per module:
+- `module.md` — static description (<150 words)
+- `memory.md` — accumulated insights (<300 words, rebuildable)
+- `history/` — daily change logs (append-only, 30-day retention)
 
-## Testing
+## Editing SKILL.md
 
-```bash
-bash test.sh    # Run all integration tests
-```
-
-## Reference
-
-- See `docs/DESIGN.md` for the full design rationale
-- See `docs/SESSION_CONTEXT.md` for historical context on design decisions
+- Keep instructions clear and imperative
+- Each behavior section should be self-contained
+- Test by copying to a sample project and running "initialize accord"
+- Enforce size limits: module.md < 150 words, memory.md < 300 words
